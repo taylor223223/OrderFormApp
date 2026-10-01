@@ -1,0 +1,197 @@
+"""SQLite storage. One local file in the user's app-data folder."""
+import json
+import os
+import sqlite3
+from datetime import datetime
+
+from flask import g
+
+from .paths import data_dir
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+    failed_attempts INTEGER DEFAULT 0, locked_until TEXT, created TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, acct TEXT, address TEXT, city TEXT, state TEXT,
+    zip TEXT, mgmt TEXT, phone TEXT, email TEXT, notes TEXT, created TEXT, updated TEXT
+);
+CREATE TABLE IF NOT EXISTS contacts (
+    id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    name TEXT, role TEXT, email TEXT, phone TEXT, notes TEXT
+);
+CREATE TABLE IF NOT EXISTS floorplans (
+    id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, beds TEXT, baths TEXT, sqft TEXT, notes TEXT
+);
+CREATE TABLE IF NOT EXISTS units (
+    id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    unit_number TEXT NOT NULL, building TEXT,
+    floorplan_id INTEGER REFERENCES floorplans(id) ON DELETE SET NULL, notes TEXT
+);
+CREATE TABLE IF NOT EXISTS measurements (
+    id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    floorplan_id INTEGER REFERENCES floorplans(id) ON DELETE CASCADE,
+    unit_id INTEGER REFERENCES units(id) ON DELETE CASCADE,
+    product TEXT NOT NULL, room TEXT, data TEXT NOT NULL DEFAULT '{}', verified INTEGER DEFAULT 0,
+    notes TEXT, updated TEXT
+);
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    form_key TEXT, title TEXT, po TEXT, order_date TEXT, status TEXT DEFAULT 'Draft',
+    data TEXT NOT NULL DEFAULT '{}', pdf_path TEXT, source TEXT DEFAULT 'manual',
+    vendor_ref TEXT, due_date TEXT, notes TEXT, sent_at TEXT, created TEXT, updated TEXT
+);
+CREATE TABLE IF NOT EXISTS order_status_history (
+    id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    status TEXT, note TEXT, ts TEXT
+);
+CREATE TABLE IF NOT EXISTS change_batches (
+    id INTEGER PRIMARY KEY, source TEXT, label TEXT, created TEXT, status TEXT DEFAULT 'pending'
+);
+CREATE TABLE IF NOT EXISTS changes (
+    id INTEGER PRIMARY KEY, batch_id INTEGER NOT NULL REFERENCES change_batches(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL, customer_id INTEGER, customer_ref TEXT, field TEXT, old_value TEXT,
+    new_value TEXT, payload TEXT, default_on INTEGER DEFAULT 1, status TEXT DEFAULT 'pending'
+);
+CREATE TABLE IF NOT EXISTS email_messages (
+    id INTEGER PRIMARY KEY, provider TEXT, msg_id TEXT UNIQUE, subject TEXT, sender TEXT,
+    sender_name TEXT, received TEXT, body TEXT, status TEXT DEFAULT 'new', order_id INTEGER,
+    parsed TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_units_cust ON units(customer_id);
+CREATE INDEX IF NOT EXISTS ix_meas_cust ON measurements(customer_id);
+CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders(customer_id);
+"""
+
+CUSTOMER_FIELDS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email", "notes"]
+
+DEFAULT_SETTINGS = {
+    "sales_rep": "Taylor M. Anderson",
+    "order_to": "orders@apartmentinterior.net",
+    "order_cc": "",
+    "email_provider": "outlook_desktop",
+    "send_mode": "review",
+    "graph_client_id": "",
+    "graph_tenant": "common",
+    "subject_template": "{title} - {customer} - PO {po}",
+    "body_template": "Hello,\n\nPlease see the attached {title} for {customer} (PO {po}).\n\nThank you,\n{sales_rep}",
+    "output_dir": "",
+    "date_format": "%m/%d/%Y",
+    "session_minutes": "240",
+}
+
+STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
+            "Installed", "Completed", "On Hold", "Cancelled"]
+OPEN_STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "On Hold"]
+
+
+def now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def db_path():
+    return os.path.join(data_dir(), "orderapp.db")
+
+
+def connect(path=None):
+    con = sqlite3.connect(path or db_path(), detect_types=0, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys = ON")
+    return con
+
+
+def init_db(path=None):
+    con = connect(path)
+    con.executescript(SCHEMA)
+    for k, v in DEFAULT_SETTINGS.items():
+        con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
+    con.commit()
+    con.close()
+
+
+def get_db():
+    if "db" not in g:
+        from flask import current_app
+        g.db = connect(current_app.config.get("DB_PATH"))
+    return g.db
+
+
+def close_db(_e=None):
+    d = g.pop("db", None)
+    if d is not None:
+        d.close()
+
+
+def q(sql, args=(), one=False):
+    cur = get_db().execute(sql, args)
+    rows = cur.fetchall()
+    return (rows[0] if rows else None) if one else rows
+
+
+def x(sql, args=()):
+    con = get_db()
+    cur = con.execute(sql, args)
+    con.commit()
+    return cur.lastrowid
+
+
+def setting(key, default=None):
+    r = q("SELECT value FROM settings WHERE key=?", (key,), one=True)
+    if r is None or r["value"] is None:
+        return DEFAULT_SETTINGS.get(key, default)
+    return r["value"]
+
+
+def set_setting(key, value):
+    x("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+      (key, value))
+
+
+def loads(s, default=None):
+    try:
+        return json.loads(s) if s else (default if default is not None else {})
+    except (ValueError, TypeError):
+        return default if default is not None else {}
+
+
+def dumps(o):
+    return json.dumps(o, ensure_ascii=False)
+
+
+def norm_name(s):
+    s = (s or "").lower()
+    for w in [" apartments", " apartment", " apts", " apt", " the ", " at "]:
+        s = s.replace(w, " ")
+    return "".join(ch for ch in s if ch.isalnum())
+
+
+def find_customer(name=None, acct=None, email=None):
+    """Best-effort match on account #, then email, then normalised name."""
+    if acct:
+        r = q("SELECT * FROM customers WHERE acct=? AND acct<>''", (str(acct).strip(),), one=True)
+        if r:
+            return r
+    if email:
+        e = email.strip().lower()
+        r = q("SELECT c.* FROM customers c WHERE lower(c.email)=?", (e,), one=True)
+        if r:
+            return r
+        r = q("SELECT c.* FROM customers c JOIN contacts k ON k.customer_id=c.id WHERE lower(k.email)=?",
+              (e,), one=True)
+        if r:
+            return r
+    if name:
+        n = norm_name(name)
+        if n:
+            for r in q("SELECT * FROM customers"):
+                if norm_name(r["name"]) == n:
+                    return r
+    return None
+
+
+def add_status(order_id, status, note=""):
+    x("INSERT INTO order_status_history(order_id, status, note, ts) VALUES (?,?,?,?)",
+      (order_id, status, note, now()))

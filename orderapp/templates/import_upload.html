@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block title %}Import CSV{% endblock %}
+{% block body %}
+<h1>Import CSV / Excel</h1>
+<div class="muted">Previous orders, customer lists, unit lists or measurement sheets. Nothing is changed until you approve it on the review screen.</div>
+<form method="post" enctype="multipart/form-data" class="card" style="margin-top:12px;max-width:640px">
+  <div class="field"><label>File (.csv or .xlsx)</label><input type="file" name="file" accept=".csv,.txt,.xlsx,.xlsm"></div>
+  <div class="field"><label>If the file has no customer column, it's for:</label>
+    <select name="customer_id"><option value="">(file has a customer/property column)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if pre and pre|int==c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
+  <button class="btn primary">Upload & map columns</button>
+</form>
+<div class="card" style="max-width:640px"><b>What the app does with it</b>
+<ul class="small">
+  <li>Matches rows to customers by acct #, email, or name (ignores "Apartments", "The", etc.).</li>
+  <li><b>Fills blanks</b> on existing customers (pre-checked) and flags <b>conflicts</b> (unchecked - you choose).</li>
+  <li>Adds new contacts, floorplans, units, and per-unit / per-floorplan measurements (skips ones already saved).</li>
+  <li>Rows with a PO or date become <b>previous orders</b>, which power the smart dropdowns.</li>
+</ul>
+<div class="small muted">Recognised headers include: Property, Acct #, Address, City, State, Zip, Mgmt Co, Phone, Email, Contact, Unit, Building, Floorplan, Product, Room, Qty, Item #, Width, Height, Color, Style, Core, Swing, PO, Date, Notes. You can fix the mapping on the next screen.</div></div>
+{% endblock %}

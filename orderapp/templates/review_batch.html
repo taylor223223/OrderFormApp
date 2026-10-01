@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}Review{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('imports.review') }}">← Review queue</a></div>
+<h1>{{ b.label }}</h1>
+<div class="muted">Checked items will be applied. Filling a blank is pre-checked; replacing an existing value is not.</div>
+<form method="post" style="margin-top:12px">
+{% if not done %}<div class="row" style="margin-bottom:10px"><button type="button" class="btn sm" onclick="tog(true)">Check all</button><button type="button" class="btn sm" onclick="tog(false)">Uncheck all</button></div>{% endif %}
+{% for key, g in groups.items() %}
+<div class="card"><h3 style="margin-top:0">{{ g.label }}</h3>
+<table>
+<tr><th style="width:40px"></th><th>Type</th><th>Item</th><th>Current</th><th>New</th></tr>
+{% for it in g['items'] %}{% set r = it.r %}
+<tr><td>{% if r.status=='pending' %}<input type="checkbox" name="accept" value="{{ r.id }}" {{ 'checked' if r.default_on }}>{% else %}<span class="small muted">{{ r.status }}</span>{% endif %}</td>
+<td>{{ it.kind }}{% if r.kind=='set_field' and r.old_value %} <span class="tag warn">conflict</span>{% elif r.kind=='set_field' %} <span class="tag ok">fill blank</span>{% endif %}</td>
+<td>{{ it.desc }}{% if r.kind=='new_measurement' %}<div class="small muted">{% for k, v in it.payload.data.items() %}{{ k }}: {{ v }}{{ '; ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
+<td class="small">{{ r.old_value or '' }}</td><td><b>{{ r.new_value or '' }}</b></td></tr>
+{% endfor %}
+</table></div>
+{% endfor %}
+{% if not done %}
+<div class="sticky-actions"><button class="btn primary">Apply checked</button><button class="btn danger" name="discard" value="1" onclick="return confirm('Discard all of these?')">Discard all</button></div>
+{% endif %}
+</form>
+{% endblock %}
+{% block scripts %}<script>function tog(v){document.querySelectorAll('input[name=accept]').forEach(c=>c.checked=v)}</script>{% endblock %}

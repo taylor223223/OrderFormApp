@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Dashboard</h1><div class="muted">Start an order, check what's open, or review incoming info.</div></div>
+  <div class="row"><a class="btn primary" href="{{ url_for('orders.new') }}">+ New order</a><a class="btn" href="{{ url_for('emails.inbox') }}">Check email</a></div></div>
+<div class="grid g4">
+  <a class="stat" href="{{ url_for('customers.index') }}"><div class="n">{{ stats.customers }}</div><div class="l">Customers</div></a>
+  <div class="stat"><div class="n">{{ stats.units }}</div><div class="l">Units saved</div></div>
+  <div class="stat"><div class="n">{{ stats.measurements }}</div><div class="l">Saved measurements</div></div>
+  <a class="stat" href="{{ url_for('orders.tracking') }}"><div class="n">{{ stats.open_orders }}</div><div class="l">Open orders</div></a>
+</div>
+{% if batches %}
+<div class="card" style="margin-top:16px"><b>Waiting for your review</b>
+  <ul>{% for b in batches[:6] %}<li><a href="{{ url_for('imports.review_batch', bid=b.id) }}">{{ b.label }}</a> <span class="muted">({{ b.n }} items)</span></li>{% endfor %}</ul></div>
+{% endif %}
+<h2>Start an order form</h2>
+<div class="formcards">{% for k, t in forms %}<a class="formcard" href="{{ url_for('orders.new', form=k) }}"><b>{{ t }}</b><span class="muted small">Fill out manually with predictions</span></a>{% endfor %}</div>
+<div class="grid g2" style="margin-top:8px">
+  <div><h2>Open orders by status</h2>
+    <div class="card">{% for s in by_status %}<div class="row" style="justify-content:space-between;padding:3px 0"><a href="{{ url_for('orders.tracking', status=s.status) }}"><span class="tag st-{{ s.status.split()[0] }}">{{ s.status }}</span></a><b>{{ s.n }}</b></div>{% else %}<div class="muted">No open orders.</div>{% endfor %}</div>
+    {% if due %}<h2>Coming due</h2><div class="tablewrap"><table>{% for o in due %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">{{ o.customer or '-' }}</a><div class="small muted">{{ o.title }}</div></td><td class="nowrap">{{ o.due_date }}</td><td><span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span></td></tr>{% endfor %}</table></div>{% endif %}
+  </div>
+  <div><h2>Recent activity</h2>
+    <div class="tablewrap"><table>
+      {% for o in recent %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }} {{ o.customer or '(no customer)' }}</a><div class="small muted">{{ o.title }}{% if o.po %} - PO {{ o.po }}{% endif %}</div></td><td><span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span></td><td class="small muted nowrap">{{ o.updated[:16] }}</td></tr>
+      {% else %}<tr><td class="empty">No orders yet.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+</div>
+{% endblock %}

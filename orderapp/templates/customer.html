@@ -1,0 +1,90 @@
+{% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <div><h1>{{ c.name }}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{{ c.mgmt or '' }}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
+  <div class="row">
+    <a class="btn primary" href="{{ url_for('orders.new', customer=c.id) }}">+ New order</a>
+    <a class="btn" href="{{ url_for('customers.edit', cid=c.id) }}">Edit</a>
+    <a class="btn" href="{{ url_for('imports.upload', customer=c.id) }}">Import CSV</a>
+  </div>
+</div>
+{% if missing %}
+<div class="miss row" style="margin-bottom:14px"><span>Missing: <b>{{ missing|join(', ') }}</b></span><span class="spacer"></span>
+  <form method="post" action="{{ url_for('customers.check', cid=c.id) }}"><button class="btn sm">Look in previous orders</button></form></div>
+{% endif %}
+<div class="tabs">
+  {% for k, l in [('info','Info & Contacts'),('layouts','Floorplans & Measurements'),('units','Units'),('orders','Orders')] %}
+  <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}">{{ l }}</a>{% endfor %}
+</div>
+
+{% if tab == 'info' %}
+<div class="grid g2">
+  <div class="card"><h3 style="margin-top:0">Details</h3>
+    <div class="kv">
+      <div>Address</div><div>{{ c.address or '-' }}<br>{{ c.city or '' }} {{ c.state or '' }} {{ c.zip or '' }}</div>
+      <div>Phone</div><div>{{ c.phone or '-' }}</div><div>Email</div><div>{{ c.email or '-' }}</div>
+      <div>Mgmt Co.</div><div>{{ c.mgmt or '-' }}</div><div>Notes</div><div style="white-space:pre-wrap">{{ c.notes or '-' }}</div>
+    </div>
+  </div>
+  <div class="card"><h3 style="margin-top:0">Contacts</h3>
+    {% for k in contacts %}
+    <details style="padding:6px 0;border-bottom:1px solid var(--line)"><summary>{{ k.name or k.email }} <span class="muted small">{{ k.role or '' }} {{ k.email or '' }} {{ k.phone or '' }}</span></summary>
+      <form method="post" action="{{ url_for('customers.contact_edit', kid=k.id) }}" class="grid g2" style="margin-top:8px">
+        <input name="name" value="{{ k.name or '' }}" placeholder="Name"><input name="role" value="{{ k.role or '' }}" placeholder="Role">
+        <input name="email" value="{{ k.email or '' }}" placeholder="Email"><input name="phone" value="{{ k.phone or '' }}" placeholder="Phone">
+        <input name="notes" value="{{ k.notes or '' }}" placeholder="Notes" style="grid-column:1/-1">
+        <div class="row"><button class="btn sm">Save</button></div>
+      </form>
+      <form method="post" action="{{ url_for('customers.contact_delete', kid=k.id) }}" onsubmit="return confirm('Delete contact?')"><button class="btn sm danger">Delete</button></form>
+    </details>
+    {% else %}<div class="muted">No contacts yet.</div>{% endfor %}
+    <h3>Add contact</h3>
+    <form method="post" action="{{ url_for('customers.contact_add', cid=c.id) }}" class="grid g2">
+      <input name="name" placeholder="Name"><input name="role" placeholder="Role (Manager, Maintenance...)">
+      <input name="email" placeholder="Email"><input name="phone" placeholder="Phone">
+      <div><button class="btn sm primary">Add contact</button></div>
+    </form>
+  </div>
+</div>
+<details class="card"><summary>Delete this customer</summary>
+  <form method="post" action="{{ url_for('customers.delete', cid=c.id) }}" class="row" style="margin-top:10px">
+    <input name="confirm_name" placeholder="Type the name to confirm" style="max-width:320px"><button class="btn danger">Delete customer and all their units & measurements</button></form>
+</details>
+
+{% elif tab == 'layouts' %}
+<p class="muted">Measure a floorplan once and every unit with that layout uses it. Units can also have their own measurements that override the floorplan.</p>
+<div class="tablewrap"><table>
+<tr><th>Floorplan</th><th>Beds/Baths</th><th class="right">Measurements</th><th class="right">Units</th><th>Notes</th></tr>
+{% for f in fps %}<tr><td><a href="{{ url_for('customers.floorplan', fid=f.id) }}"><b>{{ f.name }}</b></a></td><td>{{ f.beds or '' }}{% if f.baths %} / {{ f.baths }}{% endif %}</td><td class="right">{{ f.n_meas }}</td><td class="right">{{ f.n_units }}</td><td class="small">{{ f.notes or '' }}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">No floorplans yet.</td></tr>{% endfor %}
+</table></div>
+<form method="post" action="{{ url_for('customers.floorplan_add', cid=c.id) }}" class="card row" style="margin-top:12px">
+  <b>Add floorplan</b><input name="name" placeholder="Name (e.g. A1, 2BR-B, Juniper)" style="max-width:220px"><input name="beds" placeholder="Beds" style="max-width:80px"><input name="baths" placeholder="Baths" style="max-width:80px"><input name="sqft" placeholder="Sq ft" style="max-width:90px"><button class="btn primary">Add</button>
+</form>
+<h2>Property-wide items <span class="muted small">(not tied to a layout, e.g. clubhouse doors, standard colors)</span></h2>
+{% set rows = general %}{% set ctx = {'customer_id': c.id} %}{% include "_meas_table.html" %}
+
+{% elif tab == 'units' %}
+<form method="post" action="{{ url_for('customers.units_add', cid=c.id) }}" class="card">
+  <b>Add units</b> <span class="muted small">Ranges work: 101-124, 201-224, 305A</span>
+  <div class="grid g4" style="margin-top:8px">
+    <input name="units" placeholder="Unit numbers" style="grid-column:span 2"><input name="building" placeholder="Building (optional)">
+    <select name="floorplan_id"><option value="">Floorplan...</option>{% for f in fps %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select>
+  </div><button class="btn primary" style="margin-top:8px">Add / assign</button>
+</form>
+<div class="tablewrap"><table>
+<tr><th>Unit</th><th>Building</th><th>Floorplan</th><th class="right">Own measurements</th><th></th></tr>
+{% for u in units %}<tr><td><a href="{{ url_for('customers.unit', uid=u.id) }}"><b>{{ u.unit_number }}</b></a></td><td>{{ u.building or '' }}</td><td>{{ u.fp_name or '—' }}</td><td class="right">{{ u.n_own }}</td>
+<td class="right"><a class="btn sm" href="{{ url_for('orders.new', customer=c.id) }}">Order</a></td></tr>
+{% else %}<tr><td colspan="5" class="empty">No units yet.</td></tr>{% endfor %}
+</table></div>
+
+{% elif tab == 'orders' %}
+<div class="tablewrap"><table>
+<tr><th>#</th><th>Form</th><th>PO</th><th>Date</th><th>Status</th><th>Source</th><th></th></tr>
+{% for o in orders %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.title }}</td><td>{{ o.po or '' }}</td><td>{{ o.order_date or '' }}</td><td><span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span></td><td class="small muted">{{ o.source }}</td>
+<td class="right">{% if o.form_key %}<a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=c.id, copy=o.id) }}">Reorder</a>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No orders yet.</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

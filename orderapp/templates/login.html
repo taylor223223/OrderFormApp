@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}Log in{% endblock %}
+{% block body %}
+<div class="auth card">
+  <h1>Order Form App</h1><p class="muted">Log in to continue.</p>
+  <form method="post">
+    <div class="field"><label>Username</label><input name="username" autofocus autocomplete="username"></div>
+    <div class="field"><label>Password</label><input type="password" name="password" autocomplete="current-password"></div>
+    <button class="btn primary">Log in</button>
+  </form>
+</div>
+{% endblock %}

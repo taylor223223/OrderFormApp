@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Email order #{{ o.id }}{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('orders.view', oid=o.id) }}">← Order #{{ o.id }}</a></div>
+<h1>Email {{ o.title }}</h1>
+<div class="muted">Attachment: {{ o.pdf_path.split('\\')[-1].split('/')[-1] }} · <a href="{{ url_for('orders.pdf', oid=o.id) }}" target="_blank">preview</a></div>
+<form method="post" class="card" style="margin-top:12px;max-width:760px">
+  <div class="field"><label>To</label><input name="to" value="{{ to }}"></div>
+  <div class="field"><label>CC</label><input name="cc" value="{{ cc }}" list="custmails"><datalist id="custmails">{% for e in cust_emails %}<option value="{{ e }}">{% endfor %}</datalist>
+    {% if cust_emails %}<div class="small muted">Customer emails: {% for e in cust_emails %}<a href="#" onclick="addCc('{{ e }}');return false">{{ e }}</a> {% endfor %}</div>{% endif %}</div>
+  <div class="field"><label>Subject</label><input name="subject" value="{{ subject }}"></div>
+  <div class="field"><label>Message</label><textarea name="body" rows="7">{{ body }}</textarea></div>
+  <div class="field"><label>How</label>
+    <label style="font-weight:400;color:var(--ink)"><input type="radio" name="mode" value="review" {{ 'checked' if mode!='send' }}> Open it in Outlook / Drafts so I can look it over and press Send</label>
+    {% if provider != 'eml' %}<label style="font-weight:400;color:var(--ink)"><input type="radio" name="mode" value="send" {{ 'checked' if mode=='send' }}> Send it right now</label>{% endif %}
+    <div class="small muted">Using: {{ {'outlook_desktop':'Outlook on this PC','graph':'Microsoft 365 sign-in','eml':'Email draft file (no connection)'}[provider] }} - change in Settings.</div>
+  </div>
+  <button class="btn primary">Continue</button>
+</form>
+{% endblock %}
+{% block scripts %}<script>
+function addCc(e){ const i = document.querySelector('[name=cc]'); i.value = i.value ? i.value + '; ' + e : e; }
+</script>{% endblock %}

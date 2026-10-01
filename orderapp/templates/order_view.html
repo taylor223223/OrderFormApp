@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% block title %}Order #{{ o.id }}{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <div><div class="small"><a href="{{ url_for('orders.tracking') }}">← Order tracking</a></div>
+  <h1>#{{ o.id }} {{ o.title }}</h1>
+  <div class="muted">{% if o.customer_id %}<a href="{{ url_for('customers.view', cid=o.customer_id) }}">{{ o.cname }}</a>{% else %}{{ data.header.name if data.header else '(no customer)' }}{% endif %}
+    {% if o.po %} · PO {{ o.po }}{% endif %}{% if o.order_date %} · {{ o.order_date }}{% endif %} · <span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span> <span class="small">({{ o.source }})</span></div></div>
+  <div class="row">
+    {% if spec %}
+    <a class="btn" href="{{ url_for('orders.editor', order=o.id) }}">Edit</a>
+    <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, regen=1) }}" target="_blank">View PDF</a>
+    <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, dl=1) }}">Download</a>
+    <a class="btn primary" href="{{ url_for('orders.send_page', oid=o.id) }}">Email it</a>
+    {% endif %}
+  </div>
+</div>
+{% if miss %}<div class="miss" style="margin-bottom:14px"><b>Still empty:</b> {{ miss|join(', ') }}</div>{% endif %}
+<div class="grid g2">
+<div>
+  {% if spec %}
+  <div class="card"><h3 style="margin-top:0">Line items</h3>
+    {% for b in data.blocks or [] %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>Line {{ loop.index }}</b>{% if b.unit %} · Unit {{ b.unit }}{% endif %}{% if b._room %} · {{ b._room }}{% endif %}
+      <div class="small">{% for k, v in b.items() if k not in ('unit','_room') %}<span class="muted">{{ labels.get(k, k) }}:</span> {{ v }}{{ '; ' if not loop.last }}{% endfor %}</div></div>
+    {% else %}<div class="muted">No line items.</div>{% endfor %}
+    {% if data.comments %}<p><span class="muted">Comments:</span> {{ data.comments }}</p>{% endif %}
+    <div class="row" style="margin-top:10px">
+      <form method="post" action="{{ url_for('orders.learn', oid=o.id) }}"><button class="btn sm" title="Save these sizes to the units/floorplans for next time">Save sizes to units</button></form>
+      <a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=o.customer_id or '', copy=o.id) }}">Reorder (copy)</a>
+      {% if pdf_exists %}<form method="post" action="{{ url_for('orders.open_folder', oid=o.id) }}"><button class="btn sm">Open PDF folder</button></form>{% endif %}
+    </div>
+    {% if o.pdf_path %}<div class="small muted" style="margin-top:6px">PDF: {{ o.pdf_path }}</div>{% endif %}
+  </div>
+  {% else %}
+  <div class="card"><b>Tracking-only entry</b> (placed outside this app).{% if o.notes %}<p>{{ o.notes }}</p>{% endif %}</div>
+  {% endif %}
+</div>
+<div>
+  <form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}" class="card"><h3 style="margin-top:0">Tracking</h3>
+    <div class="grid g2">
+      <div><label>Status</label><select name="status">{% for s in statuses %}<option {{ 'selected' if s==o.status }}>{{ s }}</option>{% endfor %}</select></div>
+      <div><label>Due / ETA</label><input type="date" name="due_date" value="{{ o.due_date or '' }}"></div>
+      <div><label>Vendor / tracking #</label><input name="vendor_ref" value="{{ o.vendor_ref or '' }}" placeholder="Order # in the other system"></div>
+      <div><label>Note for this update</label><input name="note" placeholder="optional"></div>
+      <div style="grid-column:1/-1"><label>Order notes</label><textarea name="notes" rows="2">{{ o.notes or '' }}</textarea></div>
+    </div><button class="btn primary">Update</button>
+  </form>
+  <div class="card"><h3 style="margin-top:0">History</h3>
+    {% for h in hist %}<div class="small" style="padding:3px 0"><span class="muted">{{ h.ts[:16] }}</span> <span class="tag st-{{ h.status.split()[0] }}">{{ h.status }}</span> {{ h.note or '' }}</div>{% endfor %}
+  </div>
+  <form method="post" action="{{ url_for('orders.delete', oid=o.id) }}" onsubmit="return confirm('Delete order #{{ o.id }}?')"><button class="btn sm danger">Delete order</button></form>
+</div></div>
+{% endblock %}

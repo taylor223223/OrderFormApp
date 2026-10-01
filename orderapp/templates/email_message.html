@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block title %}{{ r.subject }}{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('emails.inbox') }}">← Email</a></div>
+<h1>{{ r.subject or '(no subject)' }}</h1><div class="muted">{{ r.sender_name }} &lt;{{ r.sender }}&gt; · {{ r.received }}</div>
+<div class="grid g2" style="margin-top:12px">
+<div>
+  <form method="post" action="{{ url_for('emails.make_order', rid=r.id) }}" class="card">
+    <h3 style="margin-top:0">What the app found</h3>
+    <div class="field"><label>Customer {% if p.match_reason %}<span class="tag ok">matched by {{ p.match_reason }}</span>{% else %}<span class="tag warn">not matched - pick one</span>{% endif %}</label>
+      <select name="customer_id"><option value="">(none)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if c.id==p.customer_id }}>{{ c.name }}</option>{% endfor %}</select></div>
+    <div class="grid g2">
+      <div class="field"><label>PO</label><input name="po" value="{{ p.po }}"></div>
+      <div class="field"><label>Units mentioned</label><input name="units" value="{{ p.units|join(', ') }}"></div>
+    </div>
+    <div class="field"><label>Order form</label><select name="form_key"><option value="">Pick...</option>{% for k, t in forms %}<option value="{{ k }}" {{ 'selected' if k==p.form_key }}>{{ t }}</option>{% endfor %}</select></div>
+    {% if p['items'] %}
+    <label>Line items detected</label>
+    <table class="small"><tr><th>Product</th><th>Unit</th><th>Qty</th><th>W x H</th><th>Other</th></tr>
+    {% for it in p['items'] %}<tr><td>{{ it.product or '?' }}</td><td>{{ it.unit or '' }}</td><td>{{ it.qty or '' }}</td><td>{{ it.width or '' }}{% if it.height %} x {{ it.height }}{% endif %}</td><td>{{ it.color or '' }} {{ it.swing or '' }} {{ it.core or '' }} {{ it.room or '' }}</td></tr>{% endfor %}</table>
+    <div class="small muted" style="margin:6px 0">Anything missing is filled from the unit's saved floorplan measurements.</div>
+    {% elif p.units %}<div class="small muted">No sizes in the email - the order will be filled from the saved measurements of units {{ p.units|join(', ') }}.</div>{% endif %}
+    {% for ff in p.filled_forms %}<div class="flash ok small">Attached filled form detected: {{ ff.file }} ({{ form_titles[ff.form_key] }}) - it will be used as-is.</div>{% endfor %}
+    {% if p.customer_id and r.sender and not known_contact %}<label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="add_contact" value="1" checked> Offer to save {{ r.sender }}{% if p.contact.phone %} ({{ p.contact.phone }}){% endif %} as a contact</label>{% endif %}
+    <div style="margin-top:10px"><button class="btn primary">Create draft order</button>{% if r.order_id %} <a href="{{ url_for('orders.view', oid=r.order_id) }}">Existing order #{{ r.order_id }}</a>{% endif %}</div>
+  </form>
+  {% for t in p.tables %}
+  <form method="post" action="{{ url_for('emails.import_attachment', rid=r.id) }}" class="card row"><input type="hidden" name="file" value="{{ t.file }}">
+    <span>Spreadsheet attached: <b>{{ t.file }}</b> ({{ t.rows }} rows)</span><button class="btn sm">Import it</button></form>
+  {% endfor %}
+</div>
+<div class="card"><h3 style="margin-top:0">Email</h3><pre class="body">{{ r.body }}</pre>
+{% if atts %}<div class="small muted">Attachments: {{ atts|join(', ') }}</div>{% endif %}</div>
+</div>
+{% endblock %}

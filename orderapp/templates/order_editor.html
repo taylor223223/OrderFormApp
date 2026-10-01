@@ -1,0 +1,241 @@
+{% extends "base.html" %}{% block title %}{{ spec.title }}{% endblock %}
+{% block body %}
+<div class="pagehead">
+  <div><h1>{{ spec.title }}{% if order %} <span class="muted">#{{ order.id }}</span>{% endif %}</h1>
+  <div class="muted small">Yellow = predicted from saved measurements / past orders. Check it, then save. Dropdowns accept any typed value.</div></div>
+  <div class="row">
+    <select id="switchForm" style="max-width:260px" title="Switch form">{% for k, t in forms %}<option value="{{ k }}" {{ 'selected' if k==form_key }}>{{ t }}</option>{% endfor %}</select>
+    {% if last %}<a class="btn" href="{{ url_for('orders.editor', form=form_key, customer=c.id, copy=last.id) }}" title="Start from the last {{ spec.title }} for this customer">Copy last order{% if last.po %} (PO {{ last.po }}){% endif %}</a>{% endif %}
+  </div>
+</div>
+<form method="post" action="{{ url_for('orders.save') }}" id="orderForm">
+<input type="hidden" name="form_key" value="{{ form_key }}">
+<input type="hidden" name="order_id" value="{{ order.id if order else '' }}">
+<input type="hidden" name="customer_id" id="customer_id" value="{{ c.id if c else '' }}">
+<input type="hidden" name="payload" id="payload">
+<input type="hidden" name="source" value="{{ order.source if order else 'manual' }}">
+
+<div class="card">
+  <div class="grid g4">
+    <div style="grid-column:span 2"><label>Customer</label>
+      <select id="custSel"><option value="">(not saved / type below)</option>{% for cu in customers %}<option value="{{ cu.id }}" {{ 'selected' if c and cu.id==c.id }}>{{ cu.name }}</option>{% endfor %}</select></div>
+    <div><label>P.O. Number</label><input data-h="po"></div>
+    <div><label>Date</label><input data-h="date"></div>
+  </div>
+  <details style="margin-top:10px" {{ 'open' if not c }}><summary>Customer details printed on the form</summary>
+    <div class="grid g4" style="margin-top:8px">
+      {% for k in spec.header if k not in ('po','date') %}
+      <div {% if k in ('name','address') %}style="grid-column:span 2"{% endif %}><label>{{ {'name':'Name','acct':'Acct #','address':'Address','city':'City','state':'State','zip':'Zip','mgmt':'Mgmt Co.','phone':'Phone'}[k] }}</label><input data-h="{{ k }}"></div>
+      {% endfor %}
+      {% if spec.has_sales_rep %}<div><label>Sales Rep</label><input id="sales_rep"></div>{% endif %}
+    </div>
+  </details>
+  <div class="field" style="margin-top:10px"><label>Comments {% if not spec.has_comments %}<span class="muted">(this form has no comments box - printed in the last line's comments)</span>{% endif %}</label><textarea id="comments" rows="2" placeholder="Notes for the order. Units and anything that doesn't fit a box get added here automatically."></textarea></div>
+</div>
+
+<div class="card row" id="quickfill">
+  <b>Fill from saved info:</b>
+  <input id="qUnit" list="dl_units" placeholder="Unit #" style="max-width:130px">
+  <button type="button" class="btn sm" id="qUnitBtn">Load unit</button>
+  <span class="muted">or</span>
+  <select id="qFp" style="max-width:200px"><option value="">Floorplan...</option>{% for f in fps %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select>
+  <button type="button" class="btn sm" id="qFpBtn">Load floorplan</button>
+  <span id="qMsg" class="muted small"></span>
+</div>
+
+<div id="blocks"></div>
+<div class="row" style="margin-bottom:16px"><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
+
+<div class="sticky-actions">
+  <button class="btn" name="action" value="save">Save</button>
+  <button class="btn primary" name="action" value="pdf">Save & create PDF</button>
+  <button class="btn ok" name="action" value="send">Save & email</button>
+  {% if order %}<a class="btn" href="{{ url_for('orders.view', oid=order.id) }}">Cancel</a>{% endif %}
+</div>
+</form>
+<datalist id="dl_units">{% for u in units %}<option value="{{ u.unit_number }}">{{ u.fp or '' }}</option>{% endfor %}</datalist>
+{% endblock %}
+{% block scripts %}
+<script>
+const SPEC = {{ spec|tojson }}, DATA = {{ data|tojson }}, SUGG = {{ sugg|tojson }};
+const FORM_KEY = {{ form_key|tojson }}, API_UNIT = {{ url_for('orders.api_unit')|tojson }};
+const API_CUST = {{ url_for('orders.api_customer', cid=0)|tojson }}.replace(/0$/, '');
+const HAS_UNIT_FIELD = SPEC.has_unit_field;
+let dirty = false;
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// datalists for text suggestions
+(function(){
+  const holder = document.createElement('div'); holder.hidden = true;
+  for (const [k, vals] of Object.entries(SUGG.suggest || {})) {
+    const dl = document.createElement('datalist'); dl.id = 'dl_' + k;
+    vals.forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+    holder.appendChild(dl);
+  }
+  document.body.appendChild(holder);
+})();
+
+// header
+const H = DATA.header || {};
+document.querySelectorAll('[data-h]').forEach(i => i.value = H[i.dataset.h] || '');
+if ($('#sales_rep')) $('#sales_rep').value = DATA.sales_rep || '';
+$('#comments').value = DATA.comments || '';
+
+function fieldHTML(f, bi){
+  const id = `b${bi}_${f.key}`;
+  if (f.kind === 'choice') {
+    return `<div><label for="${id}">${esc(f.label)}</label><select id="${id}" data-k="${f.key}"><option value=""></option>${
+      f.options.map(o => `<option>${esc(o)}</option>`).join('')}</select></div>`;
+  }
+  if (f.kind === 'bool') {
+    return `<div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" id="${id}" data-k="${f.key}"> ${esc(f.label)}</label></div>`;
+  }
+  if (f.kind === 'lines') {
+    return `<div class="wide"><label for="${id}">${esc(f.label)}</label><input id="${id}" data-k="${f.key}"></div>`;
+  }
+  const dl = (SUGG.suggest && SUGG.suggest[f.key] && SUGG.suggest[f.key].length) ? `list="dl_${f.key}"` : '';
+  return `<div><label for="${id}">${esc(f.label)}</label><input id="${id}" data-k="${f.key}" ${dl} ${f.measure ? 'inputmode="decimal"' : ''}></div>`;
+}
+
+let blockCount = 0;
+function addBlock(values, predictedKeys){
+  const bi = blockCount++;
+  const el = document.createElement('div'); el.className = 'blk'; el.dataset.bi = bi;
+  el.innerHTML = `<div class="blk-h"><strong class="ln">Line</strong>
+     <label style="margin:0">Unit #</label><input data-k="unit" list="dl_units" style="width:110px">
+     <button type="button" class="btn sm" data-act="load" title="Fill this line from the unit's saved measurements">Load</button>
+     <span class="muted small roomhint"></span><span class="spacer"></span>
+     <button type="button" class="btn sm" data-act="dup">Duplicate</button>
+     <button type="button" class="btn sm" data-act="clear">Clear</button>
+     <button type="button" class="btn sm danger" data-act="rm">Remove</button></div>
+     <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit').map(f => fieldHTML(f, bi)).join('')}</div>`;
+  $('#blocks').appendChild(el);
+  setBlock(el, values || {}, predictedKeys);
+  el.addEventListener('input', ev => onUserEdit(el, ev.target));
+  el.addEventListener('change', ev => onUserEdit(el, ev.target));
+  el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
+  el.querySelector('[data-act=clear]').onclick = () => { setBlock(el, {}, null, true); dirty = true; };
+  el.querySelector('[data-act=dup]').onclick = () => { const v = getBlock(el); const n = addBlock(v); el.after(n); renumber(); dirty = true; };
+  el.querySelector('[data-act=load]').onclick = () => loadUnit(el.querySelector('[data-k=unit]').value, null, el);
+  renumber();
+  return el;
+}
+
+function setBlock(el, v, predictedKeys, clearAll){
+  el.dataset.room = v._room || '';
+  el.querySelector('.roomhint').textContent = v._room ? `Room: ${v._room}` : '';
+  el.dataset.touched = (Object.keys(v).length && !predictedKeys) ? '1' : '';
+  el.querySelectorAll('[data-k]').forEach(i => {
+    const k = i.dataset.k; let val = v[k];
+    if (clearAll) val = '';
+    if (val === undefined) { if (!clearAll) return; val = ''; }
+    if (i.type === 'checkbox') i.checked = ['yes','true','1','y','x','on'].includes(String(val).toLowerCase());
+    else if (i.tagName === 'SELECT') {
+      if (val && ![...i.options].some(o => o.value === val)) {
+        const o = document.createElement('option'); o.value = val; o.textContent = val + ' (custom - goes to comments)'; o.className = 'custom-opt'; i.appendChild(o);
+      }
+      i.value = val || '';
+    } else i.value = val ?? '';
+    i.classList.toggle('predicted', !!(predictedKeys && val !== '' && val !== undefined && predictedKeys.includes(k)));
+  });
+}
+
+function getBlock(el){
+  const v = {};
+  el.querySelectorAll('[data-k]').forEach(i => {
+    const k = i.dataset.k;
+    if (i.type === 'checkbox') { if (i.checked) v[k] = 'Yes'; }
+    else if (i.value.trim() !== '') v[k] = i.value.trim();
+  });
+  if (el.dataset.room && !v.room) v._room = el.dataset.room;
+  return v;
+}
+
+function onUserEdit(el, target){
+  dirty = true;
+  if (target && target.classList) target.classList.remove('predicted');
+  if (!el.dataset.touched) {
+    el.dataset.touched = '1';
+    // predict this customer's usual choices for the empty dropdowns of a newly started line
+    for (const [k, val] of Object.entries(SUGG.defaults || {})) {
+      const i = el.querySelector(`[data-k="${k}"]`);
+      if (i && i !== target && i.tagName === 'SELECT' && !i.value) { i.value = val; i.classList.add('predicted'); }
+    }
+  }
+  updatePageNote();
+}
+
+function renumber(){
+  document.querySelectorAll('#blocks .blk').forEach((b, i) => b.querySelector('.ln').textContent = 'Line ' + (i + 1));
+  updatePageNote();
+}
+function updatePageNote(){
+  const n = [...document.querySelectorAll('#blocks .blk')].filter(b => Object.keys(getBlock(b)).length).length;
+  const pages = Math.max(1, Math.ceil(n / SPEC.blocks_per_page));
+  $('#pageNote').textContent = `${n} line(s) filled · this form holds ${SPEC.blocks_per_page} per page` + (pages > 1 ? ` → ${pages} pages` : '');
+}
+
+async function loadUnit(unit, floorplan, targetEl){
+  const cid = $('#customer_id').value;
+  $('#qMsg').textContent = '';
+  if (!cid) { $('#qMsg').textContent = 'Pick a saved customer first.'; return; }
+  const p = new URLSearchParams({customer: cid, form: FORM_KEY});
+  if (unit) p.set('unit', unit); if (floorplan) p.set('floorplan', floorplan);
+  const r = await fetch(API_UNIT + '?' + p).then(r => r.json());
+  if (!r.ok) { $('#qMsg').textContent = r.error; return; }
+  if (r.message) $('#qMsg').textContent = r.message;
+  else $('#qMsg').textContent = `Loaded ${r.blocks.length} item(s)` + (r.floorplan ? ` from floorplan ${r.floorplan}` : '') +
+       (r.verified.includes(false) ? ' - some are unverified, double-check' : '');
+  if (!r.blocks.length) return;
+  const blocks = r.blocks.slice();
+  if (targetEl) { setBlock(targetEl, blocks.shift(), Object.keys(r.blocks[0])); targetEl.dataset.touched = '1'; }
+  // reuse empty lines first, then add more
+  const empties = [...document.querySelectorAll('#blocks .blk')].filter(b => !Object.keys(getBlock(b)).length);
+  blocks.forEach(b => {
+    const el = empties.shift();
+    if (el) { setBlock(el, b, Object.keys(b)); el.dataset.touched = '1'; }
+    else { const n = addBlock(b, Object.keys(b)); n.dataset.touched = '1'; }
+  });
+  dirty = true; renumber();
+}
+
+$('#qUnitBtn').onclick = () => loadUnit($('#qUnit').value.trim(), null, null);
+$('#qFpBtn').onclick = () => loadUnit(null, $('#qFp').value, null);
+$('#addBlock').onclick = () => { addBlock({}); dirty = true; };
+$('#switchForm').onchange = e => {
+  if (dirty && !confirm('Switch form? Unsaved changes on this page will be lost.')) { e.target.value = FORM_KEY; return; }
+  const c = $('#customer_id').value;
+  location.href = '{{ url_for("orders.editor") }}?form=' + e.target.value + (c ? '&customer=' + c : '');
+};
+$('#custSel').onchange = async e => {
+  const id = e.target.value;
+  const anyData = [...document.querySelectorAll('#blocks .blk')].some(b => Object.keys(getBlock(b)).length);
+  if (!anyData && !{{ 'true' if order else 'false' }}) {
+    location.href = '{{ url_for("orders.editor") }}?form=' + FORM_KEY + (id ? '&customer=' + id : ''); return;
+  }
+  $('#customer_id').value = id;
+  if (!id) return;
+  const r = await fetch(API_CUST + id).then(r => r.json());
+  if (r.ok) document.querySelectorAll('[data-h]').forEach(i => { const k = i.dataset.h; if (k in r.header) i.value = r.header[k]; });
+  $('#qMsg').textContent = 'Customer changed - save and reopen to refresh unit suggestions.';
+  dirty = true;
+};
+
+// initial blocks
+const initial = (DATA.blocks && DATA.blocks.length) ? DATA.blocks : [];
+const fromEmail = {{ 'true' if order and order.source == 'email' and order.status == 'Draft' else 'false' }};
+initial.forEach(b => addBlock(b, fromEmail ? Object.keys(b) : null));
+for (let i = initial.length; i < SPEC.blocks_per_page; i++) addBlock({});
+
+document.querySelectorAll('[data-h], #comments, #sales_rep').forEach(i => i.addEventListener('input', () => dirty = true));
+$('#orderForm').addEventListener('submit', () => {
+  const header = {}; document.querySelectorAll('[data-h]').forEach(i => { if (i.value.trim()) header[i.dataset.h] = i.value.trim(); });
+  const blocks = [...document.querySelectorAll('#blocks .blk')].map(getBlock).filter(b => Object.keys(b).length);
+  $('#payload').value = JSON.stringify({header, blocks, comments: $('#comments').value.trim(),
+                                        sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : ''});
+  dirty = false;
+});
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+</script>
+{% endblock %}

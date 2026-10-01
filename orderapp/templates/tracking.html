@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}Order tracking{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Order tracking</h1><div class="muted">Your own status board. Orders made here show up automatically; add ones placed elsewhere manually.</div></div></div>
+<div class="row" style="margin-bottom:10px">
+  {% for k in ['open','all'] + statuses %}
+  <a class="tag {{ 'st-' ~ k.split()[0] if k not in ('open','all') }}" style="{{ 'outline:2px solid var(--brand)' if st==k }}" href="{{ url_for('orders.tracking', status=k, q=s) }}">{{ k|capitalize if k in ('open','all') else k }}{% if k in counts %} ({{ counts[k] }}){% endif %}</a>
+  {% endfor %}
+  <span class="spacer"></span>
+  <form class="row"><input type="hidden" name="status" value="{{ st }}"><input name="q" value="{{ s }}" placeholder="Search customer, PO, vendor #" style="width:240px"><button class="btn sm">Search</button></form>
+</div>
+<div class="tablewrap"><table>
+<tr><th>#</th><th>Customer</th><th>Order</th><th>PO</th><th>Ordered</th><th>Vendor #</th><th>Due</th><th>Status</th></tr>
+{% for o in rows %}
+<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td><td>{{ o.title }}<div class="small muted">{{ (o.notes or '')[:60] }}</div></td><td>{{ o.po or '' }}</td><td class="nowrap">{{ o.order_date or '' }}</td><td>{{ o.vendor_ref or '' }}</td><td class="nowrap">{{ o.due_date or '' }}</td>
+<td><form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}"><input type="hidden" name="next" value="{{ request.full_path }}">
+<select name="status" onchange="this.form.submit()" style="width:auto;padding:3px 6px">{% for x in statuses %}<option {{ 'selected' if x==o.status }}>{{ x }}</option>{% endfor %}</select></form></td></tr>
+{% else %}<tr><td colspan="8" class="empty">No orders here.</td></tr>{% endfor %}
+</table></div>
+<details class="card" style="margin-top:16px" {{ 'open' if not rows }}><summary>Add an order placed outside the app</summary>
+<form method="post" action="{{ url_for('orders.tracking_add') }}" class="grid g4" style="margin-top:10px">
+  <div style="grid-column:span 2"><label>What</label><input name="title" placeholder="e.g. 12 vertical blinds - phone order"></div>
+  <div><label>Customer</label><select name="customer_id"><option value="">(none)</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+  <div><label>Status</label><select name="status">{% for x in statuses %}<option {{ 'selected' if x=='Sent' }}>{{ x }}</option>{% endfor %}</select></div>
+  <div><label>PO</label><input name="po"></div><div><label>Order date</label><input name="order_date" placeholder="today"></div>
+  <div><label>Vendor / tracking #</label><input name="vendor_ref"></div><div><label>Due / ETA</label><input type="date" name="due_date"></div>
+  <div style="grid-column:1/-1"><label>Notes</label><input name="notes"></div>
+  <div><button class="btn primary">Add</button></div>
+</form></details>
+{% endblock %}

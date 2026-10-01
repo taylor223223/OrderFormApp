@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}Review{% endblock %}
+{% block body %}
+<h1>Review queue</h1><div class="muted">Proposed updates from imports, emails and orders. Approve what's right.</div>
+<div class="tablewrap" style="margin-top:12px"><table>
+<tr><th>What</th><th>From</th><th>Created</th><th class="right">Items</th><th></th></tr>
+{% for b in batches %}<tr><td><a href="{{ url_for('imports.review_batch', bid=b.id) }}">{{ b.label }}</a></td><td>{{ b.source }}</td><td class="small">{{ b.created[:16] }}</td><td class="right">{{ b.n }}</td><td class="right"><a class="btn sm primary" href="{{ url_for('imports.review_batch', bid=b.id) }}">Review</a></td></tr>
+{% else %}<tr><td colspan="5" class="empty">Nothing waiting.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

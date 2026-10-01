@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Customers{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Customers</h1><div class="muted">Properties / accounts with their contacts, layouts, units and measurements.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('imports.upload') }}">Import CSV</a><a class="btn primary" href="{{ url_for('customers.new') }}">+ Add customer</a></div></div>
+<form class="row" style="margin-bottom:12px"><input name="q" value="{{ search }}" placeholder="Search name, acct #, mgmt co., city, contact..." style="max-width:420px"><button class="btn">Search</button>{% if search %}<a href="{{ url_for('customers.index') }}">Clear</a>{% endif %}</form>
+<div class="tablewrap"><table>
+<tr><th>Name</th><th>Acct #</th><th>Mgmt Co.</th><th>City</th><th>Phone</th><th class="right">Units</th><th class="right">Orders</th><th>Last order</th></tr>
+{% for c in customers %}
+<tr><td><a href="{{ url_for('customers.view', cid=c.id) }}"><b>{{ c.name }}</b></a></td><td>{{ c.acct or '' }}</td><td>{{ c.mgmt or '' }}</td><td>{{ c.city or '' }}</td><td class="nowrap">{{ c.phone or '' }}</td><td class="right">{{ c.n_units }}</td><td class="right">{{ c.n_orders }}</td><td class="nowrap">{{ c.last_order or '' }}</td></tr>
+{% else %}<tr><td colspan="8" class="empty">No customers yet. Add one or import a CSV.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

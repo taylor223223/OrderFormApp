@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Unit {{ u.unit_number }} - {{ c.name }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('customers.view', cid=c.id, tab='units') }}">← {{ c.name }}</a></div><h1>Unit {{ u.unit_number }}</h1>
+<div class="muted">{% if fp %}Floorplan <a href="{{ url_for('customers.floorplan', fid=fp.id) }}">{{ fp.name }}</a>{% else %}No floorplan assigned{% endif %}{% if u.building %} · Building {{ u.building }}{% endif %}</div></div>
+<div class="row"><a class="btn primary" href="{{ url_for('orders.new', customer=c.id) }}">+ Order for this unit</a></div></div>
+<h2>Unit-specific measurements <span class="muted small">(override the floorplan for the same product + room)</span></h2>
+{% set rows = own %}{% set ctx = {'customer_id': c.id, 'unit_id': u.id} %}{% include "_meas_table.html" %}
+{% if fp %}<h2>From floorplan {{ fp.name }}</h2>{% set rows = inherited %}{% set ctx = {'customer_id': c.id, 'floorplan_id': fp.id} %}{% include "_meas_table.html" %}{% endif %}
+<div class="grid g2" style="margin-top:16px">
+<form method="post" class="card"><h3 style="margin-top:0">Unit details</h3>
+<div class="grid g2"><div><label>Unit #</label><input name="unit_number" value="{{ u.unit_number }}"></div><div><label>Building</label><input name="building" value="{{ u.building or '' }}"></div>
+<div style="grid-column:1/-1"><label>Floorplan</label><select name="floorplan_id"><option value="">(none)</option>{% for f in fps %}<option value="{{ f.id }}" {{ 'selected' if f.id==u.floorplan_id }}>{{ f.name }}</option>{% endfor %}</select></div>
+<div style="grid-column:1/-1"><label>Notes</label><textarea name="notes">{{ u.notes or '' }}</textarea></div></div>
+<button class="btn primary">Save</button></form>
+<div class="card"><h3 style="margin-top:0">Orders mentioning this unit</h3>
+{% for o in orders %}<div><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }} {{ o.title }}</a> <span class="muted small">{{ o.order_date or '' }} {{ o.status }}</span></div>{% else %}<div class="muted">None.</div>{% endfor %}
+<form method="post" action="{{ url_for('customers.unit_delete', uid=u.id) }}" style="margin-top:16px" onsubmit="return confirm('Delete unit?')"><button class="btn sm danger">Delete unit</button></form></div></div>
+{% endblock %}

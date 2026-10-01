@@ -1,0 +1,11 @@
+<div class="tablewrap"><table>
+<tr><th>Product</th><th>Room / location</th><th>Qty</th><th>Size (W x H)</th><th>Details</th><th>Verified</th><th></th></tr>
+{% for m in rows %}<tr>
+<td><b>{{ m.label }}</b></td><td>{{ m.row.room or '' }}</td><td>{{ m.qty }}</td><td class="nowrap">{{ m.dims }}</td>
+<td class="small">{{ m.summary }}{% if m.row.notes %}<div class="muted">{{ m.row.notes }}</div>{% endif %}</td>
+<td>{% if m.row.verified %}<span class="tag ok">Verified</span>{% else %}<span class="tag warn">Unverified</span>{% endif %}</td>
+<td class="right nowrap"><a class="btn sm" href="{{ url_for('customers.measurement', mid=m.row.id) }}">Edit</a>
+<form method="post" class="inline" action="{{ url_for('customers.measurement_delete', mid=m.row.id) }}" onsubmit="return confirm('Delete this measurement?')"><button class="btn sm danger">×</button></form></td>
+</tr>{% else %}<tr><td colspan="7" class="empty">Nothing saved yet.</td></tr>{% endfor %}
+</table></div>
+<div style="margin-top:8px"><a class="btn primary sm" href="{{ url_for('customers.measurement', **ctx) }}">+ Add measurement</a></div>

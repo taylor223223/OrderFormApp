@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Map columns{% endblock %}
+{% block body %}
+<h1>Map columns</h1><div class="muted">{{ filename }} · {{ n }} rows. Check what each column means, then continue.</div>
+<form method="post" action="{{ url_for('imports.apply_mapping') }}" style="margin-top:12px">
+<input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="filename" value="{{ filename }}">
+<div class="card row"><label style="margin:0">Rows without a customer column belong to:</label>
+<select name="customer_id" style="max-width:300px"><option value="">(none)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if default_customer and default_customer|int==c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
+<div class="tablewrap"><table>
+<tr>{% for h in headers %}<th style="min-width:150px">{{ h }}<select name="map_{{ loop.index0 }}" style="margin-top:4px;font-weight:400;text-transform:none">{% for v, l in targets %}<option value="{{ v }}" {{ 'selected' if mapping[h]==v }}>{{ l }}</option>{% endfor %}</select></th>{% endfor %}</tr>
+{% for r in rows %}<tr>{% for h in headers %}<td class="small">{{ r.get(h, '') }}</td>{% endfor %}</tr>{% endfor %}
+</table></div>
+<div style="margin-top:12px"><button class="btn primary">Continue to review</button> <a class="btn" href="{{ url_for('imports.upload') }}">Cancel</a></div>
+</form>
+{% endblock %}

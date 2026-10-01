@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block title %}{{ 'Add customer' if new else 'Edit customer' }}{% endblock %}
+{% block body %}
+<h1>{{ 'Add customer' if new else 'Edit ' ~ c.name }}</h1>
+<form method="post" class="card" style="margin-top:12px">
+  <div class="grid g3">
+    <div class="field" style="grid-column:span 2"><label>Customer / property name *</label><input name="name" value="{{ c.name or '' }}" required></div>
+    <div class="field"><label>Acct #</label><input name="acct" value="{{ c.acct or '' }}"></div>
+    <div class="field" style="grid-column:1/-1"><label>Address</label><input name="address" value="{{ c.address or '' }}"></div>
+    <div class="field"><label>City</label><input name="city" value="{{ c.city or '' }}"></div>
+    <div class="field"><label>State</label><input name="state" value="{{ c.state or '' }}"></div>
+    <div class="field"><label>Zip</label><input name="zip" value="{{ c.zip or '' }}"></div>
+    <div class="field"><label>Mgmt Co.</label><input name="mgmt" value="{{ c.mgmt or '' }}"></div>
+    <div class="field"><label>Phone</label><input name="phone" value="{{ c.phone or '' }}"></div>
+    <div class="field"><label>Main email</label><input name="email" value="{{ c.email or '' }}"></div>
+    <div class="field" style="grid-column:1/-1"><label>Notes (delivery instructions, gate code, preferences...)</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
+  </div>
+  <button class="btn primary">Save</button> <a class="btn" href="{{ url_for('customers.view', cid=cid) if cid else url_for('customers.index') }}">Cancel</a>
+</form>
+{% endblock %}

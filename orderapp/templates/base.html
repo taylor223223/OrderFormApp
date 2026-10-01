@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Order Forms{% endblock %} - Order Form App</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+</head>
+<body>
+{% if username %}
+<header class="top">
+  <a class="brand" href="{{ url_for('main.dashboard') }}">Order Form App</a>
+  <nav>
+    {% set ep = request.endpoint or '' %}
+    <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}">Dashboard</a>
+    <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor') }}">New Order</a>
+    <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}">Customers</a>
+    <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}">Order Tracking</a>
+    <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}">Email</a>
+    <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') }}">Import CSV</a>
+    <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}">Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>
+    <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}">Settings</a>
+  </nav>
+  <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn">Log out</button></form>
+  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close the Order Form App?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>
+</header>
+{% endif %}
+<main>
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, m in msgs %}{% set f = m|flashparse %}
+    <div class="flash {{ cat }}">{{ f.text }}{% if f.url %} <a href="{{ f.url }}">{{ f.link }}</a>{% endif %}</div>
+  {% endfor %}
+{% endwith %}
+{% block body %}{% endblock %}
+</main>
+<script>
+const CSRF = document.querySelector('meta[name=csrf-token]').content;
+document.querySelectorAll('form[method=post], form[method=POST]').forEach(f => {
+  if (!f.querySelector('input[name=csrf_token]')) {
+    const i = document.createElement('input'); i.type='hidden'; i.name='csrf_token'; i.value=CSRF; f.appendChild(i);
+  }
+});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

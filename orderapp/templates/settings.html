@@ -1,0 +1,79 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<form method="post" class="card" style="margin-top:12px">
+  <h3 style="margin-top:0">Order forms</h3>
+  <div class="grid g3">
+    <div><label>Sales rep name (printed on forms)</label><input name="sales_rep" value="{{ v.sales_rep }}"></div>
+    <div><label>Date format</label><select name="date_format">{% for f, l in [('%m/%d/%Y','09/30/2026'),('%m/%d/%y','09/30/26'),('%Y-%m-%d','2026-09-30')] %}<option value="{{ f }}" {{ 'selected' if v.date_format==f }}>{{ l }}</option>{% endfor %}</select></div>
+    <div><label>Log out after (minutes)</label><input name="session_minutes" value="{{ v.session_minutes }}"></div>
+    <div style="grid-column:1/-1"><label>Save PDFs to folder</label><input name="output_dir" value="{{ v.output_dir }}" placeholder="{{ default_out }}"><div class="small muted">Leave blank for {{ default_out }}. Each customer gets a subfolder.</div></div>
+  </div>
+  <h3 id="email">Email</h3>
+  <div class="grid g2">
+    <div><label>Connect with</label><select name="email_provider" id="prov">
+      <option value="outlook_desktop" {{ 'selected' if v.email_provider=='outlook_desktop' }}>Outlook on this PC (classic Outlook) - no setup</option>
+      <option value="graph" {{ 'selected' if v.email_provider=='graph' }}>Microsoft 365 / new Outlook (sign in)</option>
+      <option value="eml" {{ 'selected' if v.email_provider=='eml' }}>No connection - create draft files</option></select>
+      <div class="small muted" id="provhelp"></div></div>
+    <div><label>Default when sending</label><select name="send_mode"><option value="review" {{ 'selected' if v.send_mode!='send' }}>Open a draft for me to review (safer)</option><option value="send" {{ 'selected' if v.send_mode=='send' }}>Send immediately</option></select></div>
+    <div><label>Send orders to</label><input name="order_to" value="{{ v.order_to }}"></div>
+    <div><label>Always CC</label><input name="order_cc" value="{{ v.order_cc }}"></div>
+    <div style="grid-column:1/-1"><label>Subject template</label><input name="subject_template" value="{{ v.subject_template }}"><div class="small muted">Placeholders: {title} {customer} {po} {date} {sales_rep} {order_id}</div></div>
+    <div style="grid-column:1/-1"><label>Message template</label><textarea name="body_template" rows="5">{{ v.body_template }}</textarea></div>
+  </div>
+  <div id="graphbox" class="card" style="background:#fafbfc">
+    <b>Microsoft 365 sign-in</b> <span class="small muted">(only needed for "new Outlook" or if classic Outlook isn't installed)</span>
+    <div class="grid g2" style="margin-top:8px">
+      <div><label>Application (client) ID</label><input name="graph_client_id" value="{{ v.graph_client_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+      <div><label>Tenant</label><input name="graph_tenant" value="{{ v.graph_tenant }}"><div class="small muted">"common" works for most; or your company's tenant ID.</div></div>
+    </div>
+    <div class="small muted">See README → "Microsoft 365 setup" for the 5-minute app registration.</div>
+  </div>
+  <button class="btn primary">Save settings</button>
+</form>
+<div class="card" id="graphcard"><h3 style="margin-top:0">Microsoft account</h3>
+  {% if graph_user %}Signed in as <b>{{ graph_user }}</b>
+    <form method="post" action="{{ url_for('settings.graph_signout') }}" class="inline"><button class="btn sm">Sign out</button></form>
+  {% else %}<button class="btn" id="signin" {{ 'disabled' if not v.graph_client_id }}>Sign in to Microsoft</button> <span class="small muted">{{ '' if v.graph_client_id else 'Save a client ID first.' }}</span>{% endif %}
+  <div id="signinMsg" class="small" style="margin-top:8px"></div>
+</div>
+<div class="card"><h3 style="margin-top:0">Outlook on this PC</h3>{% if od_ok %}<span class="tag ok">Available</span> Uses the account your Outlook app is signed in to.{% else %}<span class="tag warn">Not available</span> {{ od_why }}{% endif %}</div>
+<div class="grid g2">
+<form method="post" action="{{ url_for('settings.password') }}" class="card"><h3 style="margin-top:0">Change password</h3>
+  <div class="field"><label>Current</label><input type="password" name="old"></div>
+  <div class="field"><label>New (8+ characters)</label><input type="password" name="new"></div>
+  <div class="field"><label>Confirm new</label><input type="password" name="new2"></div><button class="btn">Change password</button></form>
+<div class="card"><h3 style="margin-top:0">Backup & export</h3>
+  <p class="small muted">Your data lives in {{ data_dir }}. Back it up now and then (OneDrive is a good place for the backup file).</p>
+  <div class="row"><a class="btn" href="{{ url_for('settings.backup') }}">Download backup</a>
+  <a class="btn" href="{{ url_for('settings.export', what='customers') }}">Customers CSV</a>
+  <a class="btn" href="{{ url_for('settings.export', what='units') }}">Units CSV</a>
+  <a class="btn" href="{{ url_for('settings.export', what='measurements') }}">Measurements CSV</a></div>
+  <p class="small muted">Version {{ app_version }}</p></div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+const help = {outlook_desktop:'Reads and sends through the Outlook app installed on this computer. Works with classic Outlook (not the "new Outlook" toggle).',
+  graph:'Signs in to your Microsoft work/school or Outlook.com account. Works with new Outlook. Needs a one-time app registration.',
+  eml:'Inbox reading is off. Sending creates an email draft file with the PDF attached and opens it in your mail app.'};
+const prov = document.getElementById('prov');
+function upd(){ document.getElementById('provhelp').textContent = help[prov.value]; document.getElementById('graphbox').style.display = prov.value==='graph' ? '' : 'none'; document.getElementById('graphcard').style.display = prov.value==='graph' ? '' : 'none'; }
+prov.onchange = upd; upd();
+const si = document.getElementById('signin');
+if (si) si.onclick = async () => {
+  const m = document.getElementById('signinMsg');
+  const r = await fetch('{{ url_for("settings.graph_signin") }}', {method:'POST', headers:{'X-CSRF-Token': CSRF}}).then(r => r.json());
+  if (!r.ok) { m.textContent = r.error; return; }
+  m.innerHTML = '';
+  const a = document.createElement('div');
+  a.innerHTML = `Go to <a target="_blank" rel="noopener"></a> and enter code <b style="font-size:18px;letter-spacing:2px"></b>`;
+  a.querySelector('a').href = r.url; a.querySelector('a').textContent = r.url; a.querySelector('b').textContent = r.code;
+  m.appendChild(a);
+  const t = setInterval(async () => {
+    const s = await fetch('{{ url_for("settings.graph_status") }}').then(r => r.json());
+    if (s.status === 'done') { clearInterval(t); location.reload(); }
+    if (s.status === 'error') { clearInterval(t); m.textContent = s.message; }
+  }, 3000);
+};
+</script>{% endblock %}

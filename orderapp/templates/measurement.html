@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block title %}Measurement - {{ c.name }}{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ back }}">← Back</a></div>
+<h1>{{ 'Edit' if m else 'Add' }} measurement</h1><div class="muted">{{ c.name }} · {{ where }}</div>
+<form method="post" class="card" style="margin-top:12px">
+  {% if not m %}<input type="hidden" name="customer_id" value="{{ c.id }}"><input type="hidden" name="floorplan_id" value="{{ fid or '' }}"><input type="hidden" name="unit_id" value="{{ uid or '' }}">{% endif %}
+  <div class="grid g3">
+    <div><label>Product</label><select name="product" id="product">{% for k, p in products.items() %}<option value="{{ k }}" {{ 'selected' if k==sel_product }}>{{ p.label }}</option>{% endfor %}</select></div>
+    <div><label>Room / location in unit</label><input name="room" list="rooms" value="{{ m.room if m else '' }}" placeholder="e.g. Master Bedroom, Hall Closet, Patio"><datalist id="rooms">{% for r in rooms %}<option value="{{ r }}">{% endfor %}{% for r in ['Master Bedroom','Bedroom 2','Bedroom 3','Living Room','Kitchen','Bath','Hall Closet','Linen Closet','Laundry','Patio','Entry','Storage'] %}<option value="{{ r }}">{% endfor %}</datalist></div>
+    <div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="verified" value="1" {{ 'checked' if m and m.verified }}> Verified / pre-checked measurement</label></div>
+  </div>
+  <h3>Details <span class="muted small">(dropdowns suggest standard options - you can type any custom size, color or style)</span></h3>
+  <div id="fields" class="blk-b" style="padding:0"></div>
+  <div class="field" style="margin-top:10px"><label>Notes</label><textarea name="notes">{{ m.notes if m and m.notes else '' }}</textarea></div>
+  <div class="row"><button class="btn primary">Save</button><button class="btn" name="again" value="1">Save & add another</button><a class="btn" href="{{ back }}">Cancel</a></div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+const PRODUCTS = {{ products|tojson }};
+const DATA = {{ data|tojson }};
+function render(){
+  const p = document.getElementById('product').value, box = document.getElementById('fields');
+  const keep = {}; box.querySelectorAll('input').forEach(i => { if(i.value) keep[i.name] = i.value; });
+  box.innerHTML = '';
+  PRODUCTS[p].fields.forEach(f => {
+    const d = document.createElement('div');
+    const id = 'dl_' + f.key;
+    const v = keep['f_'+f.key] ?? DATA[f.key] ?? '';
+    d.innerHTML = `<label></label><input name="f_${f.key}" ${f.suggest ? `list="${id}"` : ''} ${f.measure ? 'inputmode="decimal" placeholder="inches"' : ''}>` +
+      (f.suggest ? `<datalist id="${id}">${f.suggest.map(s => `<option value="${s.replace(/"/g,'&quot;')}">`).join('')}</datalist>` : '');
+    d.querySelector('label').textContent = f.label;
+    d.querySelector('input').value = v;
+    box.appendChild(d);
+  });
+}
+document.getElementById('product').addEventListener('change', render); render();
+</script>
+{% endblock %}

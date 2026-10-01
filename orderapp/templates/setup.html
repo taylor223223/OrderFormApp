@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}First-time setup{% endblock %}
+{% block body %}
+<div class="auth card">
+  <h1>Welcome</h1>
+  <p class="muted">Create the login for this app. Your data stays on this computer only.</p>
+  <form method="post">
+    <div class="field"><label>Username</label><input name="username" autofocus></div>
+    <div class="field"><label>Password (8+ characters)</label><input type="password" name="password" autocomplete="new-password"></div>
+    <div class="field"><label>Confirm password</label><input type="password" name="password2" autocomplete="new-password"></div>
+    <button class="btn primary">Create account</button>
+  </form>
+</div>
+{% endblock %}
