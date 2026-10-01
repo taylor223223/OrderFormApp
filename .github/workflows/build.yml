@@ -1,0 +1,35 @@
+name: Build Windows exe
+
+on:
+  push:
+    tags: ["v*"]          # push a tag like v1.0.0 to publish a release
+  workflow_dispatch:       # or run it by hand from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements-dev.txt
+      - name: Test
+        run: python -m pytest -q
+      - name: Build exe
+        run: pyinstaller --noconfirm OrderFormApp.spec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OrderFormApp
+          path: dist/OrderFormApp.exe
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/OrderFormApp.exe
