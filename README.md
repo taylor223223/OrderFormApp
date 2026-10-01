@@ -1,5 +1,10 @@
 # Order Form App
 
+## >>> [Download the app: OrderFormApp.exe](https://github.com/taylor223223/OrderFormApp/releases/latest/download/OrderFormApp.exe) <<<
+
+Double-click the downloaded **OrderFormApp.exe**. Nothing else to install (no Python). If Windows shows "Windows protected your PC", click **More info -> Run anyway**. Everything below this line is for developers.
+
+
 A private Windows desktop app for filling out Apartment Interior Supply order forms. It keeps track of customers, their unit layouts and measurements, predicts form values from past orders, reads order requests from Outlook, and emails the finished PDFs.
 
 Everything runs on your own computer. The app opens in its own window (Edge/Chrome app mode) and only answers to `127.0.0.1`. The data is kept in one local database file.
