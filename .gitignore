@@ -1,0 +1,14 @@
+# never commit customer data or secrets
+*.db
+*.db-journal
+secret.key
+graph_token_cache.json
+uploads/
+email_attachments/
+# build / env
+.venv/
+build/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
