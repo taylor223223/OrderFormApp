@@ -9,6 +9,10 @@
     <a class="btn" href="{{ url_for('imports.upload', customer=c.id) }}">Import CSV</a>
   </div>
 </div>
+{% if today_stop %}<div class="onroute"><span>🗺️ <b>On today's route</b> · stop {{ stop_no[0] }} of {{ stop_no[1] }}{% if today_stop.products %} · estimating {{ today_stop.products }}{% endif %}{% if today_stop.notes %} · <i>{{ today_stop.notes }}</i>{% endif %}</span><span class="spacer"></span>
+{% if today_stop.status == 'Done' %}<span class="tag ok">✓ Visited {{ (today_stop.done_at or '')[11:16] }}</span>
+{% else %}<form method="post" action="{{ url_for('plan.stop_action', sid=today_stop.id) }}"><input type="hidden" name="act" value="Done"><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn sm ok" title="Marks the stop done and logs a site visit">✓ Mark visited</button></form>{% endif %}
+<a class="btn sm" href="{{ url_for('plan.day', day=today_stop.day) }}">Route</a></div>{% endif %}
 {% if missing %}
 <div class="miss row" style="margin-bottom:14px"><span>Missing: <b>{{ missing|join(', ') }}</b></span><span class="spacer"></span>
   <form method="post" action="{{ url_for('customers.check', cid=c.id) }}"><button class="btn sm">Look in previous orders</button></form></div>

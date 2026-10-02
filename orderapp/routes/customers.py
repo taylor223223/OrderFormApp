@@ -95,7 +95,15 @@ def view(cid):
                     (cid, date.today().isoformat())),
             kinds=ACTIVITY_KINDS, statuses=CUSTOMER_STATUSES, stages=DEAL_STAGES, topics=TOPICS,
             today=date.today().isoformat(), now_local=datetime.now().strftime("%Y-%m-%dT%H:%M"))
+    from datetime import date as _date
+    today_stop = q("""SELECT * FROM route_stops WHERE customer_id=? AND day=? AND status<>'Skipped'
+                      ORDER BY position LIMIT 1""", (cid, _date.today().isoformat()), one=True)
+    stop_no = None
+    if today_stop:
+        ids = [r["id"] for r in q("SELECT id FROM route_stops WHERE day=? ORDER BY position, id", (today_stop["day"],))]
+        stop_no = (ids.index(today_stop["id"]) + 1, len(ids))
     return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders,
+                           today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
                            tab=tab, **crm)
 

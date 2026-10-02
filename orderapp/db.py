@@ -158,7 +158,7 @@ CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
 MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
                   "owner": "TEXT"},
-    "route_stops": {"products": "TEXT"},
+    "route_stops": {"products": "TEXT", "done_at": "TEXT"},
 }
 
 # quick picks for "what am I estimating" on a route stop

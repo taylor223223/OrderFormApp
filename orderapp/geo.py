@@ -194,13 +194,17 @@ def best_insertion(dur, current_order, new_idx, round_trip=True):
     return best_pos
 
 
-def google_maps_link(start_address, addresses, round_trip=True):
-    """Turn-by-turn in Google Maps (works on phone and PC). Google allows up to 9 waypoints."""
+def google_maps_link(start_address, addresses, round_trip=True, home=None):
+    """Turn-by-turn in Google Maps (works on phone and PC). Google allows up to 9 waypoints.
+    start_address "" = start from the phone's current location."""
     if not addresses:
         return None
-    dest = start_address if round_trip else addresses[-1]
-    way = addresses if round_trip else addresses[:-1]
-    q = {"api": "1", "origin": start_address, "destination": dest, "travelmode": "driving"}
+    end = home or start_address
+    dest = end if (round_trip and end) else addresses[-1]
+    way = addresses if (round_trip and end) else addresses[:-1]
+    q = {"api": "1", "destination": dest, "travelmode": "driving"}
+    if start_address:
+        q["origin"] = start_address
     if way:
         q["waypoints"] = "|".join(way[:9])
     return "https://www.google.com/maps/dir/?" + urllib.parse.urlencode(q)

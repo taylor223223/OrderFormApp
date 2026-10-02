@@ -155,3 +155,58 @@ def test_crm_and_routes(client):
         from orderapp.db import setting
         assert setting("report_to") == "boss@example.com"
         assert setting("route_return_to_start") == "0"
+
+
+def test_live_route_insertion(client):
+    """On the road: new stops go into the part of the day not yet driven; visited stops never move."""
+    c = client
+    from datetime import date, timedelta
+    day = (date.today() + timedelta(days=0)).isoformat()
+    with c.app.app_context():
+        from orderapp.db import x
+        x("DELETE FROM route_stops WHERE day=?", (day,))
+    cids = []
+    for i in range(5):
+        r = post(c, "/customers/new", {"name": f"Live Apts {i}", "address": f"{i} Test St", "city": "Mesa"})
+        cids.append(int(r.headers["Location"].rsplit("/", 1)[1]))
+    for cid in cids[:4]:
+        post(c, "/routes/add", {"customer_id": cid, "day": day})
+    post(c, f"/routes/day/{day}/optimize")
+    from orderapp.db import q
+    with c.app.app_context():
+        order = [r["id"] for r in q("SELECT id FROM route_stops WHERE day=? ORDER BY position", (day,))]
+    # visit the first two
+    post(c, f"/routes/stop/{order[0]}", {"act": "Done"})
+    post(c, f"/routes/stop/{order[1]}", {"act": "Done"})
+    # a call comes in: add a stop (dashboard-style, back to "/")
+    r = post(c, "/routes/add", {"customer_id": cids[4], "day": day, "source": "Call", "next": "/"})
+    assert r.headers["Location"].endswith("/")
+    with c.app.app_context():
+        rows = q("SELECT * FROM route_stops WHERE day=? ORDER BY position", (day,))
+    ids = [r["id"] for r in rows]
+    assert ids[:2] == order[:2]                         # visited stops stay first, untouched
+    new_pos = [r["customer_id"] for r in rows].index(cids[4])
+    assert new_pos >= 2                                  # never routed as an earlier stop
+    # re-plan rest of day keeps visited first
+    post(c, f"/routes/day/{day}/optimize")
+    with c.app.app_context():
+        ids2 = [r["id"] for r in q("SELECT id FROM route_stops WHERE day=? ORDER BY position", (day,))]
+    assert ids2[:2] == order[:2] and sorted(ids2) == sorted(ids)
+    # dashboard shows visited + next + day picker
+    dash = c.get("/").get_data(as_text=True)
+    assert "✓ Visited" in dash and ">next<" in dash and "Tomorrow" in dash and "Re-plan rest of today" in dash
+    # customer page shows it's on today's route; logging a site visit checks it off
+    nxt = rows[2]
+    page = c.get(f"/customers/{nxt['customer_id']}").get_data(as_text=True)
+    assert "On today&#39;s route" in page or "On today's route" in page
+    post(c, "/crm/log", {"customer_id": nxt["customer_id"], "kind": "Site visit", "notes": "Measured 3 units"})
+    with c.app.app_context():
+        st = q("SELECT * FROM route_stops WHERE id=?", (nxt["id"],), one=True)
+        assert st["status"] == "Done" and st["activity_id"]
+        assert q("SELECT COUNT(*) n FROM activities WHERE customer_id=? AND kind='Site visit'",
+                 (nxt["customer_id"],), one=True)["n"] == 1   # not double-logged
+    # adding for tomorrow from the dashboard
+    tmr = (date.today() + timedelta(days=1)).isoformat()
+    post(c, "/routes/add", {"customer_id": cids[0], "day": tmr, "next": "/"})
+    with c.app.app_context():
+        assert q("SELECT COUNT(*) n FROM route_stops WHERE day=? AND customer_id=?", (tmr, cids[0]), one=True)["n"] == 1

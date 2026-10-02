@@ -96,6 +96,17 @@ def log():
     topics = ", ".join(f.getlist("topics"))
     aid = log_activity(cid, kind, when, contact_id, contact_name, location, f.get("subject", "").strip(), topics,
                        f.get("notes", "").strip(), f.get("outcome", "").strip())
+    # logging a visit at a property that's on today's route checks that stop off
+    if cid and kind in ("Site visit", "Drop-in", "Meeting"):
+        st = q("""SELECT * FROM route_stops WHERE customer_id=? AND day=? AND status='Planned'
+                  ORDER BY position LIMIT 1""", (cid, date.today().isoformat()), one=True)
+        if st:
+            from .routes_plan import mark_done, plan_day
+            mark_done(st, activity_id=aid)
+            try:
+                plan_day(st["day"])
+            except Exception:  # noqa: BLE001 - map lookups are best-effort here
+                pass
     if cid and f.get("status") in CUSTOMER_STATUSES:
         x("UPDATE customers SET status=?, updated=? WHERE id=?", (f["status"], now(), cid))
     msgs = ["Logged."]

@@ -4,9 +4,9 @@
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('plan.week', week=day) }}">← Week</a></div>
 <h1>{{ d.strftime('%A, %b %d') }}</h1>
 <div class="row">{% if rows %}<span class="tag">🚗 {{ total }} driving</span><span class="tag">{{ miles }} mi</span><span class="tag">Start {{ res.start_time }}</span><span class="tag">Back ~{{ finish.strftime('%I:%M %p').lstrip('0') }}</span>{% if res.estimated %}<span class="tag warn" title="Add a free OpenRouteService key in Settings for real road times">estimated</span>{% endif %}{% endif %}</div></div>
-<div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}"><button class="btn primary" {{ 'disabled' if rows|length < 2 }}>Optimize route</button></form>
+<div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}">{% set n_done = rows|selectattr('s.status', 'equalto', 'Done')|list|length %}<button class="btn primary" {{ 'disabled' if rows|length < 2 }} title="{{ 'Re-orders only the stops you have not visited yet, starting from your last visited stop' if n_done else 'Puts the stops in the order with the least driving' }}">{{ '🔄 Re-plan rest of day' if n_done else 'Optimize route' }}</button></form>
 {% if rows %}<a class="btn" href="{{ url_for('plan.sheet', day=day) }}">Stop list</a>{% endif %}
-{% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">Open in Google Maps</a>{% endif %}</div></div>
+{% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">{{ 'Navigate remaining stops' if (n_done and d == d.today()) else 'Open in Google Maps' }}</a>{% endif %}</div></div>
 {% for e in res.errors %}<div class="flash error">{{ e }}</div>{% endfor %}
 {% if not res.start %}<div class="flash error">Couldn't find the starting address on the map. Fix it below or in Settings.</div>{% endif %}
 <div class="grid g2">
@@ -43,7 +43,7 @@
 </details></div>
 <div class="row stopacts" style="gap:4px">
 {% for act, lbl, ttl in [('up','↑','Earlier'),('down','↓','Later')] %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="{{ act }}"><button class="btn sm" title="{{ ttl }}">{{ lbl }}</button></form>{% endfor %}
-{% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Done"><button class="btn sm" title="Visited - logs a site visit in the CRM">✓ Done</button></form>{% endif %}
+{% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Done"><button class="btn sm ok" title="Visited - logs a site visit in the CRM">✓ Visited</button></form>{% endif %}
 {% if s.status=='Planned' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Skipped"><button class="btn sm" title="Skip today">Skip</button></form>
 {% else %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Planned"><button class="btn sm" title="Back to planned">↺</button></form>{% endif %}
 <form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" onsubmit="return confirm('Remove this stop?')"><input type="hidden" name="act" value="delete"><button class="btn sm danger">×</button></form>

@@ -207,3 +207,11 @@ a.stat:hover{text-decoration:none;transform:translateY(-1px);transition:transfor
 .pvtask{gap:6px;padding:3px 0}
 .pvact{padding:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .quicknote textarea{background:#fffdf5}
+
+/* v1.7 live route */
+.pvstop{align-items:center}
+.pvtxt{flex:1;color:var(--ink)} .pvtxt:hover{text-decoration:none}
+.pvacts{display:flex;gap:4px;flex-shrink:0}
+.pvstop.nextstop{background:#f0fdf4;border-radius:8px}
+.btn.ok{background:#16a34a;border-color:#15803d;color:#fff} .btn.ok:hover{background:#15803d}
+.onroute{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#f0fdf4;border:1px solid #bbf7d0;border-left:5px solid #16a34a;border-radius:10px;padding:8px 12px;margin-bottom:12px}
