@@ -14,8 +14,8 @@
   <form method="post" action="{{ url_for('customers.check', cid=c.id) }}"><button class="btn sm">Look in previous orders</button></form></div>
 {% endif %}
 <div class="tabs">
-  {% for k, l in [('info','Info & Contacts'),('layouts','Floorplans & Measurements'),('units','Units'),('orders','Orders'),('crm','CRM')] %}
-  <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}">{{ l }}</a>{% endfor %}
+  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('crm','CRM','#db2777')] %}
+  <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}" style="--c:{{ col }}">{{ l }}</a>{% endfor %}
 </div>
 
 {% if tab == 'info' %}

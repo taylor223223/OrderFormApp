@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#14213d">
+<meta name="theme-color" content="#7c2d12">
 <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -20,17 +20,17 @@
   <a class="brand" href="{{ url_for('main.dashboard') }}" title="Version {{ app_version }}">Order Form App <span style="font-weight:400;font-size:11px;opacity:.6">v{{ app_version }}</span></a>
   <nav>
     {% set ep = request.endpoint or '' %}
-    <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}">Dashboard</a>
-    <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor') }}">New Order</a>
-    <a href="{{ url_for('photos.field_order') }}" class="{{ 'on' if ep=='photos.field_order' }}">Photo Order</a>
-    <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}">Customers</a>
-    <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}">CRM</a>
-    <a href="{{ url_for('plan.week') }}" class="{{ 'on' if ep.startswith('plan.') }}">Routes</a>
-    <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}">Order Tracking</a>
-    <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}">Email</a>
-    <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') }}">Import CSV</a>
-    <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}">Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>
-    <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}">Settings</a>
+    <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}" style="--c:#f59e0b"><span class="ic">🏠</span>Dashboard</a>
+    <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor') }}" style="--c:#ea580c"><span class="ic">📝</span>New Order</a>
+    <a href="{{ url_for('photos.field_order') }}" class="{{ 'on' if ep=='photos.field_order' }}" style="--c:#e11d48"><span class="ic">📷</span>Photo Order</a>
+    <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}" style="--c:#d97706"><span class="ic">🏢</span>Customers</a>
+    <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
+    <a href="{{ url_for('plan.week') }}" class="{{ 'on' if ep.startswith('plan.') }}" style="--c:#65a30d"><span class="ic">🗺️</span>Routes</a>
+    <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}" style="--c:#0d9488"><span class="ic">📦</span>Order Tracking</a>
+    <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email</a>
+    <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') }}" style="--c:#a16207"><span class="ic">📥</span>Import CSV</a>
+    <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}" style="--c:#b45309"><span class="ic">✅</span>Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>
+    <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}" style="--c:#78716c"><span class="ic">⚙️</span>Settings</a>
   </nav>
   <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn">Log out</button></form>
 {% if not cloud %}  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close the Order Form App?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>{% endif %}

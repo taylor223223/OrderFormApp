@@ -124,3 +124,68 @@ details summary{cursor:pointer;color:var(--brand);font-weight:600}
 .writein{border-bottom:1px dotted #bbb;height:22px}
 @media print{header.top,.noprint,.flash{display:none!important} body{background:#fff} .card{border:0;box-shadow:none;padding:0} main{padding:0;max-width:none}}
 .stat.shortcut{border-left:4px solid var(--brand)}
+
+/* ===================== Warm theme (v1.3) ===================== */
+:root{
+  --bg:#fbf5ec; --panel:#fffdf9; --ink:#2b1d14; --muted:#7a6656; --line:#efe2d2;
+  --brand:#c2410c; --brand-soft:#fde6d6; --info:#b45309; --info-soft:#fef3c7;
+  --radius:12px;
+}
+body{background:var(--bg) radial-gradient(1200px 400px at 85% -120px,#fde3c8 0,transparent 70%) no-repeat}
+a{color:#b4410f}
+h1{color:#5a2a12;letter-spacing:-.01em}
+h2{color:#7c2d12}
+.top{background:linear-gradient(90deg,#4a1f0e,#7c2d12 45%,#9a3412);height:56px;box-shadow:0 2px 10px rgba(124,45,18,.25)}
+.top .brand{color:#fff7ed}
+.top nav a{color:#fde7d3;border-radius:9px;padding:7px 10px;display:inline-flex;align-items:center;gap:5px;
+  border-bottom:3px solid transparent;transition:background .15s}
+.top nav a .ic{font-size:14px;line-height:1}
+.top nav a:hover{background:rgba(255,255,255,.1);border-bottom-color:var(--c,#fb923c);text-decoration:none}
+.top nav a.on{background:var(--c,#ea580c);color:#fff;border-bottom-color:rgba(0,0,0,.18);box-shadow:inset 0 -2px 0 rgba(0,0,0,.12)}
+.top .tbtn{border-color:rgba(255,237,213,.35);color:#fde7d3}
+.top .tbtn:hover{background:rgba(255,255,255,.12)}
+.top .badge{background:#fbbf24;color:#4a1f0e}
+.card,.stat,.tablewrap,.formcard,.wday,.kcard{border-color:var(--line);box-shadow:0 1px 2px rgba(120,60,20,.05),0 4px 14px rgba(120,60,20,.05)}
+.btn{border-radius:9px;border-color:#e7d3bf;background:#fffaf4}
+.btn:hover{background:#fdeedd}
+.btn.primary{background:linear-gradient(180deg,#f97316,#c2410c);border-color:#b43c0b;color:#fff;box-shadow:0 2px 6px rgba(194,65,12,.25)}
+.btn.primary:hover{background:linear-gradient(180deg,#fb8a3c,#a8380a)}
+input[type=text],input[type=password],input[type=email],input[type=number],input[type=date],input[type=datetime-local],input[type=time],input[type=tel],input[type=search],input:not([type]),select,textarea{border-color:#e4d3c1;border-radius:8px;background:#fff}
+input:focus,select:focus,textarea:focus{outline:2px solid #fdba74;border-color:#ea580c}
+th{background:#fdf3e7;color:#8a5a3c}
+tr:hover td{background:#fff7ee}
+.tag{background:#f6ece1;color:#6b4a35}
+/* stat tiles get a warm color each */
+.stat{position:relative;overflow:hidden;border-top:4px solid #f59e0b}
+.grid .stat:nth-child(2){border-top-color:#ea580c} .grid .stat:nth-child(3){border-top-color:#e11d48}
+.grid .stat:nth-child(4){border-top-color:#0d9488}
+.stat .n{color:#7c2d12}
+.stat.shortcut{border-top:none;border-left:6px solid #db2777;background:linear-gradient(90deg,#fdf2f8,#fffdf9 60%)}
+.stat.shortcut + .stat.shortcut{border-left-color:#65a30d;background:linear-gradient(90deg,#f3fae6,#fffdf9 60%)}
+a.stat:hover{text-decoration:none;transform:translateY(-1px);transition:transform .12s}
+/* order form cards: cycle warm accents */
+.formcard{border-left:5px solid #f59e0b}
+.formcard:nth-child(5n+2){border-left-color:#ea580c} .formcard:nth-child(5n+3){border-left-color:#e11d48}
+.formcard:nth-child(5n+4){border-left-color:#d97706} .formcard:nth-child(5n+5){border-left-color:#0d9488}
+.formcard:hover{border-color:#fdba74;background:#fff8f0}
+/* in-page tabs (customer page etc.) */
+.tabs{border-bottom:2px solid var(--line)}
+.tabs a{border-radius:9px 9px 0 0;color:#8a6a55;border-bottom:3px solid transparent}
+.tabs a:hover{color:var(--c,#c2410c);text-decoration:none;background:#fff6ec}
+.tabs a.on{background:var(--c,#ea580c);color:#fff;border:none;margin-bottom:-2px}
+/* misc warm touches */
+.flash.ok{background:#ecfccb;border-color:#bef264;color:#3f6212}
+.flash.info,.flash.message{background:#fef3c7;border-color:#fcd34d;color:#78350f}
+.kcol{background:#f8ebdc} .wday.today{border-color:#ea580c;box-shadow:0 0 0 2px #fed7aa}
+.chip{background:#fffaf4;border-color:#ecd8c4} .chip:has(input:checked){background:#ffedd5;border-color:#fb923c;color:#7c2d12}
+.stopn{background:#c2410c}
+.pagehead h1::after{content:"";display:block;width:46px;height:4px;border-radius:2px;margin-top:6px;background:linear-gradient(90deg,#f59e0b,#ea580c,#db2777)}
+/* keep every tab visible: tighter on mid screens, wrap to a 2nd row when needed */
+.top nav a{padding:6px 8px;font-size:13.5px}
+@media (max-width:1500px){.top .brand span{display:none}}
+@media (min-width:701px) and (max-width:1380px){
+  .top{flex-wrap:wrap;height:auto;padding:6px 14px;row-gap:4px}
+  .top nav{order:3;flex:0 0 100%;flex-wrap:wrap;overflow:visible}
+  .top .brand{flex:1}
+}
+.flash:not(.ok):not(.error):not(.warn):not(.info){background:#fff7ed;border-color:#fdba74;color:#7c2d12}
