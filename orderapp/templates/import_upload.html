@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Import CSV{% endblock %}
 {% block body %}
-<h1>Import CSV / Excel</h1>
+<div class="pagehead"><div><h1>Import CSV / Excel</h1></div><div class="row"><a class="btn" href="{{ url_for('imports.template') }}">⬇ Download purchase-history template</a><a class="btn" href="{{ url_for('customers.history_search') }}">🔎 Search purchase history</a></div></div>
 <div class="muted">Previous orders, customer lists, unit lists or measurement sheets. Nothing is changed until you approve it on the review screen.</div>
 <form method="post" enctype="multipart/form-data" class="card" style="margin-top:12px;max-width:640px">
   <div class="field"><label>File (.csv or .xlsx)</label><input type="file" name="file" accept=".csv,.txt,.xlsx,.xlsm"></div>
@@ -8,12 +8,21 @@
     <select name="customer_id"><option value="">(file has a customer/property column)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if pre and pre|int==c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
   <button class="btn primary">Upload & map columns</button>
 </form>
+<div class="card" style="max-width:640px;border-left:5px solid #c2410c"><b>Importing past orders from the company</b>
+<ol class="small">
+  <li><b>One row per item ordered</b> (a line-item / invoice-detail export), not one row per invoice. Totals alone can't tell you colors or sizes.</li>
+  <li><b>Include the unit # if the export has it.</b> Rows with a unit become that unit's on-file sizes, so "unit 104" fills in next time. Rows without a unit are still saved to Purchase History.</li>
+  <li>Excel or CSV both work, including report-style files with title lines at the top. The app finds the header row itself.</li>
+  <li>Sizes and colors written in a description ("Vert blind 96 x 84 alabaster") are picked out automatically.</li>
+  <li>Big file covering many properties? That's fine. Rows are matched to properties by acct # or name. Unmatched names become new customers on the review screen, where you can uncheck them.</li>
+</ol>
+<div class="small muted">The template shows the ideal layout. Your company's column names don't have to match; you'll map them on the next screen.</div></div>
 <div class="card" style="max-width:640px"><b>What the app does with it</b>
 <ul class="small">
   <li>Matches rows to customers by acct #, email, or name (ignores "Apartments", "The", etc.).</li>
   <li><b>Fills blanks</b> on existing customers (pre-checked) and flags <b>conflicts</b> (unchecked - you choose).</li>
   <li>Adds new contacts, floorplans, units, and per-unit / per-floorplan measurements (skips ones already saved).</li>
-  <li>Rows with a PO or date become <b>previous orders</b>, which power the smart dropdowns.</li>
+  <li>Rows with a PO, invoice # or date become <b>previous orders</b>. They show on each customer's <b>Purchase History</b> tab and power the smart dropdowns.</li>
 </ul>
-<div class="small muted">Recognised headers include: Property, Acct #, Address, City, State, Zip, Mgmt Co, Phone, Email, Contact, Unit, Building, Floorplan, Product, Room, Qty, Item #, Width, Height, Color, Style, Core, Swing, PO, Date, Notes. You can fix the mapping on the next screen.</div></div>
+<div class="small muted">Recognised headers include: Property, Acct #, Address, City, State, Zip, Mgmt Co, Phone, Email, Contact, Unit, Building, Floorplan, Product, Room, Qty, Item #, Description, Width, Height, Color, Style, Core, Swing, PO, Invoice #, Date, Price, Amount, Notes. You can fix the mapping on the next screen.</div></div>
 {% endblock %}

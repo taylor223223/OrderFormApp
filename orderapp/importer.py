@@ -28,7 +28,10 @@ SYNONYMS = {
     "unit": ["unit", "unit#", "unitnumber", "unitno", "apt", "apartment", "aptno"],
     "building": ["building", "bldg", "buildingno"],
     "floorplan": ["floorplan", "floorplanname", "plan", "layout", "unittype", "fp", "model"],
-    "product": ["product", "producttype", "item", "itemtype", "category", "type", "description", "desc"],
+    "product": ["product", "producttype", "item", "itemtype", "category", "type", "productcategory", "itemclass",
+                "class", "productline"],
+    "description": ["description", "desc", "itemdescription", "productdescription", "itemdesc", "lineitem",
+                    "salesdescription", "productname", "itemname"],
     "room": ["room", "location", "loc", "area"],
     "qty": ["qty", "quantity", "count", "pcs"],
     "item_no": ["itemno", "item#", "itemnumber", "sku", "partno", "part#", "partnumber"],
@@ -42,16 +45,25 @@ SYNONYMS = {
     "core": ["core", "coretype"],
     "swing": ["swing", "hand", "handing", "doorswing"],
     "thickness": ["thickness", "doorthickness"],
-    "po": ["po", "po#", "ponumber", "purchaseorder", "pono"],
-    "order_date": ["date", "orderdate", "dateordered", "orderedon"],
+    "po": ["po", "po#", "ponumber", "purchaseorder", "pono", "customerpo", "custpo", "purchaseorder#"],
+    "invoice": ["invoice", "invoice#", "invoiceno", "invoicenumber", "inv", "inv#", "invno", "ticket", "ticket#",
+                "salesorder", "so", "so#", "order#", "ordernumber", "orderno", "num", "docnumber", "doc#", "ref"],
+    "order_date": ["date", "orderdate", "dateordered", "orderedon", "invoicedate", "shipdate", "datesold",
+                   "txndate", "transactiondate", "datecreated"],
+    "price": ["price", "unitprice", "rate", "each", "unitcost", "priceeach", "salesprice"],
+    "amount": ["amount", "total", "extended", "extprice", "extendedprice", "linetotal", "ext", "salesamount",
+               "lineamount", "subtotal"],
     "status": ["status", "orderstatus"],
     "notes": ["notes", "note", "comments", "comment", "memo"],
     "verified": ["verified", "preverified", "confirmed"],
 }
 CUSTOMER_TARGETS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email"]
 CONTACT_TARGETS = ["contact_name", "contact_email", "contact_phone", "contact_role"]
-META_TARGETS = ["unit", "building", "floorplan", "product", "room", "po", "order_date", "status", "notes",
-                "verified"]
+META_TARGETS = ["unit", "building", "floorplan", "product", "description", "room", "po", "invoice", "order_date",
+                "status", "price", "amount", "notes", "verified"]
+# kept on order history lines, never saved as a "measurement"
+LINE_ONLY = {"qty", "item_no"}
+SIZE_KEYS = {"width", "height", "length", "depth"}
 
 
 def all_targets():
@@ -110,19 +122,22 @@ def read_table(raw: bytes, filename: str):
     if filename.lower().endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook
         wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-        ws = wb.active
-        it = ws.iter_rows(values_only=True)
-        headers = []
-        for row in it:
-            if row and any(c not in (None, "") for c in row):
-                headers = [str(c).strip() if c is not None else f"Column{i + 1}" for i, c in enumerate(row)]
-                break
-        rows = []
-        for row in it:
-            if row and any(c not in (None, "") for c in row):
-                rows.append({headers[i]: ("" if c is None else str(c).strip()) for i, c in enumerate(row)
-                             if i < len(headers)})
-        return headers, rows
+        best = None
+        for ws in wb.worksheets:          # pick the sheet that looks most like a data table
+            grid = [list(r) for r in ws.iter_rows(values_only=True) if r and any(c not in (None, "") for c in r)]
+            if not grid:
+                continue
+            hi = _header_index([["" if c is None else _cell(c) for c in r] for r in grid[:25]])
+            score = (_header_score(grid[hi]), len(grid))
+            if best is None or score > best[0]:
+                best = (score, grid, hi)
+        if best is None:
+            return [], []
+        _, grid, hi = best
+        headers = _uniq([_cell(c) or f"Column{i + 1}" for i, c in enumerate(grid[hi])])
+        rows = [{headers[i]: ("" if c is None else _cell(c)) for i, c in enumerate(r) if i < len(headers)}
+                for r in grid[hi + 1:]]
+        return headers, [r for r in rows if any(r.values())]
     text = None
     for enc in ("utf-8-sig", "cp1252", "latin-1"):
         try:
@@ -138,9 +153,85 @@ def read_table(raw: bytes, filename: str):
     rows_raw = [r for r in rdr if any(c.strip() for c in r)]
     if not rows_raw:
         return [], []
-    headers = [h.strip() or f"Column{i + 1}" for i, h in enumerate(rows_raw[0])]
-    rows = [{headers[i]: c.strip() for i, c in enumerate(r) if i < len(headers)} for r in rows_raw[1:]]
+    hi = _header_index(rows_raw[:25])
+    headers = _uniq([h.strip() or f"Column{i + 1}" for i, h in enumerate(rows_raw[hi])])
+    rows = [{headers[i]: c.strip() for i, c in enumerate(r) if i < len(headers)} for r in rows_raw[hi + 1:]]
     return headers, rows
+
+
+def _cell(c):
+    """Excel cell -> text (dates as YYYY-MM-DD, whole numbers without .0)."""
+    import datetime as _dt
+    if isinstance(c, _dt.datetime):
+        return c.date().isoformat() if not (c.hour or c.minute) else c.strftime("%Y-%m-%d %H:%M")
+    if isinstance(c, _dt.date):
+        return c.isoformat()
+    if isinstance(c, float) and c.is_integer():
+        return str(int(c))
+    return str(c).strip()
+
+
+def _uniq(headers):
+    seen, out = {}, []
+    for h in headers:
+        if h in seen:
+            seen[h] += 1
+            h = f"{h} ({seen[h]})"
+        else:
+            seen[h] = 1
+        out.append(h)
+    return out
+
+
+_ALL_SYN = None
+
+
+def _header_score(row):
+    global _ALL_SYN
+    if _ALL_SYN is None:
+        _ALL_SYN = {_n(x) for syns in SYNONYMS.values() for x in syns}
+    return sum(1 for c in row if c not in (None, "") and _n(c) in _ALL_SYN)
+
+
+def _header_index(rows):
+    """Reports often start with title lines ("Apartment Interior Supply", "Sales by Customer"...).
+    The header is the first row that looks most like column names."""
+    best, bi = -1, 0
+    for i, r in enumerate(rows):
+        filled = sum(1 for c in r if str(c or "").strip())
+        if filled < 2:
+            continue
+        sc = _header_score(r)
+        if sc > best:
+            best, bi = sc, i
+    if best <= 0:
+        for i, r in enumerate(rows):
+            if sum(1 for c in r if str(c or "").strip()) >= 2:
+                return i
+    return bi
+
+
+SIZE_RE = re.compile(r'(\d+(?:\.\d+)?(?:[\s-]+\d+/\d+)?)\s*(?:"|in\.?|\'\')?\s*[xX×*]\s*'
+                     r'(\d+(?:\.\d+)?(?:[\s-]+\d+/\d+)?)\s*(?:"|in\.?|\'\')?')
+COLOR_WORDS = ["alabaster", "white", "bright white", "off white", "almond", "beige", "bone", "ivory", "cream",
+               "bronze", "dark bronze", "black", "brown", "tan", "sand", "gray", "grey", "charcoal", "silver",
+               "mill", "natural", "oak", "golden oak", "maple", "cherry", "walnut", "espresso", "primed",
+               "primecoat", "pewter", "linen", "taupe"]
+
+
+def parse_description(text):
+    """Pull sizes and a color out of a free-text line like 'VERT BLIND 96 x 84 ALABASTER'."""
+    t = str(text or "")
+    out = {}
+    m = SIZE_RE.search(t)
+    if m:
+        out["width"], out["height"] = m.group(1).strip(), m.group(2).strip()
+    low = " " + re.sub(r"[^a-z ]", " ", t.lower()) + " "
+    for c in sorted(COLOR_WORDS, key=len, reverse=True):
+        if f" {c} " in low:
+            out["color"] = c.title()
+            break
+    return out
 
 
 PRODUCT_WORDS = [
@@ -194,6 +285,7 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
     meas_keys = {k for k, _ in all_targets() if k} - set(CUSTOMER_TARGETS) - set(CONTACT_TARGETS) - \
         set(META_TARGETS)
     groups = {}   # key -> dict
+    _cache = {}
     order = []
     default_cust = q("SELECT * FROM customers WHERE id=?", (default_customer_id,), one=True) \
         if default_customer_id else None
@@ -204,7 +296,10 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
             if target and row.get(col, "") != "":
                 v[target] = (v[target] + " " + row[col]) if target == "notes" and v.get(target) else row[col]
         cust_fields = {k: v[k] for k in CUSTOMER_TARGETS if v.get(k)}
-        cust = find_customer(cust_fields.get("name"), cust_fields.get("acct"), cust_fields.get("email"))
+        ck = (cust_fields.get("name"), cust_fields.get("acct"), cust_fields.get("email"))
+        if ck not in _cache:
+            _cache[ck] = find_customer(*ck)
+        cust = _cache[ck]
         if cust is None and not cust_fields.get("name") and default_cust is not None:
             cust = default_cust
         if cust is not None:
@@ -221,7 +316,8 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
         for k, val in cust_fields.items():
             g["fields"].setdefault(k, val)
         # notes on a row with no product/sizes are about the customer (delivery notes etc.)
-        row_has_meas = any(v.get(k) for k in meas_keys) and (v.get("product") or v.get("item_no"))
+        row_has_meas = (any(v.get(k) for k in meas_keys) and (v.get("product") or v.get("item_no"))) or \
+            bool(v.get("description") and (v.get("po") or v.get("invoice") or v.get("order_date")))
         if v.get("notes") and not row_has_meas and v["notes"] not in g["fields"].get("notes", ""):
             g["fields"]["notes"] = "; ".join(x for x in [g["fields"].get("notes"), v["notes"]] if x)
         contact = {"name": v.get("contact_name", ""), "email": v.get("contact_email", ""),
@@ -237,33 +333,46 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
             if fp and not g["units"][unit]["floorplan"]:
                 g["units"][unit]["floorplan"] = fp
         data = {k: v[k] for k in meas_keys if v.get(k)}
-        product = guess_product(v.get("product")) or (guess_product(v.get("item_no")) if data else None)
-        if data and (product or v.get("product")):
+        desc = v.get("description", "")
+        if desc:   # invoice-style lines: sizes / color written in the description
+            for k, val in parse_description(desc).items():
+                data.setdefault(k, val)
+        product = (guess_product(v.get("product")) or guess_product(desc)
+                   or (guess_product(v.get("item_no")) if data else None))
+        po_ref = v.get("po") or v.get("invoice") or ""
+        is_history = bool(po_ref or v.get("order_date"))
+        if is_history and (product or desc or v.get("product") or v.get("item_no") or data):
+            okey = (po_ref, v.get("order_date", ""))
+            o = g["orders"].setdefault(okey, {"po": po_ref, "order_date": v.get("order_date", ""),
+                                              "invoice": v.get("invoice", ""),
+                                              "status": v.get("status", "") or "Completed",
+                                              "products": [], "blocks": []})
+            if product:
+                o["products"].append(product)
+            blk = dict(data)
+            for k in ("unit", "room", "description", "price", "amount"):
+                if v.get(k):
+                    blk[k] = v[k]
+            if v.get("notes") and row_has_meas:
+                blk["notes"] = v["notes"]
+            blk["product"] = product or "other"
+            o["blocks"].append(blk)
+        if is_history:   # past orders only become saved measurements when we know the unit / floorplan
+            data = {k: val for k, val in data.items() if k not in LINE_ONLY}
+        if data and (not is_history or (SIZE_KEYS & set(data) and (unit or fp))) and (product or v.get("product")):
             product = product or "other"
             if product == "other" and v.get("product"):
                 data.setdefault("style", v["product"])
             m = {"product": product, "room": v.get("room", ""), "data": data, "floorplan_name": fp,
                  "unit_number": unit, "building": v.get("building", ""), "notes": v.get("notes", ""),
                  "verified": str(v.get("verified", "")).lower() in ("y", "yes", "true", "1", "x"),
-                 "_from_order": bool(v.get("po") or v.get("order_date"))}
+                 "_from_order": is_history}
             # one saved measurement per layout/unit + product + room: the first row wins
             # (later rows for the same spot - e.g. past orders - still become order history)
             slot = (fp.lower() if fp else "unit:" + unit.lower(), product, (v.get("room") or "").lower())
             if slot not in g.setdefault("slots", set()):
                 g["slots"].add(slot)
                 g["meas"].append(m)
-            if v.get("po") or v.get("order_date"):
-                okey = (v.get("po", ""), v.get("order_date", ""))
-                o = g["orders"].setdefault(okey, {"po": v.get("po", ""), "order_date": v.get("order_date", ""),
-                                                  "status": v.get("status", "") or "Completed",
-                                                  "products": [], "blocks": []})
-                o["products"].append(product)
-                blk = dict(data)
-                if unit:
-                    blk["unit"] = unit
-                if v.get("room"):
-                    blk["room"] = v["room"]
-                o["blocks"].append(blk)
 
     summary = {"customers_new": 0, "fields": 0, "contacts": 0, "units": 0, "measurements": 0, "orders": 0}
     for gkey in order:
@@ -316,12 +425,14 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
         for (po, odate), o in g["orders"].items():
             if cid and po and q("SELECT 1 FROM orders WHERE customer_id=? AND po=?", (cid, po), one=True):
                 continue
-            prod = o["products"][0] if o["products"] else None
+            prods = set(o["products"])
+            prod = o["products"][0] if len(prods) == 1 else None
             fk = (forms_for_product(prod) or [None])[0] if prod else None
             header = {k: g["fields"].get(k, "") or ((cust[k] or "") if cust is not None else "")
                       for k in CUSTOMER_TARGETS if k != "email"}
             header.update({"po": po, "date": odate})
-            title = FORMS[fk]["title"] if fk else "Imported order"
+            title = FORMS[fk]["title"] if fk else (", ".join(sorted(PRODUCTS.get(p, {}).get("label", p) for p in prods))
+                                                   if prods else "Imported order")[:120]
             add_change(batch, "history_order", customer_id=cid, customer_ref=ref,
                        payload={"form_key": fk, "po": po, "order_date": odate, "status": o["status"],
                                 "title": title, "data": {"header": header, "blocks": o["blocks"]},

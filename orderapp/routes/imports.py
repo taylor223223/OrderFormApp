@@ -18,6 +18,35 @@ def _upload_dir():
     return d
 
 
+TEMPLATE_COLS = ["Property", "Acct #", "Unit", "Floorplan", "Room", "Product", "Description", "Item #", "Qty",
+                 "Width", "Height", "Color", "Style", "Swing", "Core", "PO", "Invoice #", "Date", "Unit Price",
+                 "Amount", "Notes"]
+TEMPLATE_ROWS = [
+    ["Saguaro Ridge Apartments", "1045", "104", "A1", "Bedroom", "Interior Door", "30x80 HC Colonist LH Primed",
+     "D-3080-COL", "1", "30", "80", "Primed", "Colonist", "Left Hand", "Hollow", "SR-26140", "INV-55821",
+     "2026-03-14", "64.50", "64.50", ""],
+    ["Saguaro Ridge Apartments", "1045", "206", "B2", "Living Room", "Vertical Blind", "Vert blind 96 x 84 alabaster",
+     "VB-9684-ALA", "1", "96", "84", "Alabaster", "", "", "", "SR-26140", "INV-55821", "2026-03-14", "118.00",
+     "118.00", "Wand on left"],
+    ["Palo Verde Commons", "2210", "", "", "", "", "Window screen 35-1/2 x 47-3/4 bronze", "WS-BRZ", "3", "", "", "",
+     "", "", "", "", "INV-56002", "2026-04-02", "22.00", "66.00", "No unit # on invoice - still saved to history"],
+]
+
+
+@bp.route("/import/template.csv")
+@login_required
+def template():
+    import csv
+    import io
+    from flask import Response
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(TEMPLATE_COLS)
+    w.writerows(TEMPLATE_ROWS)
+    return Response("\ufeff" + out.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=Purchase history import template.csv"})
+
+
 @bp.route("/import", methods=["GET", "POST"])
 @login_required
 def upload():

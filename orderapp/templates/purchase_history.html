@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block title %}Purchase history{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Purchase history</h1><div class="muted">Search every item ever ordered, across all properties: a color, a size, a unit, a PO, a product.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('imports.template') }}">Download import template</a><a class="btn primary" href="{{ url_for('imports.upload') }}">Import history</a></div></div>
+<form class="card row"><input name="q" value="{{ search }}" placeholder="e.g. Saguaro alabaster, 30 x 80, unit 104, PO 26140" style="flex:1" autofocus><button class="btn primary">Search</button></form>
+{% if search %}{% set show_customer = True %}{% include '_history_table.html' %}
+{% else %}<div class="card muted">{{ total_orders }} orders on file. Type something above to search them, or open a customer's <b>Purchase History</b> tab.</div>{% endif %}
+{% endblock %}

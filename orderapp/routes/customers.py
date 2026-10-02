@@ -81,6 +81,9 @@ def view(cid):
                (cid,))
     tab = request.args.get("tab", "info")
     crm = {}
+    if tab == "history":
+        from .. import history
+        crm = {"hist": history.lines(cid), "hist_products": PRODUCTS}
     if tab == "crm":
         from datetime import date, datetime
         from ..db import ACTIVITY_KINDS, CUSTOMER_STATUSES, DEAL_STAGES, TOPICS
@@ -383,3 +386,49 @@ def measurement_delete(mid):
     if m["floorplan_id"]:
         return redirect(url_for("customers.floorplan", fid=m["floorplan_id"]))
     return redirect(url_for("customers.view", cid=m["customer_id"], tab="layouts"))
+
+
+# ---------------------------------------------------------------- purchase history
+@bp.route("/history")
+@login_required
+def history_search():
+    from .. import history
+    s = request.args.get("q", "").strip()
+    rows = history.lines(search=s, limit=1000) if s else []
+    total = q("SELECT COUNT(*) n FROM orders", one=True)["n"]
+    return render_template("purchase_history.html", rows=rows, search=s, total_orders=total, products=PRODUCTS)
+
+
+@bp.route("/customers/<int:cid>/history/onfile", methods=["POST"])
+@login_required
+def history_onfile(cid):
+    """Save one past order line as this unit's on-file size, so the next order fills it in."""
+    from .. import history
+    _cust_or_404(cid)
+    o, b = history.block(request.form.get("order_id", type=int), request.form.get("idx", -1, type=int))
+    if not b or o["customer_id"] != cid:
+        abort(404)
+    unit_no = (request.form.get("unit") or b.get("unit") or "").strip()
+    keep = {k: v for k, v in b.items() if v and k not in history.META - {"width", "height", "length", "depth", "color"}}
+    if not keep:
+        flash("That line has no sizes or colors to save.", "error")
+        return redirect(url_for("customers.view", cid=cid, tab="history"))
+    unit_id = None
+    if unit_no:
+        u = q("SELECT id FROM units WHERE customer_id=? AND lower(unit_number)=lower(?)", (cid, unit_no), one=True)
+        unit_id = u["id"] if u else x("INSERT INTO units(customer_id, unit_number) VALUES (?,?)", (cid, unit_no))
+    product = b.get("product") or "other"
+    room = b.get("room") or b.get("_room") or ""
+    note = f"From {('PO ' + o['po']) if o['po'] else 'order #' + str(o['id'])} {o['order_date'] or ''}".strip()
+    old = q("""SELECT id FROM measurements WHERE customer_id=? AND product=? AND lower(coalesce(room,''))=lower(?)
+               AND floorplan_id IS NULL AND """ + ("unit_id=?" if unit_id else "unit_id IS NULL"),
+            (cid, product, room) + ((unit_id,) if unit_id else ()), one=True)
+    if old:
+        x("UPDATE measurements SET data=?, notes=?, updated=? WHERE id=?", (dumps(keep), note, now(), old["id"]))
+    else:
+        x("""INSERT INTO measurements(customer_id, unit_id, product, room, data, verified, notes, updated)
+             VALUES (?,?,?,?,?,0,?,?)""", (cid, unit_id, product, room, dumps(keep), note, now()))
+    where = f"unit {unit_no}" if unit_no else "this property"
+    flash(f"Saved as the on-file {PRODUCTS.get(product, {}).get('label', product).lower()} for {where}. "
+          "New orders will fill it in.", "ok")
+    return redirect(url_for("customers.view", cid=cid, tab="history"))

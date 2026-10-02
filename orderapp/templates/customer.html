@@ -14,7 +14,7 @@
   <form method="post" action="{{ url_for('customers.check', cid=c.id) }}"><button class="btn sm">Look in previous orders</button></form></div>
 {% endif %}
 <div class="tabs">
-  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('crm','CRM','#db2777')] %}
+  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] %}
   <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}" style="--c:{{ col }}">{{ l }}</a>{% endfor %}
 </div>
 
@@ -87,6 +87,8 @@
 <td class="right">{% if o.form_key %}<a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=c.id, copy=o.id) }}">Reorder</a>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7" class="empty">No orders yet.</td></tr>{% endfor %}
 </table></div>
+{% elif tab == 'history' %}
+{% set rows = hist %}{% set show_customer = False %}{% include '_history_table.html' %}
 {% elif tab == 'crm' %}
 <div class="grid g2">
 <div>

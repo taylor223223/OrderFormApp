@@ -188,9 +188,11 @@ def view(oid):
     spec = public_spec(o["form_key"]) if o["form_key"] in FORMS else None
     miss = missing_fields(o["form_key"], data) if spec else []
     labels = {f["key"]: f["label"] for f in spec["fields"]} if spec else {}
+    from ..catalog import PRODUCTS as _P
+    products_lbl = {k: v["label"] for k, v in _P.items()}
     from ..photos import photos_for
     return render_template("order_view.html", o=o, data=data, hist=hist, spec=spec, labels=labels, miss=miss,
-                           photos=photos_for(oid),
+                           photos=photos_for(oid), products_lbl=products_lbl,
                            statuses=STATUSES, pdf_exists=bool(o["pdf_path"] and os.path.exists(o["pdf_path"])))
 
 
@@ -449,8 +451,9 @@ def learn(oid):
             continue
         u = q("""SELECT u.*, f.name AS fp FROM units u LEFT JOIN floorplans f ON f.id=u.floorplan_id
                  WHERE u.customer_id=? AND lower(u.unit_number)=lower(?)""", (o["customer_id"], blk["unit"]), one=True)
-        product = guess_product(blk.get("_product", "")) or (prods[0] if prods else "other")
-        d = {k: v for k, v in blk.items() if k not in ("unit", "line_comments", "_room", "_product", "price") and v}
+        product = blk.get("product") or guess_product(blk.get("_product", "")) or (prods[0] if prods else "other")
+        d = {k: v for k, v in blk.items() if k not in ("unit", "line_comments", "_room", "_product", "price", "product",
+                                                       "description", "amount", "notes", "qty", "item_no") and v}
         room = d.pop("room", "") or blk.get("_room", "")
         add_change(b, "new_measurement", customer_id=o["customer_id"],
                    payload={"product": product, "room": room, "data": d, "unit_number": blk["unit"],

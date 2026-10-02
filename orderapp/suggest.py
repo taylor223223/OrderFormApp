@@ -72,6 +72,13 @@ def to_form_block(form_key, data, room=None, unit=None):
     """Translate saved measurement data into a block for this form."""
     fields = {f["key"]: f for f in FORMS[form_key]["blocks"][0]}
     blk = {}
+    data = dict(data or {})
+    # imported history only knows a generic "color": use it for this form's finish field
+    if data.get("color") and "color" not in fields:
+        for alt in ("frame_finish", "finish"):
+            if alt in fields and not data.get(alt):
+                data[alt] = data["color"]
+                break
     for k, v in data.items():
         if v in (None, "") or k not in fields:
             continue

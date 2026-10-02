@@ -255,9 +255,16 @@ def find_customer(name=None, acct=None, email=None):
     if name:
         n = norm_name(name)
         if n:
-            for r in q("SELECT * FROM customers"):
+            rows = q("SELECT * FROM customers")
+            for r in rows:
                 if norm_name(r["name"]) == n:
                     return r
+            # "Tomscot Scottsdale" vs "Tomscot": accept only if exactly one customer is a clear prefix match
+            if len(n) >= 6:
+                hits = [r for r in rows if len(norm_name(r["name"])) >= 6 and
+                        (n.startswith(norm_name(r["name"])) or norm_name(r["name"]).startswith(n))]
+                if len(hits) == 1:
+                    return hits[0]
     return None
 
 

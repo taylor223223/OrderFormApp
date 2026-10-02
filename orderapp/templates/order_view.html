@@ -18,16 +18,16 @@
 {% if miss %}<div class="miss" style="margin-bottom:14px"><b>Still empty:</b> {{ miss|join(', ') }}</div>{% endif %}
 <div class="grid g2">
 <div>
-  {% if spec %}
+  {% if spec or (data.blocks and o.source != 'photo') %}
   <div class="card"><h3 style="margin-top:0">Line items</h3>
     {% for b in data.blocks or [] %}
       <div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>Line {{ loop.index }}</b>{% if b.unit %} · Unit {{ b.unit }}{% endif %}{% if b._room %} · {{ b._room }}{% endif %}
-      <div class="small">{% for k, v in b.items() if k not in ('unit','_room') %}<span class="muted">{{ labels.get(k, k) }}:</span> {{ v }}{{ '; ' if not loop.last }}{% endfor %}</div></div>
+      <div class="small">{% for k, v in b.items() if k not in ('unit','_room') %}<span class="muted">{{ labels.get(k, k)|replace('_',' ')|capitalize if k not in labels else labels[k] }}:</span> {{ products_lbl.get(v, v) if k == 'product' else v }}{{ '; ' if not loop.last }}{% endfor %}</div></div>
     {% else %}<div class="muted">No line items.</div>{% endfor %}
     {% if data.comments %}<p><span class="muted">Comments:</span> {{ data.comments }}</p>{% endif %}
     <div class="row" style="margin-top:10px">
       <form method="post" action="{{ url_for('orders.learn', oid=o.id) }}"><button class="btn sm" title="Save these sizes to the units/floorplans for next time">Save sizes to units</button></form>
-      <a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=o.customer_id or '', copy=o.id) }}">Reorder (copy)</a>
+      {% if o.form_key %}<a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=o.customer_id or '', copy=o.id) }}">Reorder (copy)</a>{% endif %}
       {% if pdf_exists and not cloud %}<form method="post" action="{{ url_for('orders.open_folder', oid=o.id) }}"><button class="btn sm">Open PDF folder</button></form>{% endif %}
     </div>
     {% if o.pdf_path and not cloud %}<div class="small muted" style="margin-top:6px">PDF: {{ o.pdf_path }}</div>{% endif %}
