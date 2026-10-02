@@ -5,6 +5,7 @@
 <h1>{{ d.strftime('%A, %b %d') }}</h1>
 <div class="row">{% if rows %}<span class="tag">🚗 {{ total }} driving</span><span class="tag">{{ miles }} mi</span><span class="tag">Start {{ res.start_time }}</span><span class="tag">Back ~{{ finish.strftime('%I:%M %p').lstrip('0') }}</span>{% if res.estimated %}<span class="tag warn" title="Add a free OpenRouteService key in Settings for real road times">estimated</span>{% endif %}{% endif %}</div></div>
 <div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}"><button class="btn primary" {{ 'disabled' if rows|length < 2 }}>Optimize route</button></form>
+{% if rows %}<a class="btn" href="{{ url_for('plan.sheet', day=day) }}">Stop list</a>{% endif %}
 {% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">Open in Google Maps</a>{% endif %}</div></div>
 {% for e in res.errors %}<div class="flash error">{{ e }}</div>{% endfor %}
 {% if not res.start %}<div class="flash error">Couldn't find the starting address on the map. Fix it below or in Settings.</div>{% endif %}
@@ -14,6 +15,8 @@
 <div style="flex:1;min-width:200px">{% set picker_id='rd_cust' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
 <input name="purpose" placeholder="Why" style="max-width:170px"><select name="source" style="width:auto"><option value="">Planned</option><option>Call</option><option>Text</option><option>Email</option></select>
 <button class="btn primary">+ Add stop</button>
+<div class="chips" style="width:100%">{% for it in items %}<label class="chip"><input type="checkbox" name="products" value="{{ it }}"> {{ it }}</label>{% endfor %}</div>
+<input name="notes" placeholder="Notes (unit #, vacant/occupied...)" style="width:100%">
 <details style="width:100%"><summary class="small">Address instead of a property</summary><input name="address" placeholder="Full address" style="margin-top:4px"></details></form>
 <div class="card" style="padding:8px 12px">
 <div class="row small muted"><b>Start:</b> {{ res.start_address }}</div>
@@ -25,12 +28,16 @@
 <b>{% if s.customer_id %}<a href="{{ url_for('customers.view', cid=s.customer_id, tab='crm') }}">{{ s.label or s.cname }}</a>{% else %}{{ s.label }}{% endif %}</b>
 {% if r.arrive %}<span class="tag">{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}</span>{% endif %}{% if s.source %}<span class="tag">{{ s.source }}</span>{% endif %}{% if s.status!='Planned' %}<span class="tag {{ 'ok' if s.status=='Done' }}">{{ s.status }}</span>{% endif %}
 <div class="small muted">{{ s.address }}{% if s.cphone %} · <a href="tel:{{ s.cphone }}">{{ s.cphone }}</a>{% endif %}</div>
-{% if s.purpose %}<div class="small">{{ s.purpose }}</div>{% endif %}
+{% if s.purpose %}<div class="small muted">{{ s.purpose }}</div>{% endif %}
 {% if s.id in res.missing %}<div class="small err">Couldn't find this address on the map. Edit the property's address.</div>{% endif %}
-<details><summary class="small">More</summary>
-<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="grid g2" style="margin-top:6px"><input type="hidden" name="act" value="notes">
-<div><label>Why</label><input name="purpose" value="{{ s.purpose or '' }}"></div><div><label>Visit (min)</label><input type="number" name="visit_min" value="{{ s.visit_min or '' }}" placeholder="{{ visit_default }}"></div>
-<div style="grid-column:1/-1"><label>Notes</label><input name="notes" value="{{ s.notes or '' }}"></div><div><button class="btn sm">Save</button></div></form>
+{% if s.products %}<div class="small"><b>Estimating:</b> {{ s.products }}</div>{% endif %}
+{% if s.notes %}<div class="small stopnote">{{ s.notes }}</div>{% endif %}
+<details {{ 'open' if not s.products and not s.notes and s.status=='Planned' and loop.index == 1 }}><summary class="small">{{ 'Edit estimate & notes' if s.products or s.notes else '+ Estimate & notes' }}</summary>
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" style="margin-top:6px"><input type="hidden" name="act" value="notes">
+{% set have = (s.products or '').split(', ') %}
+<div class="chips">{% for it in items %}<label class="chip"><input type="checkbox" name="products" value="{{ it }}" {{ 'checked' if it in have }}> {{ it }}</label>{% endfor %}</div>
+<textarea name="notes" rows="2" style="margin-top:6px" placeholder="Unit 104 vacant, 212 occupied - call ahead. Gate code, who to ask for...">{{ s.notes or '' }}</textarea>
+<div class="row" style="margin-top:4px"><input name="purpose" value="{{ s.purpose or '' }}" placeholder="Why" style="max-width:220px"><input type="number" name="visit_min" value="{{ s.visit_min or '' }}" placeholder="{{ visit_default }} min" style="width:90px"><button class="btn sm primary">Save</button></div></form>
 <form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="row" style="margin-top:6px"><input type="hidden" name="act" value="move">
 <select name="to_day" style="width:auto">{% for wd in week_days if wd != day %}<option value="{{ wd }}">{{ wd }}</option>{% endfor %}</select><button class="btn sm">Move to day</button></form>
 </details></div>

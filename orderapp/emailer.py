@@ -32,6 +32,8 @@ class MailError(Exception):
 
 
 def open_file(path):
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return                       # never pop windows during automated tests
     if os.name == "nt":
         os.startfile(path)  # noqa: S606  (Windows only)
     elif sys.platform == "darwin":

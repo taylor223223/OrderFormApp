@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS route_stops (
     id INTEGER PRIMARY KEY, day TEXT NOT NULL, position INTEGER DEFAULT 0,
     customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, label TEXT, address TEXT,
     lat REAL, lon REAL, purpose TEXT, visit_min INTEGER, status TEXT DEFAULT 'Planned', source TEXT,
-    notes TEXT, activity_id INTEGER, created TEXT
+    notes TEXT, activity_id INTEGER, created TEXT, products TEXT
 );
 CREATE TABLE IF NOT EXISTS geocache (address TEXT PRIMARY KEY, lat REAL, lon REAL, provider TEXT, updated TEXT);
 CREATE INDEX IF NOT EXISTS ix_act_cust ON activities(customer_id);
@@ -158,7 +158,12 @@ CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
 MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
                   "owner": "TEXT"},
+    "route_stops": {"products": "TEXT"},
 }
+
+# quick picks for "what am I estimating" on a route stop
+ESTIMATE_ITEMS = ["Doors", "Pre-hung", "Bi-pass", "Blinds", "Verticals", "Window screens", "Screen doors",
+                  "Baseboards", "Cabinets", "Other"]
 
 
 def init_db(path=None):

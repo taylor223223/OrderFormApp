@@ -114,6 +114,13 @@ def test_crm_and_routes(client):
         assert q("SELECT COUNT(*) n FROM activities WHERE kind='Site visit'", one=True)["n"] == 1
         assert q("SELECT COUNT(*) n FROM route_stops WHERE day=?", (tomorrow,), one=True)["n"] == 1
     assert "Week of" in c.get("/routes").get_data(as_text=True)
+    # estimate + notes on a stop, then the stop list
+    post(c, f"/routes/stop/{stops[2]['id']}", {"act": "notes", "products": ["Doors", "Blinds"],
+                                               "notes": "Unit 104 vacant, 212 occupied"})
+    sheet = c.get(f"/routes/day/{today}/sheet").get_data(as_text=True)
+    assert "Doors, Blinds" in sheet and "Unit 104 vacant" in sheet and "Estimating: Doors, Blinds" in sheet
+    r = post(c, "/routes/add", {"customer_id": cids[1], "day": tomorrow, "products": ["Verticals"], "notes": "gate 4411"})
+    assert "Verticals" in c.get("/routes?week=" + tomorrow).get_data(as_text=True)
 
     # tasks + deals
     post(c, "/crm/tasks", {"title": "Call back Ironwood", "due_date": today, "customer_id": cids[2]})

@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Stops {{ day }}{% endblock %}
+{% block body %}
+<div class="pagehead noprint"><div><div class="small"><a href="{{ url_for('plan.day', day=day) }}">← Route</a></div><h1>Stop list</h1></div>
+<div class="row"><button class="btn" onclick="copyList()" id="cpy">Copy as text</button><button class="btn primary" onclick="window.print()">Print</button></div></div>
+<div class="card sheet">
+<h2 style="margin-top:0">{{ d.strftime('%A, %b %d') }} - {{ rows|length }} stop{{ '' if rows|length == 1 else 's' }}</h2>
+{% for r in rows %}{% set s = r.s %}
+<div class="sheetrow" style="{{ 'opacity:.5' if s.status=='Skipped' }}">
+<div class="row" style="justify-content:space-between"><b>{{ loop.index }}. {{ s.label or s.cname }}</b><span>{% if r.arrive %}{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}{% endif %}{% if s.status!='Planned' %} · {{ s.status }}{% endif %}</span></div>
+<div class="small muted">{{ s.address or '' }}{% if s.cphone %} · {{ s.cphone }}{% endif %}</div>
+<div><b>Estimating:</b> {{ s.products or '-' }}</div>
+{% if s.purpose %}<div class="small">{{ s.purpose }}</div>{% endif %}
+<div><b>Notes:</b> {{ s.notes or '' }}</div>
+<div class="writein"></div>
+</div>
+{% else %}<div class="empty">No stops this day.</div>{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}<script>
+const TXT = {{ text|tojson }};
+function copyList(){ (navigator.clipboard ? navigator.clipboard.writeText(TXT) : Promise.reject()).then(
+  () => { document.getElementById('cpy').textContent = 'Copied ✓'; },
+  () => { const t = document.createElement('textarea'); t.value = TXT; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); document.getElementById('cpy').textContent = 'Copied ✓'; }); }
+</script>{% endblock %}

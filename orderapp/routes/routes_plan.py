@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import geo
-from ..db import get_db, now, q, setting, x
+from ..db import ESTIMATE_ITEMS, get_db, now, q, setting, x
 from ..security import login_required
 
 bp = Blueprint("plan", __name__)
@@ -118,7 +118,8 @@ def plan_day(day, optimize=False):
     return result
 
 
-def add_stop(day, customer_id=None, label="", address="", purpose="", source="", visit_min=None, smart=True):
+def add_stop(day, customer_id=None, label="", address="", purpose="", source="", visit_min=None, smart=True,
+             products="", notes=""):
     """Add a stop. If the day already has a route, slot it in where it adds the least driving."""
     pos = (q("SELECT COALESCE(MAX(position), -1) + 1 AS p FROM route_stops WHERE day=?", (day,), one=True)["p"])
     if customer_id and not address:
@@ -126,9 +127,9 @@ def add_stop(day, customer_id=None, label="", address="", purpose="", source="",
         if c:
             label = label or c["name"]
             address = geo.full_address(c)
-    sid = x("""INSERT INTO route_stops(day, position, customer_id, label, address, purpose, visit_min, source, created)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
-            (day, pos, customer_id, label, address, purpose, visit_min, source, now()))
+    sid = x("""INSERT INTO route_stops(day, position, customer_id, label, address, purpose, visit_min, source, created,
+               products, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (day, pos, customer_id, label, address, purpose, visit_min, source, now(), products or "", notes or ""))
     if smart:
         try:
             existing = [s for s in stops_for(day) if s["id"] != sid and s["status"] != "Skipped"]
@@ -176,7 +177,7 @@ def week():
     customers = q("SELECT id, name, city FROM customers ORDER BY name COLLATE NOCASE")
     return render_template("route_week.html", days=days, mon=mon, prev=(mon - timedelta(days=7)).isoformat(),
                            nxt=(mon + timedelta(days=7)).isoformat(), customers=customers,
-                           today=date.today().isoformat(), has_key=bool(_key()))
+                           today=date.today().isoformat(), has_key=bool(_key()), items=ESTIMATE_ITEMS)
 
 
 @bp.route("/routes/add", methods=["POST"])
@@ -191,7 +192,8 @@ def add():
         return redirect(request.referrer or url_for("plan.week"))
     add_stop(day, customer_id=cid, label=f.get("label", "").strip() or addr, address=addr if not cid else "",
              purpose=f.get("purpose", "").strip(), source=f.get("source", ""),
-             visit_min=f.get("visit_min", type=int))
+             visit_min=f.get("visit_min", type=int), products=", ".join(f.getlist("products")),
+             notes=f.get("notes", "").strip())
     if cid and f.get("source") in ("Call", "Text"):
         from .crm import log_activity
         log_activity(cid, f["source"], datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -235,7 +237,44 @@ def day(day):
     return render_template("route_day.html", day=day, d=d, rows=rows, res=res, total=fmt_dur(res["total_s"]),
                            miles=round(res["total_m"] / 1609.34, 1), finish=finish, gmaps=gmaps,
                            points=points, start=res["start"], customers=customers, week_days=week_days,
-                           has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"))
+                           has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"),
+                           items=ESTIMATE_ITEMS)
+
+
+@bp.route("/routes/day/<day>/sheet")
+@login_required
+def sheet(day):
+    """Simple stop list for the day: where, when, what I'm estimating, notes. Printable / copyable."""
+    d = _day(day) or abort(404)
+    rd = q("SELECT legs FROM route_days WHERE day=?", (day,), one=True)
+    legs = {}
+    if rd and rd["legs"]:
+        legs = {l["stop_id"]: l for l in json.loads(rd["legs"]).get("legs", [])}
+    _, start_time = _start(day)
+    try:
+        t = datetime.combine(d, datetime.strptime(start_time, "%H:%M").time())
+    except ValueError:
+        t = datetime.combine(d, datetime.strptime("08:00", "%H:%M").time())
+    visit_default = int(setting("route_visit_minutes") or 20)
+    rows = []
+    for s in stops_for(day):
+        arrive = None
+        if s["id"] in legs and s["status"] != "Skipped":
+            t += timedelta(seconds=legs[s["id"]]["s"])
+            arrive = t
+            t += timedelta(minutes=s["visit_min"] or visit_default)
+        rows.append({"s": s, "arrive": arrive})
+    lines = [f"Route - {d:%a %m/%d}"]
+    for i, r in enumerate(rows, 1):
+        s = r["s"]
+        lines.append(f"{i}. {s['label'] or s['cname']}" + (f" ({r['arrive']:%I:%M %p})".replace("(0", "(") if r["arrive"] else ""))
+        if s["address"]:
+            lines.append(f"   {s['address']}")
+        if s["products"]:
+            lines.append(f"   Estimating: {s['products']}")
+        if s["notes"]:
+            lines.append(f"   Notes: {s['notes']}")
+    return render_template("route_sheet.html", d=d, day=day, rows=rows, text="\n".join(lines))
 
 
 @bp.route("/routes/day/<day>/optimize", methods=["POST"])
@@ -282,19 +321,22 @@ def stop_action(sid):
         if _day(nd):
             x("DELETE FROM route_stops WHERE id=?", (sid,))
             add_stop(nd, customer_id=s["customer_id"], label=s["label"], address=s["address"], purpose=s["purpose"],
-                     source=s["source"], visit_min=s["visit_min"])
+                     source=s["source"], visit_min=s["visit_min"], products=s["products"], notes=s["notes"])
             flash(f"Moved to {nd}.", "ok")
     elif act in ("Done", "Skipped", "Planned"):
         x("UPDATE route_stops SET status=? WHERE id=?", (act, sid))
         if act == "Done" and s["customer_id"] and not s["activity_id"]:
             from .crm import log_activity
+            est = f"Estimating: {s['products']}" if s["products"] else ""
             aid = log_activity(s["customer_id"], "Site visit", datetime.now().strftime("%Y-%m-%d %H:%M"),
                                location=s["address"], subject=s["purpose"] or "Route stop",
-                               notes=request.form.get("notes", "").strip())
+                               notes="\n".join(v for v in [est, s["notes"] or ""] if v))
             x("UPDATE route_stops SET activity_id=? WHERE id=?", (aid, sid))
     elif act == "notes":
-        x("UPDATE route_stops SET purpose=?, visit_min=?, notes=? WHERE id=?",
-          (request.form.get("purpose", ""), request.form.get("visit_min", type=int), request.form.get("notes", ""), sid))
+        f = request.form
+        x("UPDATE route_stops SET purpose=coalesce(?, purpose), visit_min=coalesce(?, visit_min), notes=?, products=? "
+          "WHERE id=?", (f.get("purpose"), f.get("visit_min", type=int), f.get("notes", "").strip(),
+                         ", ".join(f.getlist("products")), sid))
     elif act == "delete":
         x("DELETE FROM route_stops WHERE id=?", (sid,))
     nxt = request.form.get("next") or ""

@@ -328,8 +328,9 @@ def report_pdf(dd, path):
     writer = fitz.DocumentWriter(path)
     mediabox = fitz.paper_rect("letter")
     where = mediabox + (36, 36, -36, -36)
-    more = True
-    while more:
+    more, pages = True, 0
+    while more and pages < 200:      # safety cap
+        pages += 1
         dev = writer.begin_page(mediabox)
         more, _ = story.place(where)
         story.draw(dev)

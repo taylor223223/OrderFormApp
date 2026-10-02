@@ -14,13 +14,15 @@
 <div><label>Why</label><input name="purpose" placeholder="Measure 3 units, drop off samples..."></div>
 <div><label>They reached out by</label><select name="source"><option value="">(I planned it)</option><option>Call</option><option>Text</option><option>Email</option></select></div>
 <div><label>Visit length (min)</label><input name="visit_min" type="number" min="5" step="5" placeholder="default"></div>
+<div style="grid-column:1/-1"><label>Estimating</label><div class="chips">{% for it in items %}<label class="chip"><input type="checkbox" name="products" value="{{ it }}"> {{ it }}</label>{% endfor %}</div></div>
+<div style="grid-column:span 3"><label>Notes</label><input name="notes" placeholder="Unit 104 vacant, 212 occupied..."></div>
 <div><label>&nbsp;</label><button class="btn primary">Add to route</button></div>
 </div><div class="small muted">Added stops go where they add the least driving. Call/Text requests are logged in the CRM too.</div></form>
 <div class="week">
 {% for d in days %}<div class="wday {{ 'today' if d.today }}">
 <div class="row" style="justify-content:space-between"><a href="{{ url_for('plan.day', day=d.iso) }}"><b>{{ d.name }} {{ d.date.strftime('%m/%d') }}</b></a><span class="small muted">{{ d.stops|length }} stop{{ '' if d.stops|length==1 else 's' }}</span></div>
 {% if d.drive %}<div class="small">🚗 {{ d.drive }}{% if d.estimated %} <span class="muted">(est.)</span>{% endif %}</div>{% endif %}
-{% for s in d.stops %}<div class="stop" style="{{ 'opacity:.5;text-decoration:line-through' if s.status=='Skipped' }}">{{ '✓ ' if s.status=='Done' }}{{ s.label or s.cname }}{% if s.purpose %}<div class="muted">{{ s.purpose }}</div>{% endif %}</div>{% endfor %}
+{% for s in d.stops %}<div class="stop" style="{{ 'opacity:.5;text-decoration:line-through' if s.status=='Skipped' }}">{{ '✓ ' if s.status=='Done' }}{{ s.label or s.cname }}{% if s.products %}<div class="muted">{{ s.products }}</div>{% elif s.purpose %}<div class="muted">{{ s.purpose }}</div>{% endif %}</div>{% endfor %}
 <a class="btn sm" style="margin-top:6px" href="{{ url_for('plan.day', day=d.iso) }}">Open day</a>
 </div>{% endfor %}
 </div>
