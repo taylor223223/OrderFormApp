@@ -136,6 +136,11 @@ def test_crm_and_routes(client):
     dash = c.get("/").get_data(as_text=True)
     assert "Today&#39;s route" in dash or "Today's route" in dash
     assert f"/routes/day/{today}" in dash and 'href="/crm"' in dash
+    assert "CRM quick note" in dash and "Doors, Blinds" in dash and "Unit 104 vacant" in dash
+    post(c, "/crm/log", {"customer_id": cids[3], "kind": "Text", "notes": "Needs screens for 12 units",
+                         "follow_up": today, "next": "/"})
+    dash = c.get("/").get_data(as_text=True)
+    assert "Follow up: Needs screens for 12 units" in dash
     # weekly report: page, pdf, csv, send as draft file
     html = c.get("/crm/report").get_data(as_text=True)
     assert "Test Apts 0" in html and "Maria Lopez" in html

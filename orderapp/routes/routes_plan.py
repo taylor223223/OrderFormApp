@@ -241,11 +241,9 @@ def day(day):
                            items=ESTIMATE_ITEMS)
 
 
-@bp.route("/routes/day/<day>/sheet")
-@login_required
-def sheet(day):
-    """Simple stop list for the day: where, when, what I'm estimating, notes. Printable / copyable."""
-    d = _day(day) or abort(404)
+def day_timeline(day):
+    """Stops for a day with arrival times from the last planned route (no map lookups)."""
+    d = _day(day)
     rd = q("SELECT legs FROM route_days WHERE day=?", (day,), one=True)
     legs = {}
     if rd and rd["legs"]:
@@ -264,6 +262,15 @@ def sheet(day):
             arrive = t
             t += timedelta(minutes=s["visit_min"] or visit_default)
         rows.append({"s": s, "arrive": arrive})
+    return rows
+
+
+@bp.route("/routes/day/<day>/sheet")
+@login_required
+def sheet(day):
+    """Simple stop list for the day: where, when, what I'm estimating, notes. Printable / copyable."""
+    d = _day(day) or abort(404)
+    rows = day_timeline(day)
     lines = [f"Route - {d:%a %m/%d}"]
     for i, r in enumerate(rows, 1):
         s = r["s"]

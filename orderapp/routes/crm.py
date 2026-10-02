@@ -101,7 +101,8 @@ def log():
     msgs = ["Logged."]
     if f.get("follow_up"):
         x("INSERT INTO tasks(customer_id, activity_id, title, due_date, owner, created) VALUES (?,?,?,?,?,?)",
-          (cid, aid, f.get("follow_up_title", "").strip() or f"Follow up ({kind.lower()})", f["follow_up"],
+          (cid, aid, f.get("follow_up_title", "").strip() or f.get("subject", "").strip()
+           or (f.get("notes", "").strip()[:60] and "Follow up: " + f.get("notes", "").strip()[:60]) or f"Follow up ({kind.lower()})", f["follow_up"],
            session.get("username"), now()))
         msgs.append(f"Follow-up set for {f['follow_up']}.")
     if f.get("route_day") and cid:

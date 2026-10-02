@@ -1,4 +1,5 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
+{% block head %}{% if route.points %}<link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">{% endif %}{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Dashboard</h1><div class="muted">Start an order, check what's open, or review incoming info.</div></div>
   <div class="row"><a class="btn primary" href="{{ url_for('orders.new') }}">+ New order</a><a class="btn" href="{{ url_for('photos.field_order') }}">Photo order</a><a class="btn" href="{{ url_for('emails.inbox') }}">Check email</a><a class="btn" href="{{ url_for('crm.home') }}#quicklog">CRM</a><a class="btn" href="{{ url_for('plan.day', day=today) }}">Today's route</a></div></div>
@@ -8,9 +9,46 @@
   <div class="stat"><div class="n">{{ stats.measurements }}</div><div class="l">Saved measurements</div></div>
   <a class="stat" href="{{ url_for('orders.tracking') }}"><div class="n">{{ stats.open_orders }}</div><div class="l">Open orders</div></a>
 </div>
-<div class="grid g2" style="margin-top:12px">
-  <a class="stat shortcut" href="{{ url_for('crm.home') }}"><div class="n">{{ stats.followups_due }}</div><div class="l">CRM - follow-ups due today · log a call or visit →</div></a>
-  <a class="stat shortcut" href="{{ url_for('plan.day', day=today) }}"><div class="n">{{ stats.stops_today }}</div><div class="l">Today's route - stops planned · plan the week →</div></a>
+<div class="grid g2 previews">
+  <!-- Today's route preview -->
+  <div class="card pv pv-route">
+    <div class="pvhead"><a href="{{ url_for('plan.day', day=today) }}"><span class="ic">🗺️</span> Today's route</a>
+      <span class="small muted">{{ route.rows|length }} stop{{ '' if route.rows|length == 1 else 's' }}{% if route.drive %} · 🚗 {{ route.drive }}{% if route.miles %} · {{ route.miles }} mi{% endif %}{% endif %}</span></div>
+    {% if route.points %}<div id="minimap"></div>{% endif %}
+    <div class="pvlist">
+    {% for r in route.rows %}{% set s = r.s %}
+      <a class="pvstop {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}" href="{{ url_for('plan.day', day=today) }}">
+        <span class="stopn {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}">{{ loop.index }}</span>
+        <span class="pvtxt"><b>{{ s.label or s.cname }}</b><span class="small muted">{% if r.arrive %}{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}{% endif %}{% if s.products %}{{ ' · ' if r.arrive }}<span style="color:var(--ink)">Estimating: {{ s.products }}</span>{% endif %}</span>
+          {% if s.notes %}<span class="small pvnote">{{ s.notes }}</span>{% endif %}</span></a>
+    {% else %}<div class="empty small">No stops planned for today.</div>{% endfor %}
+    </div>
+    <form method="post" action="{{ url_for('plan.add') }}" class="row pvadd"><input type="hidden" name="day" value="{{ today }}"><input type="hidden" name="next" value="/">
+      <div style="flex:1;min-width:160px">{% set picker_id='dash_stop' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
+      <select name="source" style="width:auto"><option value="">Planned</option><option>Call</option><option>Text</option></select>
+      <button class="btn sm primary">+ Stop</button></form>
+    <div class="row small" style="justify-content:space-between;margin-top:6px"><a href="{{ url_for('plan.day', day=today) }}">Open today's route →</a><a href="{{ url_for('plan.week') }}">Plan the week →</a></div>
+  </div>
+  <!-- CRM quick note -->
+  <div class="card pv pv-crm">
+    <div class="pvhead"><a href="{{ url_for('crm.home') }}"><span class="ic">🤝</span> CRM quick note</a>
+      <span class="small muted">{{ crm.due|length }} follow-up{{ '' if crm.due|length == 1 else 's' }} due</span></div>
+    <form method="post" action="{{ url_for('crm.log') }}" class="quicknote"><input type="hidden" name="next" value="/">
+      <div class="row" style="gap:6px"><div style="flex:1;min-width:160px">{% set picker_id='dash_note' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
+        <select name="kind" style="width:auto">{% for k in crm.kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
+      <div class="row" style="gap:6px;margin-top:6px"><input name="contact_name" list="dash_contacts" placeholder="Who" style="flex:1"><datalist id="dash_contacts">{% for k in contacts %}<option value="{{ k.name }}">{% endfor %}</datalist>
+        <input type="date" name="follow_up" title="Follow up on" style="width:auto"></div>
+      <input type="hidden" name="save_contact" value="1">
+      <textarea name="notes" rows="3" placeholder="Quick note: who you talked to, what about, next steps..." style="margin-top:6px"></textarea>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><span class="small muted">Saved to the property's CRM timeline.</span><button class="btn sm primary">Save note</button></div>
+    </form>
+    {% if crm.due %}<div class="pvsub">Follow-ups due</div>
+    {% for t in crm.due %}<div class="row pvtask"><form method="post" action="{{ url_for('crm.task_toggle', tid=t.id) }}"><input type="hidden" name="next" value="/"><button class="btn sm" title="Done">✓</button></form>
+      <span style="flex:1"><b>{{ t.title }}</b>{% if t.cname %} <span class="small muted">· {{ t.cname }}</span>{% endif %}</span>{% if t.due_date and t.due_date < today %}<span class="tag" style="background:var(--err-soft);color:var(--err)">overdue</span>{% endif %}</div>{% endfor %}{% endif %}
+    {% if crm.recent %}<div class="pvsub">Recent</div>
+    {% for a in crm.recent %}<div class="small pvact"><span class="tag">{{ a.kind }}</span> <a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.cname or '(no property)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %} <span class="muted">{{ (a.subject or a.notes or '')[:60] }}</span></div>{% endfor %}{% endif %}
+    <div class="small" style="margin-top:6px"><a href="{{ url_for('crm.home') }}">Open CRM →</a></div>
+  </div>
 </div>
 {% if batches %}
 <div class="card" style="margin-top:16px"><b>Waiting for your review</b>
@@ -31,3 +69,25 @@
   </div>
 </div>
 {% endblock %}
+
+{% block scripts %}{% if route.points %}
+<script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+<script>
+(function(){
+  const pts = {{ route.points|tojson }}, start = {{ route.start|tojson }}, el = document.getElementById('minimap');
+  if (!window.L || !el) return;
+  const map = L.map(el, {zoomControl: false, attributionControl: true, scrollWheelZoom: false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'}).addTo(map);
+  const b = [], line = [];
+  if (start) { L.circleMarker(start, {radius: 7, color: '#7c2d12', fillColor: '#fbbf24', fillOpacity: 1}).addTo(map); b.push(start); line.push(start); }
+  pts.forEach(p => {
+    const c = p.status === 'Done' ? '#2e7d32' : p.status === 'Skipped' ? '#999' : '#c2410c';
+    L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<span class="stopn" style="background:${c}">${p.n}</span>`, iconSize: [24, 24], iconAnchor: [12, 12]})})
+      .addTo(map).bindTooltip((p.label || '').replace(/[<>&]/g, ''));
+    b.push([p.lat, p.lon]); if (p.status !== 'Skipped') line.push([p.lat, p.lon]);
+  });
+  if (line.length > 1) L.polyline(line, {color: '#c2410c', weight: 3, dashArray: '6 6'}).addTo(map);
+  if (b.length > 1) map.fitBounds(b, {padding: [20, 20]}); else map.setView(b[0], 13);
+  el.addEventListener('click', () => location.href = '{{ url_for("plan.day", day=today) }}');
+})();
+</script>{% endif %}{% endblock %}
