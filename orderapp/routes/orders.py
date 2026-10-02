@@ -1,9 +1,10 @@
+import io
 import os
 import re
 from datetime import datetime
 
-from flask import (Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file,
-                   url_for)
+from flask import (Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request,
+                   send_file, url_for)
 
 from ..catalog import FORMS, form_list, public_spec
 from ..changes import add_change, new_batch, propose_contact, propose_customer_fields
@@ -187,7 +188,9 @@ def view(oid):
     spec = public_spec(o["form_key"]) if o["form_key"] in FORMS else None
     miss = missing_fields(o["form_key"], data) if spec else []
     labels = {f["key"]: f["label"] for f in spec["fields"]} if spec else {}
+    from ..photos import photos_for
     return render_template("order_view.html", o=o, data=data, hist=hist, spec=spec, labels=labels, miss=miss,
+                           photos=photos_for(oid),
                            statuses=STATUSES, pdf_exists=bool(o["pdf_path"] and os.path.exists(o["pdf_path"])))
 
 
@@ -230,38 +233,74 @@ def _fmt(tmpl, o, data):
 @bp.route("/orders/<int:oid>/send", methods=["GET", "POST"])
 @login_required
 def send_page(oid):
+    from ..photos import photos_for, photos_pdf
     o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
-    if o["form_key"] not in FORMS:
-        abort(404)
+    has_form = o["form_key"] in FORMS
+    photos = photos_for(oid)
+    if not has_form and not photos:
+        flash("Add a photo or use an order form before emailing this order.", "error")
+        return redirect(url_for("orders.view", oid=oid))
     data = loads(o["data"])
-    if not (o["pdf_path"] and os.path.exists(o["pdf_path"])):
+    if has_form and not (o["pdf_path"] and os.path.exists(o["pdf_path"])):
         _make_pdf(oid)
         o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+    cust = q("SELECT name FROM customers WHERE id=?", (o["customer_id"],), one=True) if o["customer_id"] else None
+    cname = (cust["name"] if cust else "") or data.get("header", {}).get("name") or "Customer"
+    folder = ensure_dir(os.path.join(output_dir(), safe_name(cname)))
     if request.method == "POST":
         to = request.form.get("to", "").strip()
         if not to:
             flash("Enter a To address.", "error")
             return redirect(url_for("orders.send_page", oid=oid))
+        attachments = [o["pdf_path"]] if has_form else []
+        pmode = request.form.get("photos_mode", "pdf")
+        if photos and pmode == "pdf":
+            pp = photos_pdf(oid, os.path.join(folder, safe_name(f"{cname} - {o['title']} - photos - #{oid}.pdf")),
+                            title=f"{cname} - PO {o['po'] or '-'}")
+            if pp:
+                attachments.append(pp)
+        elif photos and pmode == "images":
+            attachments += [p["path"] for p in photos]
+        total = sum(os.path.getsize(a) for a in attachments if os.path.exists(a))
+        if total > 20 * 1024 * 1024:
+            flash(f"Attachments total {total / 1048576:.1f} MB - most mail servers stop at 20-25 MB. "
+                  "Remove some photos or send them as one PDF.", "error")
+            return redirect(url_for("orders.send_page", oid=oid))
         review = request.form.get("mode", setting("send_mode")) != "send"
         prov = provider(setting)
+        if prov.name == "eml" and current_app.config.get("CLOUD"):
+            # on the hosted app: hand the draft to the device instead of opening it on the server
+            from email.message import EmailMessage
+            import mimetypes
+            m = EmailMessage()
+            m["To"], m["Subject"], m["X-Unsent"] = to, request.form.get("subject", ""), "1"
+            if request.form.get("cc", "").strip():
+                m["Cc"] = request.form["cc"].strip()
+            m.set_content(request.form.get("body", ""))
+            for a in attachments:
+                mt = (mimetypes.guess_type(a)[0] or "application/octet-stream").split("/")
+                with open(a, "rb") as fh:
+                    m.add_attachment(fh.read(), maintype=mt[0], subtype=mt[1], filename=os.path.basename(a))
+            add_status(oid, o["status"], f"Email draft downloaded for {to}")
+            return send_file(io.BytesIO(bytes(m)), mimetype="message/rfc822", as_attachment=True,
+                             download_name=safe_name(f"{cname} - order {oid}.eml"))
         try:
             kw = {}
             if prov.name == "eml":
-                kw["out_dir"] = os.path.dirname(o["pdf_path"])
+                kw["out_dir"] = folder
             msg = prov.send(to, request.form.get("cc", "").strip(), request.form.get("subject", ""),
-                            request.form.get("body", ""), [o["pdf_path"]], review=review, **kw)
+                            request.form.get("body", ""), attachments, review=review, **kw)
         except MailError as e:
             flash(str(e), "error")
             return redirect(url_for("orders.send_page", oid=oid))
         except Exception as e:  # noqa: BLE001
             flash(f"Email failed: {e}", "error")
             return redirect(url_for("orders.send_page", oid=oid))
-        if not review or prov.name != "eml":
-            if not review:
-                x("UPDATE orders SET status='Sent', sent_at=?, updated=? WHERE id=?", (now(), now(), oid))
-                add_status(oid, "Sent", f"Emailed to {to}")
-            else:
-                add_status(oid, o["status"], f"Email draft prepared for {to}")
+        if not review:
+            x("UPDATE orders SET status='Sent', sent_at=?, updated=? WHERE id=?", (now(), now(), oid))
+            add_status(oid, "Sent", f"Emailed to {to}")
+        elif prov.name != "eml":
+            add_status(oid, o["status"], f"Email draft prepared for {to}")
         flash(msg + (" Mark the order as Sent once it's gone." if review else ""), "ok")
         return redirect(url_for("orders.view", oid=oid))
     cust_emails = []
@@ -271,10 +310,21 @@ def send_page(oid):
             cust_emails.append(c["email"])
         cust_emails += [k["email"] for k in q("SELECT email FROM contacts WHERE customer_id=? AND email<>''",
                                               (o["customer_id"],))]
+    body = _fmt(setting("body_template"), o, data)
+    if not has_form:
+        extra = [f"Units: {data['units']}" if data.get("units") else "", data.get("comments", "")]
+        extra = "\n".join(e for e in extra if e)
+        if extra:
+            body = body.replace("\n\nThank you", f"\n\n{extra}\n\nThank you", 1) if "\n\nThank you" in body \
+                else body + "\n\n" + extra
     return render_template("order_send.html", o=o, to=setting("order_to"), cc=setting("order_cc"),
-                           subject=_fmt(setting("subject_template"), o, data),
-                           body=_fmt(setting("body_template"), o, data), cust_emails=cust_emails,
-                           provider=setting("email_provider"), mode=setting("send_mode"))
+                           subject=_fmt(setting("subject_template"), o, data), body=body,
+                           cust_emails=cust_emails, provider=setting("email_provider"), mode=setting("send_mode"),
+                           has_form=has_form, photos=photos,
+                           share_files=([{"url": url_for("orders.pdf", oid=oid), "name": os.path.basename(o["pdf_path"])}]
+                                        if has_form else []) +
+                                       [{"url": url_for("photos.show", pid=p["id"]), "name": os.path.basename(p["path"])}
+                                        for p in photos])
 
 
 @bp.route("/orders/<int:oid>/status", methods=["POST"])
@@ -299,7 +349,10 @@ def set_status(oid):
 @bp.route("/orders/<int:oid>/delete", methods=["POST"])
 @login_required
 def delete(oid):
+    import shutil
+    from ..photos import photo_dir
     x("DELETE FROM orders WHERE id=?", (oid,))
+    shutil.rmtree(photo_dir(oid), ignore_errors=True)
     flash("Order deleted (the PDF file, if any, was left in your output folder).", "ok")
     return redirect(url_for("orders.tracking"))
 

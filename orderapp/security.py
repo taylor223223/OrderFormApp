@@ -26,6 +26,23 @@ def create_user(username, pw):
              (username.strip(), hash_pw(pw), now()))
 
 
+_ip_fails = {}
+
+
+def ip_blocked(ip):
+    """Slow down password guessing from one address (in addition to the per-user lock)."""
+    import time
+    now_t = time.time()
+    hits = [t for t in _ip_fails.get(ip, []) if now_t - t < 900]
+    _ip_fails[ip] = hits
+    return len(hits) >= 20
+
+
+def ip_fail(ip):
+    import time
+    _ip_fails.setdefault(ip, []).append(time.time())
+
+
 def check_login(username, pw):
     """Return (user_row | None, error message)."""
     u = q("SELECT * FROM users WHERE username=?", (username.strip(),), one=True)

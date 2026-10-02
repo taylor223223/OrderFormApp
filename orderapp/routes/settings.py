@@ -5,7 +5,7 @@ import sqlite3
 import tempfile
 from datetime import datetime
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from ..catalog import PRODUCTS
 from ..db import DEFAULT_SETTINGS, db_path, loads, q, set_setting, setting
@@ -100,7 +100,7 @@ def graph_signout():
 def backup():
     """Download a consistent copy of the database."""
     tmp = os.path.join(tempfile.gettempdir(), "orderapp_backup.db")
-    src = sqlite3.connect(db_path())
+    src = sqlite3.connect(current_app.config['DB_PATH'])
     dst = sqlite3.connect(tmp)
     src.backup(dst)
     dst.close()
@@ -148,3 +148,43 @@ def export(what):
     data = io.BytesIO(out.getvalue().encode("utf-8-sig"))
     return send_file(data, mimetype="text/csv", as_attachment=True,
                      download_name=f"{what}-{datetime.now():%Y%m%d}.csv")
+
+
+@bp.route("/settings/restore", methods=["POST"])
+@login_required
+def restore():
+    """Replace all data with an uploaded backup (e.g. moving the PC app's data online)."""
+    from ..db import init_db
+    f = request.files.get("backup")
+    if not f or not f.filename.lower().endswith(".db"):
+        flash("Choose a .db backup file (Settings → Download backup on the other app).", "error")
+        return redirect(url_for("settings.index"))
+    tmpd = os.path.join(data_dir(), "backups")
+    os.makedirs(tmpd, exist_ok=True)
+    up = os.path.join(tmpd, "upload-restore.db")
+    f.save(up)
+    try:
+        src = sqlite3.connect(up)
+        tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"customers", "orders", "users"} <= tables:
+            raise ValueError("not an Order Form App backup")
+        n_users = src.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        if not n_users:
+            raise ValueError("backup has no login")
+    except Exception as e:  # noqa: BLE001
+        flash(f"That file can't be restored: {e}", "error")
+        return redirect(url_for("settings.index"))
+    # keep a copy of what's here now
+    keep = os.path.join(tmpd, f"before-restore-{datetime.now():%Y%m%d-%H%M%S}.db")
+    cur = sqlite3.connect(current_app.config['DB_PATH'])
+    k = sqlite3.connect(keep)
+    cur.backup(k)
+    k.close()
+    src.backup(cur)
+    cur.close()
+    src.close()
+    os.remove(up)
+    init_db(current_app.config['DB_PATH'])   # adds any tables newer than the backup
+    session.clear()
+    flash("Data restored. Log in with the username and password from the app the backup came from.", "ok")
+    return redirect(url_for("auth.login"))

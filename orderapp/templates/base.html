@@ -5,6 +5,13 @@
 <title>{% block title %}Order Forms{% endblock %} - Order Form App</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#14213d">
+<link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Orders">
 </head>
 <body>
 {% if username %}
@@ -14,6 +21,7 @@
     {% set ep = request.endpoint or '' %}
     <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}">Dashboard</a>
     <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor') }}">New Order</a>
+    <a href="{{ url_for('photos.field_order') }}" class="{{ 'on' if ep=='photos.field_order' }}">Photo Order</a>
     <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}">Customers</a>
     <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}">Order Tracking</a>
     <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}">Email</a>
@@ -22,7 +30,7 @@
     <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}">Settings</a>
   </nav>
   <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn">Log out</button></form>
-  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close the Order Form App?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>
+{% if not cloud %}  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close the Order Form App?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>{% endif %}
 </header>
 {% endif %}
 <main>
@@ -42,5 +50,6 @@ document.querySelectorAll('form[method=post], form[method=POST]').forEach(f => {
 });
 </script>
 {% block scripts %}{% endblock %}
+<script>if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 </body>
 </html>

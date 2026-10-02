@@ -6,6 +6,7 @@
   <div class="muted">{% if o.customer_id %}<a href="{{ url_for('customers.view', cid=o.customer_id) }}">{{ o.cname }}</a>{% else %}{{ data.header.name if data.header else '(no customer)' }}{% endif %}
     {% if o.po %} · PO {{ o.po }}{% endif %}{% if o.order_date %} · {{ o.order_date }}{% endif %} · <span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span> <span class="small">({{ o.source }})</span></div></div>
   <div class="row">
+    {% if not spec and photos %}<a class="btn primary" href="{{ url_for('orders.send_page', oid=o.id) }}">Email it</a>{% endif %}
     {% if spec %}
     <a class="btn" href="{{ url_for('orders.editor', order=o.id) }}">Edit</a>
     <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, regen=1) }}" target="_blank">View PDF</a>
@@ -27,13 +28,26 @@
     <div class="row" style="margin-top:10px">
       <form method="post" action="{{ url_for('orders.learn', oid=o.id) }}"><button class="btn sm" title="Save these sizes to the units/floorplans for next time">Save sizes to units</button></form>
       <a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=o.customer_id or '', copy=o.id) }}">Reorder (copy)</a>
-      {% if pdf_exists %}<form method="post" action="{{ url_for('orders.open_folder', oid=o.id) }}"><button class="btn sm">Open PDF folder</button></form>{% endif %}
+      {% if pdf_exists and not cloud %}<form method="post" action="{{ url_for('orders.open_folder', oid=o.id) }}"><button class="btn sm">Open PDF folder</button></form>{% endif %}
     </div>
-    {% if o.pdf_path %}<div class="small muted" style="margin-top:6px">PDF: {{ o.pdf_path }}</div>{% endif %}
+    {% if o.pdf_path and not cloud %}<div class="small muted" style="margin-top:6px">PDF: {{ o.pdf_path }}</div>{% endif %}
   </div>
+  {% elif o.source == 'photo' %}
+  <div class="card"><b>Field order (photos)</b>{% if data.units %}<p><span class="muted">Units:</span> {{ data.units }}</p>{% endif %}{% if data.comments %}<p><span class="muted">Notes:</span> {{ data.comments }}</p>{% endif %}</div>
   {% else %}
   <div class="card"><b>Tracking-only entry</b> (placed outside this app).{% if o.notes %}<p>{{ o.notes }}</p>{% endif %}</div>
   {% endif %}
+  <div class="card" id="photos"><h3 style="margin-top:0">Photos <span class="muted small">({{ photos|length }})</span></h3>
+    {% if photos %}<div class="photogrid">{% for p in photos %}
+      <div class="ph"><a href="{{ url_for('photos.show', pid=p.id) }}" target="_blank"><img src="{{ url_for('photos.show', pid=p.id) }}" alt="{{ p.caption or p.filename }}" loading="lazy"></a>
+      <div class="small muted">{{ p.caption or '' }}</div>
+      <form method="post" action="{{ url_for('photos.delete', pid=p.id) }}" onsubmit="return confirm('Remove this photo?')"><button class="btn sm danger">Remove</button></form></div>
+    {% endfor %}</div>{% else %}<div class="muted small">No photos yet. Add pictures of a paper form, the opening, a damaged door, etc.</div>{% endif %}
+    <form method="post" action="{{ url_for('photos.upload', oid=o.id) }}" enctype="multipart/form-data" class="row" style="margin-top:10px">
+      <input type="file" name="photos" accept="image/*" multiple style="max-width:280px">
+      <input name="caption" placeholder="Caption (optional, e.g. Unit 204 bedroom)" style="max-width:280px">
+      <button class="btn sm primary">Add photos</button></form>
+  </div>
 </div>
 <div>
   <form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}" class="card"><h3 style="margin-top:0">Tracking</h3>

@@ -50,7 +50,22 @@ def open_window():
     webbrowser.open(URL)
 
 
+def serve_cloud():
+    """Hosted mode (Render etc.): listen on $PORT, no browser."""
+    from waitress import serve
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if not os.environ.get("ORDERAPP_SETUP_KEY"):
+        logging.warning("ORDERAPP_SETUP_KEY is not set - first-time setup is disabled until it is.")
+    app = create_app()
+    port = int(os.environ.get("PORT", "10000"))
+    logging.info("Order Form App (cloud) on port %s", port)
+    # Render's proxy sets X-Forwarded-*; ProxyFix in create_app() reads them
+    serve(app, host="0.0.0.0", port=port, threads=8)
+
+
 def main():
+    if os.environ.get("ORDERAPP_CLOUD") == "1":
+        return serve_cloud()
     logging.basicConfig(filename=os.path.join(data_dir(), "app.log"), level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     if port_in_use():

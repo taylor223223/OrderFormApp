@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS email_messages (
     sender_name TEXT, received TEXT, body TEXT, status TEXT DEFAULT 'new', order_id INTEGER,
     parsed TEXT
 );
+CREATE TABLE IF NOT EXISTS order_photos (
+    id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    filename TEXT, path TEXT NOT NULL, caption TEXT, created TEXT
+);
 CREATE INDEX IF NOT EXISTS ix_units_cust ON units(customer_id);
 CREATE INDEX IF NOT EXISTS ix_meas_cust ON measurements(customer_id);
 CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders(customer_id);

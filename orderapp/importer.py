@@ -88,8 +88,15 @@ def guess_mapping(headers):
             if hn in [_n(s) for s in syns]:
                 target = k
                 break
-        if not target and hn.replace("#", "") in keys:
-            target = hn.replace("#", "")
+        if not target:
+            # match a measurement key or its label: "Door Location", "door_location", "Slat Width"...
+            for k, label in all_targets():
+                if not k:
+                    continue
+                lab = label.split(": ", 1)[-1]
+                if hn.replace("#", "") in (_n(k), _n(lab), _n(lab.split(" (")[0])):
+                    target = k
+                    break
         if target in used and target not in ("notes",):
             target = ""
         if target:
@@ -213,6 +220,10 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
             order.append(gkey)
         for k, val in cust_fields.items():
             g["fields"].setdefault(k, val)
+        # notes on a row with no product/sizes are about the customer (delivery notes etc.)
+        row_has_meas = any(v.get(k) for k in meas_keys) and (v.get("product") or v.get("item_no"))
+        if v.get("notes") and not row_has_meas and v["notes"] not in g["fields"].get("notes", ""):
+            g["fields"]["notes"] = "; ".join(x for x in [g["fields"].get("notes"), v["notes"]] if x)
         contact = {"name": v.get("contact_name", ""), "email": v.get("contact_email", ""),
                    "phone": v.get("contact_phone", ""), "role": v.get("contact_role", "")}
         if any(contact.values()) and contact not in g["contacts"]:
@@ -233,8 +244,13 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
                 data.setdefault("style", v["product"])
             m = {"product": product, "room": v.get("room", ""), "data": data, "floorplan_name": fp,
                  "unit_number": unit, "building": v.get("building", ""), "notes": v.get("notes", ""),
-                 "verified": str(v.get("verified", "")).lower() in ("y", "yes", "true", "1", "x")}
-            if m not in g["meas"]:
+                 "verified": str(v.get("verified", "")).lower() in ("y", "yes", "true", "1", "x"),
+                 "_from_order": bool(v.get("po") or v.get("order_date"))}
+            # one saved measurement per layout/unit + product + room: the first row wins
+            # (later rows for the same spot - e.g. past orders - still become order history)
+            slot = (fp.lower() if fp else "unit:" + unit.lower(), product, (v.get("room") or "").lower())
+            if slot not in g.setdefault("slots", set()):
+                g["slots"].add(slot)
                 g["meas"].append(m)
             if v.get("po") or v.get("order_date"):
                 okey = (v.get("po", ""), v.get("order_date", ""))
@@ -278,6 +294,21 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
                        new=un)
             summary["units"] += 1
         for m in g["meas"]:
+            from_order = m.pop("_from_order", False)
+            if from_order and m["unit_number"] and not m["floorplan_name"]:
+                # a past-order line for a unit whose floorplan already has this product measured:
+                # keep it as order history only, don't save a duplicate unit measurement
+                ufp = g["units"].get(m["unit_number"], {}).get("floorplan", "")
+                if not ufp and cid:
+                    rowu = q("""SELECT f.name FROM units u JOIN floorplans f ON f.id=u.floorplan_id
+                                WHERE u.customer_id=? AND lower(u.unit_number)=lower(?)""", (cid, m["unit_number"]), one=True)
+                    ufp = rowu["name"] if rowu else ""
+                if ufp and (any(o is not m and o["floorplan_name"].lower() == ufp.lower() and o["product"] == m["product"]
+                                for o in g["meas"]) or (cid and q(
+                        """SELECT 1 FROM measurements m JOIN floorplans f ON f.id=m.floorplan_id
+                           WHERE m.customer_id=? AND lower(f.name)=lower(?) AND m.product=?""",
+                        (cid, ufp, m["product"]), one=True))):
+                    continue
             if _meas_exists(cid, m["floorplan_name"], m["unit_number"], m["product"], m["room"], m["data"]):
                 continue
             add_change(batch, "new_measurement", customer_id=cid, customer_ref=ref, payload=m)

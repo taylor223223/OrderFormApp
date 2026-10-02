@@ -2,10 +2,11 @@
 {% block body %}
 <div class="auth card">
   <h1>Welcome</h1>
-  <p class="muted">Create the login for this app. Your data stays on this computer only.</p>
+  <p class="muted">Create the login for this app. {{ "Only someone with the setup key can create this login." if cloud else "Your data stays on this computer only." }}</p>
   <form method="post">
+    {% if cloud %}<div class="field"><label>Setup key (from your hosting dashboard)</label><input name="setup_key" autocomplete="off"></div>{% endif %}
     <div class="field"><label>Username</label><input name="username" autofocus></div>
-    <div class="field"><label>Password (8+ characters)</label><input type="password" name="password" autocomplete="new-password"></div>
+    <div class="field"><label>Password ({{ 10 if cloud else 8 }}+ characters)</label><input type="password" name="password" autocomplete="new-password"></div>
     <div class="field"><label>Confirm password</label><input type="password" name="password2" autocomplete="new-password"></div>
     <button class="btn primary">Create account</button>
   </form>

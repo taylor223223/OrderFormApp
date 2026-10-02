@@ -24,9 +24,15 @@ def data_dir():
     return d
 
 
+def is_cloud():
+    """True when running on the hosted (phone/tablet) server."""
+    return os.environ.get("ORDERAPP_CLOUD") == "1"
+
+
 def default_output_dir():
-    d = os.path.join(os.path.expanduser("~"), "Documents", "Order Forms Output")
-    return d
+    if is_cloud():
+        return os.path.join(data_dir(), "output")
+    return os.path.join(os.path.expanduser("~"), "Documents", "Order Forms Output")
 
 
 def ensure_dir(d):

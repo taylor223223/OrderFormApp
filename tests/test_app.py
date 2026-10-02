@@ -219,6 +219,45 @@ def test_backup_export_logout(client):
     assert c.get("/customers").status_code == 302
 
 
+def _jpeg(color=(200, 30, 30), size=(3000, 2000)):
+    from PIL import Image
+    b = io.BytesIO()
+    Image.new("RGB", size, color).save(b, "JPEG")
+    return b.getvalue()
+
+
+def test_photo_field_order_and_send(client, tmp_path):
+    c = client
+    post(c, "/login", {"username": "taylor", "password": "secret123"}, page="/login")
+    if c.get("/").status_code != 200:   # account may be locked by test_lockout ordering
+        pytest.skip("login locked")
+    post(c, "/settings", {"output_dir": str(tmp_path), "email_provider": "eml"})
+    r = post(c, "/field-order", {"customer_id": "1", "what": "Door order", "po": "F-1", "units": "204",
+                                 "notes": "see sketch", "action": "send",
+                                 "photos": [(io.BytesIO(_jpeg()), "IMG_1.jpg"), (io.BytesIO(_jpeg((0, 90, 0))), "IMG_2.jpg")]},
+             page="/field-order", content_type="multipart/form-data")
+    assert "/send" in r.headers["Location"]
+    oid = int(r.headers["Location"].split("/")[2])
+    page = c.get(f"/orders/{oid}/send").get_data(as_text=True)
+    assert "2 photo(s)" in page and "Units: 204" in page
+    from orderapp.photos import photos_for
+    with c.app.app_context():
+        ph = photos_for(oid)
+        assert len(ph) == 2 and os.path.getsize(ph[0]["path"]) < 400_000   # downsized
+    r = post(c, f"/orders/{oid}/send", {"to": "orders@example.com", "subject": "s", "body": "b",
+                                       "mode": "review", "photos_mode": "pdf"}, page=f"/orders/{oid}/send")
+    assert r.status_code == 302
+    assert list(tmp_path.rglob("*photos*.pdf")) and list(tmp_path.rglob("*.eml"))
+    # add a photo to a form order and view it
+    r = post(c, "/orders/1/photos", {"photos": [(io.BytesIO(_jpeg()), "door.png")], "caption": "Unit 101"},
+             page="/orders/1", content_type="multipart/form-data")
+    view = c.get("/orders/1").get_data(as_text=True)
+    assert "Unit 101" in view
+    pid = int(re.search(r'/photos/(\d+)"', view).group(1))
+    assert c.get(f"/photos/{pid}").status_code == 200
+
+
+
 def test_lockout(client):
     c = client
     for _ in range(5):

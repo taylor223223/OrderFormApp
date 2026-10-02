@@ -33,12 +33,16 @@ def propose_customer_fields(batch_id, cust, fields, ref=None):
     flag conflicts (unchecked). Returns number of proposals."""
     n = 0
     for f in CUSTOMER_FIELDS:
-        if f in ("notes", "name") and cust is not None:
+        if f == "name" and cust is not None:
             continue
         v = (fields.get(f) or "").strip()
         if not v:
             continue
         old = (cust[f] if cust is not None else "") or ""
+        if f == "notes" and cust is not None:
+            if v.lower() in old.lower():
+                continue
+            v = "; ".join(x for x in [old, v] if x)  # append notes, never replace them
         if cust is not None and _same(old, v):
             continue
         add_change(batch_id, "set_field", customer_id=cust["id"] if cust is not None else None,

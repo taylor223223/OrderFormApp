@@ -1,0 +1,25 @@
+# Render Blueprint: hosts the Order Form App online for phone/tablet use.
+# Render dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: order-form-app
+    runtime: python
+    plan: starter            # $7/mo - needed for the persistent disk
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    healthCheckPath: /login
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1              # $0.25/mo - database, photos, PDFs
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: ORDERAPP_CLOUD
+        value: "1"
+      - key: ORDERAPP_DATA
+        value: /data
+      - key: ORDERAPP_SETUP_KEY   # needed once, to create your login
+        generateValue: true

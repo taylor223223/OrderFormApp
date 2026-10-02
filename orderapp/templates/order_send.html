@@ -2,21 +2,50 @@
 {% block body %}
 <div class="small"><a href="{{ url_for('orders.view', oid=o.id) }}">← Order #{{ o.id }}</a></div>
 <h1>Email {{ o.title }}</h1>
-<div class="muted">Attachment: {{ o.pdf_path.split('\\')[-1].split('/')[-1] }} · <a href="{{ url_for('orders.pdf', oid=o.id) }}" target="_blank">preview</a></div>
+<div class="muted">{% if has_form %}Attachment: {{ o.pdf_path.split('\\')[-1].split('/')[-1] }} · <a href="{{ url_for('orders.pdf', oid=o.id) }}" target="_blank">preview</a>{% endif %}
+{% if photos %}{{ ' + ' if has_form }}{{ photos|length }} photo(s){% endif %}</div>
 <form method="post" class="card" style="margin-top:12px;max-width:760px">
   <div class="field"><label>To</label><input name="to" value="{{ to }}"></div>
   <div class="field"><label>CC</label><input name="cc" value="{{ cc }}" list="custmails"><datalist id="custmails">{% for e in cust_emails %}<option value="{{ e }}">{% endfor %}</datalist>
     {% if cust_emails %}<div class="small muted">Customer emails: {% for e in cust_emails %}<a href="#" onclick="addCc('{{ e }}');return false">{{ e }}</a> {% endfor %}</div>{% endif %}</div>
   <div class="field"><label>Subject</label><input name="subject" value="{{ subject }}"></div>
   <div class="field"><label>Message</label><textarea name="body" rows="7">{{ body }}</textarea></div>
+  {% if photos %}<div class="field"><label>Photos</label>
+    <label style="font-weight:400;color:var(--ink)"><input type="radio" name="photos_mode" value="pdf" checked> Combine into one PDF (tidy, smaller)</label>
+    <label style="font-weight:400;color:var(--ink)"><input type="radio" name="photos_mode" value="images"> Attach each photo separately</label>
+    {% if has_form %}<label style="font-weight:400;color:var(--ink)"><input type="radio" name="photos_mode" value="none"> Don't include photos</label>{% endif %}
+  </div>{% endif %}
   <div class="field"><label>How</label>
     <label style="font-weight:400;color:var(--ink)"><input type="radio" name="mode" value="review" {{ 'checked' if mode!='send' }}> Open it in Outlook / Drafts so I can look it over and press Send</label>
     {% if provider != 'eml' %}<label style="font-weight:400;color:var(--ink)"><input type="radio" name="mode" value="send" {{ 'checked' if mode=='send' }}> Send it right now</label>{% endif %}
     <div class="small muted">Using: {{ {'outlook_desktop':'Outlook on this PC','graph':'Microsoft 365 sign-in','eml':'Email draft file (no connection)'}[provider] }} - change in Settings.</div>
   </div>
-  <button class="btn primary">Continue</button>
+  <div class="row"><button class="btn primary">Continue</button>
+  <button type="button" class="btn" id="shareBtn" hidden>Share from this phone/tablet…</button></div>
+  <div class="small muted" id="shareHelp" hidden>Share opens your device's share sheet - pick Outlook (or Mail/Messages) and the PDF{{ ' and photos' if photos }} are attached for you.</div>
 </form>
 {% endblock %}
 {% block scripts %}<script>
+const SHARE_FILES = {{ share_files|tojson }};
+(async () => {
+  const btn = document.getElementById('shareBtn');
+  if (!navigator.canShare || !SHARE_FILES.length) return;
+  btn.hidden = false; document.getElementById('shareHelp').hidden = false;
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Preparing…';
+    try {
+      const files = [];
+      for (const f of SHARE_FILES) {
+        const b = await fetch(f.url).then(r => r.blob());
+        files.push(new File([b], f.name, {type: b.type || 'application/octet-stream'}));
+      }
+      const data = {files, title: document.querySelector('[name=subject]').value,
+                    text: document.querySelector('[name=body]').value};
+      if (!navigator.canShare(data)) { alert('This device cannot share these files.'); return; }
+      await navigator.share(data);
+    } catch (e) { if (e.name !== 'AbortError') alert('Share failed: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Share from this phone/tablet…'; }
+  };
+})();
 function addCc(e){ const i = document.querySelector('[name=cc]'); i.value = i.value ? i.value + '; ' + e : e; }
 </script>{% endblock %}

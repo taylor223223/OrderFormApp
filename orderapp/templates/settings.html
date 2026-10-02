@@ -7,14 +7,14 @@
     <div><label>Sales rep name (printed on forms)</label><input name="sales_rep" value="{{ v.sales_rep }}"></div>
     <div><label>Date format</label><select name="date_format">{% for f, l in [('%m/%d/%Y','09/30/2026'),('%m/%d/%y','09/30/26'),('%Y-%m-%d','2026-09-30')] %}<option value="{{ f }}" {{ 'selected' if v.date_format==f }}>{{ l }}</option>{% endfor %}</select></div>
     <div><label>Log out after (minutes)</label><input name="session_minutes" value="{{ v.session_minutes }}"></div>
-    <div style="grid-column:1/-1"><label>Save PDFs to folder</label><input name="output_dir" value="{{ v.output_dir }}" placeholder="{{ default_out }}"><div class="small muted">Leave blank for {{ default_out }}. Each customer gets a subfolder.</div></div>
+    {% if not cloud %}<div style="grid-column:1/-1"><label>Save PDFs to folder</label><input name="output_dir" value="{{ v.output_dir }}" placeholder="{{ default_out }}"><div class="small muted">Leave blank for {{ default_out }}. Each customer gets a subfolder.</div></div>{% endif %}
   </div>
   <h3 id="email">Email</h3>
   <div class="grid g2">
     <div><label>Connect with</label><select name="email_provider" id="prov">
-      <option value="outlook_desktop" {{ 'selected' if v.email_provider=='outlook_desktop' }}>Outlook on this PC (classic Outlook) - no setup</option>
+      {% if not cloud %}<option value="outlook_desktop" {{ 'selected' if v.email_provider=='outlook_desktop' }}>Outlook on this PC (classic Outlook) - no setup</option>{% endif %}
       <option value="graph" {{ 'selected' if v.email_provider=='graph' }}>Microsoft 365 / new Outlook (sign in)</option>
-      <option value="eml" {{ 'selected' if v.email_provider=='eml' }}>No connection - create draft files</option></select>
+      <option value="eml" {{ 'selected' if v.email_provider=='eml' }}>No connection - {{ 'download an email draft / use Share' if cloud else 'create draft files' }}</option></select>
       <div class="small muted" id="provhelp"></div></div>
     <div><label>Default when sending</label><select name="send_mode"><option value="review" {{ 'selected' if v.send_mode!='send' }}>Open a draft for me to review (safer)</option><option value="send" {{ 'selected' if v.send_mode=='send' }}>Send immediately</option></select></div>
     <div><label>Send orders to</label><input name="order_to" value="{{ v.order_to }}"></div>
@@ -38,7 +38,7 @@
   {% else %}<button class="btn" id="signin" {{ 'disabled' if not v.graph_client_id }}>Sign in to Microsoft</button> <span class="small muted">{{ '' if v.graph_client_id else 'Save a client ID first.' }}</span>{% endif %}
   <div id="signinMsg" class="small" style="margin-top:8px"></div>
 </div>
-<div class="card"><h3 style="margin-top:0">Outlook on this PC</h3>{% if od_ok %}<span class="tag ok">Available</span> Uses the account your Outlook app is signed in to.{% else %}<span class="tag warn">Not available</span> {{ od_why }}{% endif %}</div>
+{% if not cloud %}<div class="card"><h3 style="margin-top:0">Outlook on this PC</h3>{% if od_ok %}<span class="tag ok">Available</span> Uses the account your Outlook app is signed in to.{% else %}<span class="tag warn">Not available</span> {{ od_why }}{% endif %}</div>{% endif %}
 <div class="grid g2">
 <form method="post" action="{{ url_for('settings.password') }}" class="card"><h3 style="margin-top:0">Change password</h3>
   <div class="field"><label>Current</label><input type="password" name="old"></div>
@@ -50,6 +50,10 @@
   <a class="btn" href="{{ url_for('settings.export', what='customers') }}">Customers CSV</a>
   <a class="btn" href="{{ url_for('settings.export', what='units') }}">Units CSV</a>
   <a class="btn" href="{{ url_for('settings.export', what='measurements') }}">Measurements CSV</a></div>
+  <form method="post" action="{{ url_for('settings.restore') }}" enctype="multipart/form-data" style="margin-top:12px" onsubmit="return confirm('Replace ALL data in this app with the backup file? (Your current data is saved as a backup first.)')">
+    <label>Restore / move data from a backup file (.db)</label>
+    <div class="row"><input type="file" name="backup" accept=".db" style="max-width:260px"><button class="btn sm danger">Restore</button></div>
+    <div class="small muted">Use this to move your PC data online: Download backup on the PC app, then restore it here.</div></form>
   <p class="small muted">Version {{ app_version }}</p></div>
 </div>
 {% endblock %}

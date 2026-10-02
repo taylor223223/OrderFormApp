@@ -4,7 +4,6 @@
 
 Double-click the downloaded **OrderFormApp.exe**. Nothing else to install (no Python). If Windows shows "Windows protected your PC", click **More info -> Run anyway**. Everything below this line is for developers.
 
-
 A private Windows desktop app for filling out Apartment Interior Supply order forms. It keeps track of customers, their unit layouts and measurements, predicts form values from past orders, reads order requests from Outlook, and emails the finished PDFs.
 
 Everything runs on your own computer. The app opens in its own window (Edge/Chrome app mode) and only answers to `127.0.0.1`. The data is kept in one local database file.
@@ -46,6 +45,31 @@ On the first launch you create your login, then go to **Settings** to check the 
 4. To publish a Release that others can download, create a tag: **Releases → Draft a new release → tag `v1.0.0` → Publish**. The workflow attaches the exe to the release.
 
 **Keep the repo private unless you've cleared it with the company.** The bundled PDFs are Apartment Interior Supply's branded forms, and they print your name and the company's address. Also, PyMuPDF (the PDF library) is licensed under AGPL-3.0. A public repo should therefore be released under AGPL-3.0, or the PDF code would need to switch libraries.
+
+## Phone / tablet version (online)
+
+The same app can run online so it works on your phone and tablet anywhere. It installs to the home screen like an app.
+
+**Hosting:** [Render](https://render.com), about $7.25/month ($7 Starter server plus $0.25 for 1 GB of disk). `render.yaml` in this repo sets everything up.
+
+1. Sign up at render.com with **Sign in with GitHub**, and allow Render to see the `OrderFormApp` repo.
+2. **New → Blueprint →** choose `OrderFormApp` → **Apply**. Render builds it and gives you a web address like `https://order-form-app-xxxx.onrender.com`.
+3. In Render, open the service → **Environment** and copy **ORDERAPP_SETUP_KEY**.
+4. Open the web address, enter the setup key, and create your login (10+ character password).
+5. **Move your PC data:** in the PC app, go to Settings → **Download backup**. In the online app, go to Settings → **Restore** and choose that file. Then log in with your PC username and password.
+6. **Install on the phone:**
+   - iPhone/iPad: open the address in Safari → Share → **Add to Home Screen**.
+   - Android: open it in Chrome → ⋮ → **Install app**.
+
+**Email from the phone:** on the email screen, tap **Share from this phone/tablet** and pick Outlook. The PDF and photos are attached for you. If you want the app to send by itself, use Microsoft 365 sign-in (see Email setup).
+
+**Security in online mode:**
+- HTTPS only.
+- Creating the first login requires the setup key.
+- 10+ character passwords.
+- The account locks after repeated failed logins, and logins are throttled per device.
+- Secure cookies, and no caching of pages.
+- Code updates you push to GitHub redeploy automatically. Your data stays on the Render disk.
 
 ## Email setup
 

@@ -10,6 +10,7 @@ eml             : no connection. Creates an email draft file with the PDF attach
                   and opens it in your default mail app for you to press Send.
 """
 import base64
+import mimetypes
 import email
 import email.policy
 import json
@@ -289,7 +290,8 @@ class GraphMail:
         for p in attachments:
             with open(p, "rb") as fh:
                 msg["attachments"].append({"@odata.type": "#microsoft.graph.fileAttachment",
-                                           "name": os.path.basename(p), "contentType": "application/pdf",
+                                           "name": os.path.basename(p),
+                                           "contentType": mimetypes.guess_type(p)[0] or "application/octet-stream",
                                            "contentBytes": base64.b64encode(fh.read()).decode()})
         if review:
             self._req("POST", "/me/messages", json=msg)
@@ -325,10 +327,11 @@ class EmlDraft:
         m.set_content(body)
         for p in attachments:
             with open(p, "rb") as fh:
-                m.add_attachment(fh.read(), maintype="application", subtype="pdf", filename=os.path.basename(p))
-        folder = out_dir or os.path.dirname(attachments[0]) if attachments else data_dir()
-        path = os.path.join(folder, os.path.splitext(os.path.basename(attachments[0]))[0] + " - email.eml"
-                            if attachments else "draft.eml")
+                mt = (mimetypes.guess_type(p)[0] or "application/octet-stream").split("/")
+                m.add_attachment(fh.read(), maintype=mt[0], subtype=mt[1], filename=os.path.basename(p))
+        folder = out_dir or (os.path.dirname(attachments[0]) if attachments else data_dir())
+        base = os.path.splitext(os.path.basename(attachments[0]))[0] if attachments else "draft"
+        path = os.path.join(folder, base + " - email.eml")
         with open(path, "wb") as fh:
             fh.write(bytes(m))
         try:

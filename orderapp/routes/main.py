@@ -36,6 +36,9 @@ def dashboard():
 @bp.route("/quit", methods=["POST"])
 @login_required
 def quit_app():
+    from flask import abort, current_app
+    if current_app.config.get("CLOUD"):
+        abort(404)   # never let the hosted server be shut down from the browser
     def _stop():
         time.sleep(0.8)
         os._exit(0)

@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block title %}Photo order{% endblock %}
+{% block body %}
+<h1>Photo order</h1>
+<div class="muted">Filled out a paper form or wrote sizes down in the field? Snap it and send it. On a phone you can take new pictures or pick from your photos.</div>
+<form method="post" enctype="multipart/form-data" class="card" style="margin-top:12px;max-width:680px">
+  <div class="field"><label>Photos *</label>
+    <input type="file" name="photos" id="photos" accept="image/*" multiple>
+    <div class="small muted">Add more than one: pick several at once, or use "Add photos" on the order page afterwards.</div>
+    <div id="preview" class="photogrid" style="margin-top:8px"></div></div>
+  <div class="grid g2">
+    <div class="field"><label>Customer</label><select name="customer_id"><option value="">(choose / not saved yet)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if (f.customer_id and f.customer_id|int==c.id) or pre==c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>What is it</label><input name="what" list="whats" value="{{ f.what or '' }}" placeholder="e.g. Vertical blinds, Door order"><datalist id="whats">{% for w in ['Door order','Pre-hung door order','Bi-pass door order','Screen door order','Window screen order','Horizontal blind order','Vertical blind order','Baseboard order','Cabinet order','Measurements'] %}<option value="{{ w }}">{% endfor %}</datalist></div>
+    <div class="field"><label>P.O. Number</label><input name="po" value="{{ f.po or '' }}"></div>
+    <div class="field"><label>Unit(s)</label><input name="units" value="{{ f.units or '' }}" placeholder="e.g. 204, 311"></div>
+  </div>
+  <div class="field"><label>Notes for the order desk</label><textarea name="notes" rows="3">{{ f.notes or '' }}</textarea></div>
+  <div class="row"><button class="btn ok" name="action" value="send">Save & email</button><button class="btn" name="action" value="save">Just save</button></div>
+</form>
+{% endblock %}
+{% block scripts %}<script>
+document.getElementById('photos').addEventListener('change', e => {
+  const box = document.getElementById('preview'); box.innerHTML = '';
+  [...e.target.files].forEach(f => { const d = document.createElement('div'); d.className = 'ph';
+    const i = document.createElement('img'); i.src = URL.createObjectURL(f); d.appendChild(i); box.appendChild(d); });
+});
+</script>{% endblock %}

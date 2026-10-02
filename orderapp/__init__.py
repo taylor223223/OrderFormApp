@@ -5,9 +5,9 @@ from datetime import timedelta
 from flask import Flask, abort, request, session
 
 from . import db
-from .paths import data_dir, resource_path
+from .paths import data_dir, is_cloud, resource_path
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def _secret_key():
@@ -26,9 +26,14 @@ def create_app(db_path=None, testing=False):
         DB_PATH=db_path or db.db_path(),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
-        MAX_CONTENT_LENGTH=40 * 1024 * 1024,
+        MAX_CONTENT_LENGTH=60 * 1024 * 1024,
         TESTING=testing,
+        CLOUD=is_cloud(),
     )
+    if app.config["CLOUD"]:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+        app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE="Lax")
     db.init_db(app.config["DB_PATH"])
     app.teardown_appcontext(db.close_db)
 
@@ -39,7 +44,10 @@ def create_app(db_path=None, testing=False):
     def _guard():
         # only answer to this computer (blocks DNS-rebinding style attacks)
         host = (request.host or "").split(":")[0]
-        if not testing and host not in ("127.0.0.1", "localhost"):
+        if not testing and not app.config["CLOUD"] and host not in ("127.0.0.1", "localhost"):
+            abort(403)
+        allowed = [h.strip() for h in os.environ.get("ORDERAPP_HOSTS", "").split(",") if h.strip()]
+        if app.config["CLOUD"] and allowed and host not in allowed:
             abort(403)
         verify_csrf()
         mins = int(db.setting("session_minutes") or 240)
@@ -51,7 +59,24 @@ def create_app(db_path=None, testing=False):
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
+        if app.config["CLOUD"]:
+            resp.headers["Strict-Transport-Security"] = "max-age=31536000"
+        if request.endpoint not in ("static", "pwa_sw", "pwa_manifest"):
+            resp.headers.setdefault("Cache-Control", "no-store")
         return resp
+
+    @app.route("/sw.js")
+    def pwa_sw():
+        from flask import send_from_directory
+        r = send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+        r.headers["Service-Worker-Allowed"] = "/"
+        r.headers["Cache-Control"] = "no-cache"
+        return r
+
+    @app.route("/manifest.webmanifest")
+    def pwa_manifest():
+        from flask import send_from_directory
+        return send_from_directory(app.static_folder, "manifest.webmanifest", mimetype="application/manifest+json")
 
     @app.context_processor
     def _ctx():
@@ -62,10 +87,10 @@ def create_app(db_path=None, testing=False):
                 pc = pending_count()
             except Exception:  # noqa: BLE001
                 pc = 0
-        return {"csrf_token": csrf_token, "pending_reviews": pc, "app_version": __version__,
+        return {"csrf_token": csrf_token, "pending_reviews": pc, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username")}
 
-    from .routes import auth, customers, emails, imports, main, orders, settings
-    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp):
+    from .routes import auth, customers, emails, imports, main, orders, photos, settings
+    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp):
         app.register_blueprint(bp)
     return app

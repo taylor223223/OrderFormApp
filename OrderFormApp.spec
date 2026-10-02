@@ -10,4 +10,4 @@ hidden = collect_submodules("orderapp") + ["win32com", "win32com.client", "pytho
 
 a = Analysis(["run.py"], pathex=["."], datas=datas, hiddenimports=hidden, excludes=["tkinter", "numpy", "pandas", "matplotlib", "scipy", "IPython", "playwright", "pytest"])
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="OrderFormApp", console=False, upx=False)
+exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="OrderFormApp", console=False, upx=False, icon="app.ico")
