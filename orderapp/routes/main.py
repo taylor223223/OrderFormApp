@@ -47,5 +47,5 @@ def quit_app():
         time.sleep(0.8)
         os._exit(0)
     threading.Thread(target=_stop, daemon=True).start()
-    return render_template("message.html", title="Order Form App closed",
+    return render_template("message.html", title="AIS Sales Support closed",
                            message="The app has shut down. You can close this browser tab.")

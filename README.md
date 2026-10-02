@@ -1,12 +1,12 @@
-# Order Form App
+# AIS Sales Support
 
-## >>> [Download the installer: OrderFormApp-Setup.exe](https://github.com/taylor223223/OrderFormApp/releases/latest/download/OrderFormApp-Setup.exe) <<<
+## >>> [Download the installer: AIS-Sales-Support-Setup.exe](https://github.com/taylor223223/OrderFormApp/releases/latest/download/AIS-Sales-Support-Setup.exe) <<<
 
-1. Run the downloaded **OrderFormApp-Setup.exe**. If Windows shows "Windows protected your PC", click **More info -> Run anyway**.
+1. Run the downloaded **AIS-Sales-Support-Setup.exe**. If Windows shows "Windows protected your PC", click **More info -> Run anyway**.
 2. Click **Install**. It doesn't need an admin password or Python.
-3. Open **Order Form App** from the Start menu or the desktop shortcut.
+3. Open **AIS Sales Support** from the Start menu or the desktop shortcut.
 
-To update, run the newest Setup file. Your customers and orders are kept. Uninstall from Windows Settings -> Apps.
+To update, run the newest Setup file. Your customers and orders are kept. Uninstall from Windows Settings -> Apps. You can also share the Setup file with coworkers (OneDrive/Teams link works best; email often blocks .exe files). Each person gets their own private copy and login.
 (If you'd rather skip installing, [OrderFormApp.exe](https://github.com/taylor223223/OrderFormApp/releases/latest/download/OrderFormApp.exe) also runs on its own.) Everything below this line is for developers.
 
 A private Windows desktop app for filling out Apartment Interior Supply order forms. It keeps track of customers, their unit layouts and measurements, predicts form values from past orders, reads order requests from Outlook, and emails the finished PDFs.

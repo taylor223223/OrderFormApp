@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Order Forms{% endblock %} - Order Form App</title>
+<title>{% block title %}Home{% endblock %} - AIS Sales Support</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -11,13 +11,13 @@
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Orders">
+<meta name="apple-mobile-web-app-title" content="AIS Sales">
 {% block head %}{% endblock %}
 </head>
 <body>
 {% if username %}
 <header class="top">
-  <a class="brand" href="{{ url_for('main.dashboard') }}" title="Version {{ app_version }}">Order Form App <span style="font-weight:400;font-size:11px;opacity:.6">v{{ app_version }}</span></a>
+  <a class="brand" href="{{ url_for('main.dashboard') }}" title="Version {{ app_version }}">AIS Sales Support <span style="font-weight:400;font-size:11px;opacity:.6">v{{ app_version }}</span></a>
   <nav>
     {% set ep = request.endpoint or '' %}
     <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}" style="--c:#f59e0b"><span class="ic">🏠</span>Dashboard</a>
@@ -33,7 +33,7 @@
     <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}" style="--c:#78716c"><span class="ic">⚙️</span>Settings</a>
   </nav>
   <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn">Log out</button></form>
-{% if not cloud %}  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close the Order Form App?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>{% endif %}
+{% if not cloud %}  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close AIS Sales Support?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>{% endif %}
 </header>
 {% endif %}
 <main>

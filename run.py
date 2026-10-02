@@ -1,4 +1,4 @@
-"""Start the Order Form App: runs a private local server and opens it in a browser window."""
+"""Start AIS Sales Support: runs a private local server and opens it in a browser window."""
 import logging
 import os
 import socket
@@ -26,7 +26,8 @@ def port_in_use():
 def already_running():
     try:
         with urllib.request.urlopen(URL + "login", timeout=2) as r:
-            return b"Order Form App" in r.read()
+            body = r.read()
+            return b"AIS Sales Support" in body or b"Order Form App" in body
     except Exception:  # noqa: BLE001
         return False
 

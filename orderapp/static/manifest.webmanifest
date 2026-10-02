@@ -1,6 +1,6 @@
 {
-  "name": "Order Form App",
-  "short_name": "Orders",
+  "name": "AIS Sales Support",
+  "short_name": "AIS Sales",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

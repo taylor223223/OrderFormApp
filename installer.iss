@@ -1,24 +1,24 @@
-; Windows installer for Order Form App (built automatically by GitHub Actions with Inno Setup)
+; Windows installer for AIS Sales Support (built automatically by GitHub Actions with Inno Setup)
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
 #endif
 
 [Setup]
 AppId={{8F3C2A51-6B7E-4D2A-9C1E-0A5F7B3D2E41}
-AppName=Order Form App
+AppName=AIS Sales Support
 AppVersion={#MyAppVersion}
-AppVerName=Order Form App {#MyAppVersion}
+AppVerName=AIS Sales Support {#MyAppVersion}
 AppPublisher=Apartment Interior Supply
-DefaultDirName={localappdata}\Programs\Order Form App
-DefaultGroupName=Order Form App
+DefaultDirName={localappdata}\Programs\AIS Sales Support
+DefaultGroupName=AIS Sales Support
 DisableProgramGroupPage=yes
 DisableDirPage=yes
 PrivilegesRequired=lowest
 OutputDir=dist
-OutputBaseFilename=OrderFormApp-Setup
+OutputBaseFilename=AIS-Sales-Support-Setup
 SetupIconFile=app.ico
 UninstallDisplayIcon={app}\OrderFormApp.exe
-UninstallDisplayName=Order Form App
+UninstallDisplayName=AIS Sales Support
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -32,16 +32,22 @@ Name: "desktopicon"; Description: "Put a shortcut on my desktop"; GroupDescripti
 Source: "dist\OrderFormApp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "demo\*"; DestDir: "{app}\Demo files"; Excludes: "*.py"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; shortcuts from versions named "Order Form App"
+Type: files; Name: "{autoprograms}\Order Form App.lnk"
+Type: files; Name: "{autoprograms}\Order Form App demo files.lnk"
+Type: files; Name: "{autodesktop}\Order Form App.lnk"
+
 [Icons]
-Name: "{autoprograms}\Order Form App"; Filename: "{app}\OrderFormApp.exe"
-Name: "{autoprograms}\Order Form App demo files"; Filename: "{app}\Demo files"
-Name: "{autodesktop}\Order Form App"; Filename: "{app}\OrderFormApp.exe"; Tasks: desktopicon
+Name: "{autoprograms}\AIS Sales Support"; Filename: "{app}\OrderFormApp.exe"
+Name: "{autoprograms}\AIS Sales Support demo files"; Filename: "{app}\Demo files"
+Name: "{autodesktop}\AIS Sales Support"; Filename: "{app}\OrderFormApp.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\OrderFormApp.exe"; Description: "Open Order Form App now"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\OrderFormApp.exe"; Description: "Open AIS Sales Support now"; Flags: nowait postinstall skipifsilent
 
 [Messages]
-FinishedLabel=Order Form App is installed. Open it any time from the Start menu or the desktop shortcut.%n%nYour customers and orders are stored separately, so installing a newer version keeps all your data.
+FinishedLabel=AIS Sales Support is installed. Open it any time from the Start menu or the desktop shortcut.%n%nYour customers and orders are stored separately, so installing a newer version keeps all your data.
 
 [Code]
 procedure StopRunningApp();

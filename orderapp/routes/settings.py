@@ -110,7 +110,7 @@ def backup():
     dst.close()
     src.close()
     return send_file(tmp, as_attachment=True,
-                     download_name=f"OrderFormApp-backup-{datetime.now():%Y%m%d-%H%M}.db")
+                     download_name=f"AIS-Sales-Support-backup-{datetime.now():%Y%m%d-%H%M}.db")
 
 
 @bp.route("/settings/export/<what>")
@@ -171,7 +171,7 @@ def restore():
         src = sqlite3.connect(up)
         tables = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"customers", "orders", "users"} <= tables:
-            raise ValueError("not an Order Form App backup")
+            raise ValueError("not an AIS Sales Support backup")
         n_users = src.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         if not n_users:
             raise ValueError("backup has no login")
