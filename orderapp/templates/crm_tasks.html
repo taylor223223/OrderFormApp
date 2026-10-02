@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Tasks{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('crm.home') }}">← CRM</a></div><h1>Follow-up tasks</h1></div>
+<div class="row"><a class="tag" style="{{ 'outline:2px solid var(--brand)' if show=='open' }}" href="?show=open">Open</a><a class="tag" style="{{ 'outline:2px solid var(--brand)' if show=='all' }}" href="?show=all">All</a></div></div>
+<form method="post" class="card row"><input name="title" placeholder="New task, e.g. Send verticals quote" style="max-width:340px">{% set picker_id='task_cust' %}{% set pre_customer=None %}<div style="min-width:240px">{% include '_cust_picker.html' %}</div><input type="date" name="due_date" value="{{ today }}" style="width:auto"><button class="btn primary">Add task</button></form>
+<div class="tablewrap"><table>
+<tr><th></th><th>Task</th><th>Property</th><th>Due</th><th></th></tr>
+{% for t in rows %}<tr style="{{ 'opacity:.55' if t.done }}"><td style="width:40px"><form method="post" action="{{ url_for('crm.task_toggle', tid=t.id) }}"><button class="btn sm">{{ '↺' if t.done else '✓' }}</button></form></td>
+<td>{% if t.done %}<s>{{ t.title }}</s>{% else %}<b>{{ t.title }}</b>{% endif %}</td><td>{% if t.customer_id %}<a href="{{ url_for('customers.view', cid=t.customer_id, tab='crm') }}">{{ t.cname }}</a>{% endif %}</td>
+<td class="nowrap">{{ t.due_date or '' }}{% if not t.done and t.due_date and t.due_date < today %} <span class="tag" style="background:var(--err-soft);color:var(--err)">overdue</span>{% endif %}</td>
+<td class="right"><form method="post" action="{{ url_for('crm.task_delete', tid=t.id) }}" onsubmit="return confirm('Delete task?')"><button class="btn sm danger">×</button></form></td></tr>
+{% else %}<tr><td colspan="5" class="empty">No tasks.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

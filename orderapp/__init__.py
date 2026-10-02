@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, resource_path
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 
 def _secret_key():
@@ -100,7 +100,7 @@ def create_app(db_path=None, testing=False):
         return {"csrf_token": csrf_token, "pending_reviews": pc, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username")}
 
-    from .routes import auth, customers, emails, imports, main, orders, photos, settings
-    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp):
+    from .routes import auth, crm, customers, emails, imports, main, orders, photos, routes_plan, settings
+    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp):
         app.register_blueprint(bp)
     return app

@@ -28,7 +28,8 @@ def missing_customer_info(c, contacts):
 @login_required
 def index():
     s = request.args.get("q", "").strip()
-    sql = """SELECT c.*, (SELECT COUNT(*) FROM units u WHERE u.customer_id=c.id) AS n_units,
+    st = request.args.get("status", "").strip()
+    sql = """SELECT c.*, (SELECT MAX(a.occurred_at) FROM activities a WHERE a.customer_id=c.id) AS last_touch, (SELECT COUNT(*) FROM units u WHERE u.customer_id=c.id) AS n_units,
              (SELECT COUNT(*) FROM orders o WHERE o.customer_id=c.id) AS n_orders,
              (SELECT MAX(o.order_date) FROM orders o WHERE o.customer_id=c.id) AS last_order
              FROM customers c"""
@@ -38,8 +39,12 @@ def index():
         sql += """ WHERE c.name LIKE ? OR c.acct LIKE ? OR c.mgmt LIKE ? OR c.city LIKE ? OR c.address LIKE ?
                    OR c.id IN (SELECT customer_id FROM contacts WHERE name LIKE ? OR email LIKE ?)"""
         args = (like,) * 7
-    sql += " ORDER BY c.name COLLATE NOCASE"
-    return render_template("customers.html", customers=q(sql, args), search=s)
+    if st:
+        sql = f"SELECT * FROM ({sql}) WHERE coalesce(status,'')=?"
+        args = tuple(args) + (st if st != "(none)" else "",)
+    sql += " ORDER BY name COLLATE NOCASE" if st else " ORDER BY c.name COLLATE NOCASE"
+    from ..db import CUSTOMER_STATUSES
+    return render_template("customers.html", customers=q(sql, args), search=s, status=st, statuses=CUSTOMER_STATUSES)
 
 
 @bp.route("/customers/new", methods=["GET", "POST"])
@@ -74,9 +79,22 @@ def view(cid):
                 (cid,))
     orders = q("SELECT * FROM orders WHERE customer_id=? ORDER BY coalesce(order_date, created) DESC LIMIT 50",
                (cid,))
+    tab = request.args.get("tab", "info")
+    crm = {}
+    if tab == "crm":
+        from datetime import date, datetime
+        from ..db import ACTIVITY_KINDS, CUSTOMER_STATUSES, DEAL_STAGES, TOPICS
+        crm = dict(
+            acts=q("SELECT * FROM activities WHERE customer_id=? ORDER BY occurred_at DESC LIMIT 200", (cid,)),
+            tasks=q("SELECT * FROM tasks WHERE customer_id=? ORDER BY done, coalesce(due_date,'9999')", (cid,)),
+            deals=q("SELECT * FROM deals WHERE customer_id=? ORDER BY updated DESC", (cid,)),
+            stops=q("SELECT * FROM route_stops WHERE customer_id=? AND day>=? ORDER BY day",
+                    (cid, date.today().isoformat())),
+            kinds=ACTIVITY_KINDS, statuses=CUSTOMER_STATUSES, stages=DEAL_STAGES, topics=TOPICS,
+            today=date.today().isoformat(), now_local=datetime.now().strftime("%Y-%m-%dT%H:%M"))
     return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
-                           tab=request.args.get("tab", "info"))
+                           tab=tab, **crm)
 
 
 @bp.route("/customers/<int:cid>/edit", methods=["GET", "POST"])
@@ -90,6 +108,8 @@ def edit(cid):
             return render_template("customer_form.html", c=vals, new=False, cid=cid)
         x(f"UPDATE customers SET {', '.join(f + '=?' for f in CUSTOMER_FIELDS)}, updated=? WHERE id=?",
           [vals[f] for f in CUSTOMER_FIELDS] + [now(), cid])
+        if any((vals.get(k) or "") != (c[k] or "") for k in ("address", "city", "state", "zip")):
+            x("UPDATE customers SET lat=NULL, lon=NULL WHERE id=?", (cid,))   # re-locate on the map
         flash("Saved.", "ok")
         return redirect(url_for("customers.view", cid=cid))
     return render_template("customer_form.html", c=c, new=False, cid=cid)

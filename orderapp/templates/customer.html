@@ -1,9 +1,10 @@
 {% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
 {% block body %}
 <div class="pagehead">
-  <div><h1>{{ c.name }}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{{ c.mgmt or '' }}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
+  <div><h1>{{ c.name }}{% if c.status %} <span class="tag" style="vertical-align:middle">{{ c.status }}</span>{% endif %}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{{ c.mgmt or '' }}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
   <div class="row">
     <a class="btn primary" href="{{ url_for('orders.new', customer=c.id) }}">+ New order</a>
+    <a class="btn" href="{{ url_for('customers.view', cid=c.id, tab='crm') }}#quicklog">Log call/visit</a>
     <a class="btn" href="{{ url_for('customers.edit', cid=c.id) }}">Edit</a>
     <a class="btn" href="{{ url_for('imports.upload', customer=c.id) }}">Import CSV</a>
   </div>
@@ -13,7 +14,7 @@
   <form method="post" action="{{ url_for('customers.check', cid=c.id) }}"><button class="btn sm">Look in previous orders</button></form></div>
 {% endif %}
 <div class="tabs">
-  {% for k, l in [('info','Info & Contacts'),('layouts','Floorplans & Measurements'),('units','Units'),('orders','Orders')] %}
+  {% for k, l in [('info','Info & Contacts'),('layouts','Floorplans & Measurements'),('units','Units'),('orders','Orders'),('crm','CRM')] %}
   <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}">{{ l }}</a>{% endfor %}
 </div>
 
@@ -86,5 +87,38 @@
 <td class="right">{% if o.form_key %}<a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=c.id, copy=o.id) }}">Reorder</a>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7" class="empty">No orders yet.</td></tr>{% endfor %}
 </table></div>
+{% elif tab == 'crm' %}
+<div class="grid g2">
+<div>
+<form method="post" action="{{ url_for('crm.set_customer_status', cid=c.id) }}" class="card row"><label style="margin:0">Status</label>
+<select name="status" onchange="this.form.submit()" style="width:auto"><option value="">(none)</option>{% for s in statuses %}<option {{ 'selected' if s==c.status }}>{{ s }}</option>{% endfor %}</select>
+<span class="small muted">Active / Prospect accounts show on the CRM page when you haven't talked to them in 30 days.</span></form>
+{% set customers = [c] %}{% set pre_customer = c.id %}{% set next_url = url_for('customers.view', cid=c.id, tab='crm') %}{% include '_quick_log.html' %}
+<h2>Timeline</h2>
+<div class="tablewrap"><table>
+{% for a in acts %}<tr><td class="nowrap small">{{ a.occurred_at[:16] }}</td><td><span class="tag">{{ a.kind }}</span></td>
+<td><a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.subject or '(details)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %}{% if a.location %} <span class="small muted">@ {{ a.location }}</span>{% endif %}
+{% if a.notes %}<div class="small muted">{{ a.notes }}</div>{% endif %}{% if a.outcome %}<div class="small"><b>{{ a.outcome }}</b></div>{% endif %}</td></tr>
+{% else %}<tr><td class="empty">No calls, visits or emails logged yet.</td></tr>{% endfor %}
+</table></div>
+</div>
+<div>
+<form method="post" action="{{ url_for('plan.add') }}" class="card row"><input type="hidden" name="customer_id" value="{{ c.id }}"><input type="hidden" name="next" value="{{ url_for('customers.view', cid=c.id, tab='crm') }}">
+<b>Add to route</b><input type="date" name="day" value="{{ today }}" style="width:auto"><input name="purpose" placeholder="Why" style="max-width:160px"><select name="source" style="width:auto"><option value="">Planned</option><option>Call</option><option>Text</option></select><button class="btn primary sm">Add</button></form>
+{% if stops %}<div class="card small">Upcoming visits: {% for s in stops %}<a href="{{ url_for('plan.day', day=s.day) }}">{{ s.day }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+<h2>Follow-ups</h2>
+<form method="post" action="{{ url_for('crm.tasks') }}" class="row"><input type="hidden" name="customer_id" value="{{ c.id }}"><input type="hidden" name="next" value="{{ url_for('customers.view', cid=c.id, tab='crm') }}"><input name="title" placeholder="New follow-up"><input type="date" name="due_date" style="width:auto"><button class="btn sm">Add</button></form>
+<div class="tablewrap" style="margin-top:6px"><table>
+{% for t in tasks %}<tr style="{{ 'opacity:.55' if t.done }}"><td style="width:36px"><form method="post" action="{{ url_for('crm.task_toggle', tid=t.id) }}"><input type="hidden" name="next" value="{{ url_for('customers.view', cid=c.id, tab='crm') }}"><button class="btn sm">{{ '↺' if t.done else '✓' }}</button></form></td>
+<td>{% if t.done %}<s>{{ t.title }}</s>{% else %}{{ t.title }}{% endif %}</td><td class="nowrap {{ 'err' if not t.done and t.due_date and t.due_date < today }}">{{ t.due_date or '' }}</td></tr>
+{% else %}<tr><td class="empty small">No follow-ups.</td></tr>{% endfor %}
+</table></div>
+<h2>Deals</h2>
+<form method="post" action="{{ url_for('crm.deal') }}" class="row"><input type="hidden" name="customer_id" value="{{ c.id }}"><input type="hidden" name="next" value="{{ url_for('customers.view', cid=c.id, tab='crm') }}"><input name="name" placeholder="New deal / quote"><input name="value" placeholder="$" style="width:90px"><select name="stage" style="width:auto">{% for s in stages %}<option>{{ s }}</option>{% endfor %}</select><button class="btn sm">Add</button></form>
+<div class="tablewrap" style="margin-top:6px"><table>
+{% for d in deals %}<tr><td><a href="{{ url_for('crm.deal', did=d.id) }}">{{ d.name }}</a></td><td><span class="tag">{{ d.stage }}</span></td><td class="right">{% if d.value %}${{ '{:,.0f}'.format(d.value) }}{% endif %}</td></tr>
+{% else %}<tr><td class="empty small">No deals.</td></tr>{% endfor %}
+</table></div>
+</div></div>
 {% endif %}
 {% endblock %}

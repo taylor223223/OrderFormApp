@@ -24,6 +24,12 @@ Everything runs on your own computer. The app opens in its own window (Edge/Chro
 | **Order tracking** | Status board (Draft → Ready → Sent → Confirmed → Shipped → Installed …), due dates, vendor #, history. Orders placed outside the app can be added manually. |
 | **Backup** | One-click database backup, plus CSV exports of customers, units and measurements. |
 
+## CRM and route planner (v1.2)
+- **CRM tab:** log calls, texts, emails and site visits (who, where, about what, topics, outcome). You can also set follow-up tasks, track deals in a pipeline, and see which accounts have gone 30+ days without contact. Every property has its own **CRM** tab with a timeline.
+- **Weekly report:** CRM → Weekly report shows everyone you interacted with that week. It emails your manager a PDF and a spreadsheet. Set the manager's address in Settings.
+- **Routes tab:** plan a week at a time. When a property calls or texts, add it to a day and the stop is placed where it adds the least driving. **Optimize route** puts the stops in the best order. Each day shows drive times, arrival times, total miles, a map, and an **Open in Google Maps** button for turn-by-turn directions. Marking a stop **Done** logs a site visit.
+- **Drive times** are estimated out of the box. For real road times, get a free OpenRouteService key (openrouteservice.org → sign up → Dashboard → copy key) and paste it in Settings → Route planner.
+
 ## Run it
 
 **Option A – from the code (needs Python 3.10+):** double-click `run_from_source.bat`. The first run installs what it needs.

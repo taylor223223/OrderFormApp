@@ -1,0 +1,80 @@
+{% extends "base.html" %}{% block title %}Route {{ day }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('plan.week', week=day) }}">← Week</a></div>
+<h1>{{ d.strftime('%A, %b %d') }}</h1>
+<div class="row">{% if rows %}<span class="tag">🚗 {{ total }} driving</span><span class="tag">{{ miles }} mi</span><span class="tag">Start {{ res.start_time }}</span><span class="tag">Back ~{{ finish.strftime('%I:%M %p').lstrip('0') }}</span>{% if res.estimated %}<span class="tag warn" title="Add a free OpenRouteService key in Settings for real road times">estimated</span>{% endif %}{% endif %}</div></div>
+<div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}"><button class="btn primary" {{ 'disabled' if rows|length < 2 }}>Optimize route</button></form>
+{% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">Open in Google Maps</a>{% endif %}</div></div>
+{% for e in res.errors %}<div class="flash error">{{ e }}</div>{% endfor %}
+{% if not res.start %}<div class="flash error">Couldn't find the starting address on the map. Fix it below or in Settings.</div>{% endif %}
+<div class="grid g2">
+<div>
+<form method="post" action="{{ url_for('plan.add') }}" class="card row"><input type="hidden" name="day" value="{{ day }}"><input type="hidden" name="next" value="{{ url_for('plan.day', day=day) }}">
+<div style="flex:1;min-width:200px">{% set picker_id='rd_cust' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
+<input name="purpose" placeholder="Why" style="max-width:170px"><select name="source" style="width:auto"><option value="">Planned</option><option>Call</option><option>Text</option><option>Email</option></select>
+<button class="btn primary">+ Add stop</button>
+<details style="width:100%"><summary class="small">Address instead of a property</summary><input name="address" placeholder="Full address" style="margin-top:4px"></details></form>
+<div class="card" style="padding:8px 12px">
+<div class="row small muted"><b>Start:</b> {{ res.start_address }}</div>
+{% for r in rows %}{% set s = r.s %}
+{% if r.leg %}<div class="legline">↓ {{ r.leg_txt }} · {{ r.miles }} mi</div>{% endif %}
+<div class="row" style="align-items:flex-start;padding:6px 0;border-top:1px solid var(--line);{{ 'opacity:.55' if s.status=='Skipped' }}">
+<span class="stopn {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}">{{ loop.index }}</span>
+<div style="flex:1;min-width:0">
+<b>{% if s.customer_id %}<a href="{{ url_for('customers.view', cid=s.customer_id, tab='crm') }}">{{ s.label or s.cname }}</a>{% else %}{{ s.label }}{% endif %}</b>
+{% if r.arrive %}<span class="tag">{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}</span>{% endif %}{% if s.source %}<span class="tag">{{ s.source }}</span>{% endif %}{% if s.status!='Planned' %}<span class="tag {{ 'ok' if s.status=='Done' }}">{{ s.status }}</span>{% endif %}
+<div class="small muted">{{ s.address }}{% if s.cphone %} · <a href="tel:{{ s.cphone }}">{{ s.cphone }}</a>{% endif %}</div>
+{% if s.purpose %}<div class="small">{{ s.purpose }}</div>{% endif %}
+{% if s.id in res.missing %}<div class="small err">Couldn't find this address on the map. Edit the property's address.</div>{% endif %}
+<details><summary class="small">More</summary>
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="grid g2" style="margin-top:6px"><input type="hidden" name="act" value="notes">
+<div><label>Why</label><input name="purpose" value="{{ s.purpose or '' }}"></div><div><label>Visit (min)</label><input type="number" name="visit_min" value="{{ s.visit_min or '' }}" placeholder="{{ visit_default }}"></div>
+<div style="grid-column:1/-1"><label>Notes</label><input name="notes" value="{{ s.notes or '' }}"></div><div><button class="btn sm">Save</button></div></form>
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="row" style="margin-top:6px"><input type="hidden" name="act" value="move">
+<select name="to_day" style="width:auto">{% for wd in week_days if wd != day %}<option value="{{ wd }}">{{ wd }}</option>{% endfor %}</select><button class="btn sm">Move to day</button></form>
+</details></div>
+<div class="row stopacts" style="gap:4px">
+{% for act, lbl, ttl in [('up','↑','Earlier'),('down','↓','Later')] %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="{{ act }}"><button class="btn sm" title="{{ ttl }}">{{ lbl }}</button></form>{% endfor %}
+{% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Done"><button class="btn sm" title="Visited - logs a site visit in the CRM">✓ Done</button></form>{% endif %}
+{% if s.status=='Planned' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Skipped"><button class="btn sm" title="Skip today">Skip</button></form>
+{% else %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Planned"><button class="btn sm" title="Back to planned">↺</button></form>{% endif %}
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" onsubmit="return confirm('Remove this stop?')"><input type="hidden" name="act" value="delete"><button class="btn sm danger">×</button></form>
+</div></div>
+{% else %}<div class="empty">No stops yet. Add properties above, or from the Routes week view.</div>{% endfor %}
+{% if res.back %}<div class="legline">↓ {{ (res.back.s/60)|round|int }} min back to start</div>{% endif %}
+</div>
+<details class="card"><summary>Start point for this day</summary>
+<form method="post" action="{{ url_for('plan.day_settings', day=day) }}" class="grid g2" style="margin-top:8px">
+<div><label>Start address</label><input name="start_address" value="{{ res.start_address or '' }}"></div>
+<div><label>Leave at</label><input type="time" name="start_time" value="{{ res.start_time }}"></div><div><button class="btn sm">Save</button></div></form></details>
+</div>
+<div><div id="map"></div><div class="small muted" style="margin-top:4px">Map © OpenStreetMap contributors. {% if not geometry and rows %}Straight lines shown; add an OpenRouteService key for road routes.{% endif %}</div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+<script>
+(function(){
+  const pts = {{ points|tojson }}, start = {{ start|tojson }}, geom = {{ geometry|tojson }};
+  const el = document.getElementById('map'); if (!window.L) { el.innerHTML = '<div class="empty">Map unavailable.</div>'; return; }
+  L.Icon.Default.imagePath = '{{ url_for("static", filename="leaflet/images/") }}';
+  const map = L.map(el).setView(start || [33.39, -111.93], 11);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'}).addTo(map);
+  const b = [];
+  if (start) { L.circleMarker(start, {radius: 9, color: '#14213d', fillColor: '#fca311', fillOpacity: 1}).addTo(map).bindPopup('Start'); b.push(start); }
+  const line = [];
+  if (start) line.push(start);
+  pts.forEach(p => {
+    const c = p.status === 'Done' ? '#2e7d32' : p.status === 'Skipped' ? '#999' : '#14213d';
+    L.marker([p.lat, p.lon], {icon: L.divIcon({className: '', html: `<span class="stopn" style="background:${c}">${p.n}</span>`, iconSize: [24, 24], iconAnchor: [12, 12]})})
+      .addTo(map).bindPopup(p.n + '. ' + (p.label || '').replace(/[<>&]/g, ''));
+    b.push([p.lat, p.lon]); if (p.status !== 'Skipped') line.push([p.lat, p.lon]);
+  });
+  {% if res.round_trip %}if (start && line.length > 1) line.push(start);{% endif %}
+  if (geom) L.polyline(geom, {color: '#1565c0', weight: 4}).addTo(map);
+  else if (line.length > 1) L.polyline(line, {color: '#1565c0', weight: 3, dashArray: '6 6'}).addTo(map);
+  if (b.length > 1) map.fitBounds(b, {padding: [30, 30]});
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Pipeline{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('crm.home') }}">← CRM</a></div><h1>Deals pipeline</h1><div class="muted">Quotes and opportunities by stage. Change a stage from the dropdown on each card.</div></div></div>
+<details class="card" {{ 'open' if not cols.values()|sum(start=[]) }}><summary>+ New deal</summary>
+<form method="post" action="{{ url_for('crm.deal') }}" class="grid g4" style="margin-top:10px">
+<div style="grid-column:span 2"><label>Property</label>{% set picker_id='deal_cust' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
+<div style="grid-column:span 2"><label>Deal name</label><input name="name" placeholder="e.g. Unit turn blinds - 120 units"></div>
+<div><label>Product</label><input name="product" list="deal_topics"><datalist id="deal_topics">{% for t in topics %}<option value="{{ t }}">{% endfor %}</datalist></div>
+<div><label>Est. value ($)</label><input name="value" inputmode="decimal"></div>
+<div><label>Stage</label><select name="stage">{% for s in stages %}<option>{{ s }}</option>{% endfor %}</select></div>
+<div><label>Expected close</label><input type="date" name="close_date"></div>
+<div style="grid-column:1/-1"><label>Notes</label><input name="notes"></div>
+<div><button class="btn primary">Add deal</button></div></form></details>
+<div class="kanban">
+{% for s in stages %}<div class="kcol"><div class="khead"><b>{{ s }}</b><span class="muted small">{{ cols[s]|length }}{% if totals[s] %} · ${{ '{:,.0f}'.format(totals[s]) }}{% endif %}</span></div>
+{% for d in cols[s] %}<div class="kcard"><a href="{{ url_for('crm.deal', did=d.id) }}"><b>{{ d.name }}</b></a><div class="small muted">{{ d.cname or '' }}</div>
+<div class="small">{% if d.value %}${{ '{:,.0f}'.format(d.value) }}{% endif %}{% if d.close_date %} · close {{ d.close_date }}{% endif %}</div>
+<form method="post" action="{{ url_for('crm.deal', did=d.id) }}"><input type="hidden" name="stage_only" value="1"><select name="stage" onchange="this.form.submit()" style="padding:3px;margin-top:4px">{% for x in stages %}<option {{ 'selected' if x==d.stage }}>{{ x }}</option>{% endfor %}</select></form></div>
+{% endfor %}</div>{% endfor %}
+</div>
+{% endblock %}

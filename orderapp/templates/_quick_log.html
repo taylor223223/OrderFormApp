@@ -1,0 +1,22 @@
+{# Quick log form. needs: customers, kinds, topics, statuses, now_local, optional pre_customer, next_url #}
+<form method="post" action="{{ url_for('crm.log') }}" class="card" id="quicklog">
+  <input type="hidden" name="next" value="{{ next_url or request.full_path }}">
+  <h3 style="margin-top:0">Log an interaction</h3>
+  <div class="grid g4">
+    <div style="grid-column:span 2"><label>Property</label>{% set picker_id='ql_cust' %}{% include '_cust_picker.html' %}</div>
+    <div><label>Type</label><select name="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
+    <div><label>When</label><input type="datetime-local" name="occurred_at" value="{{ now_local }}"></div>
+    <div><label>Who (contact)</label><input name="contact_name" list="ql_contacts" placeholder="Name"><datalist id="ql_contacts">{% for k in contacts or [] %}<option value="{{ k.name }}">{{ k.role or '' }}</option>{% endfor %}</datalist></div>
+    <div><label>Where</label><input name="location" placeholder="Leasing office, phone, trade show..."></div>
+    <div style="grid-column:span 2"><label>About (short)</label><input name="subject" placeholder="e.g. Quote for 40 vertical blinds"></div>
+    <div style="grid-column:1/-1"><label>Topics</label><div class="chips">{% for t in topics %}<label class="chip"><input type="checkbox" name="topics" value="{{ t }}"> {{ t }}</label>{% endfor %}</div></div>
+    <div style="grid-column:span 2"><label>Notes</label><textarea name="notes" rows="2" placeholder="What was discussed, next steps..."></textarea></div>
+    <div><label>Outcome</label><input name="outcome" list="outcomes" placeholder="Interested / Quote requested..."><datalist id="outcomes">{% for o in ['Interested','Quote requested','Order placed','Follow up later','Not interested','Left voicemail','Needs vendor setup'] %}<option value="{{ o }}">{% endfor %}</datalist></div>
+    <div><label>Set status</label><select name="status"><option value="">(no change)</option>{% for s in statuses %}<option>{{ s }}</option>{% endfor %}</select></div>
+    <div><label>Follow up on</label><input type="date" name="follow_up"></div>
+    <div><label>Follow-up task</label><input name="follow_up_title" placeholder="Call back with pricing"></div>
+    <div><label>Add a visit to my route</label><input type="date" name="route_day"></div>
+    <div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="save_contact" value="1" checked> Save new contact</label></div>
+  </div>
+  <button class="btn primary" style="margin-top:8px">Save</button>
+</form>

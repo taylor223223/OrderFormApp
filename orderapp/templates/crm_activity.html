@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}Activity{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('crm.activities') }}">← Activity</a></div>
+<h1>{{ r.kind }}{% if r.cname %} - {{ r.cname }}{% endif %}</h1>
+<form method="post" class="card" style="max-width:820px">
+<div class="grid g2">
+<div><label>Type</label><select name="kind">{% for k in kinds %}<option {{ 'selected' if k==r.kind }}>{{ k }}</option>{% endfor %}</select></div>
+<div><label>When</label><input type="datetime-local" name="occurred_at" value="{{ r.occurred_at.replace(' ','T')[:16] }}"></div>
+<div><label>Contact</label><input name="contact_name" value="{{ r.contact_name or '' }}"></div>
+<div><label>Where</label><input name="location" value="{{ r.location or '' }}"></div>
+<div style="grid-column:1/-1"><label>About</label><input name="subject" value="{{ r.subject or '' }}"></div>
+<div style="grid-column:1/-1"><label>Topics</label><div class="chips">{% for t in topics %}<label class="chip"><input type="checkbox" name="topics" value="{{ t }}" {{ 'checked' if t in sel_topics }}> {{ t }}</label>{% endfor %}</div></div>
+<div style="grid-column:1/-1"><label>Notes</label><textarea name="notes" rows="4">{{ r.notes or '' }}</textarea></div>
+<div><label>Outcome</label><input name="outcome" value="{{ r.outcome or '' }}"></div></div>
+<div class="row" style="margin-top:8px"><button class="btn primary">Save</button><span class="spacer"></span><button class="btn danger" name="delete" value="1" onclick="return confirm('Delete this activity?')">Delete</button></div>
+</form>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Activity{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('crm.home') }}">← CRM</a></div><h1>Activity</h1></div></div>
+<form class="card row"><label style="margin:0">From</label><input type="date" name="from" value="{{ frm }}" style="width:auto"><label style="margin:0">to</label><input type="date" name="to" value="{{ to }}" style="width:auto">
+<select name="kind" style="width:auto"><option value="">All types</option>{% for k in kinds %}<option {{ 'selected' if k==kind }}>{{ k }}</option>{% endfor %}</select>
+<input name="q" value="{{ s }}" placeholder="Search property, person, notes" style="max-width:260px"><button class="btn sm">Filter</button></form>
+<div class="tablewrap"><table>
+<tr><th>When</th><th>Type</th><th>Property</th><th>Contact</th><th>Where</th><th>About</th><th>Outcome</th></tr>
+{% for a in rows %}<tr><td class="nowrap small">{{ a.occurred_at[:16] }}</td><td><span class="tag">{{ a.kind }}</span></td>
+<td>{% if a.customer_id %}<a href="{{ url_for('customers.view', cid=a.customer_id, tab='crm') }}">{{ a.cname }}</a>{% endif %}</td><td>{{ a.contact_name or '' }}</td><td class="small">{{ a.location or '' }}</td>
+<td><a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.subject or '(details)' }}</a><div class="small muted">{{ a.topics or '' }}</div></td><td class="small">{{ a.outcome or '' }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No activity in this range.</td></tr>{% endfor %}
+</table></div>
+<div class="small muted" style="margin-top:6px">{{ rows|length }} shown</div>
+{% endblock %}

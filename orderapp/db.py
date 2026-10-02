@@ -85,10 +85,24 @@ DEFAULT_SETTINGS = {
     "output_dir": "",
     "date_format": "%m/%d/%Y",
     "session_minutes": "240",
+    # CRM + routes
+    "report_to": "",
+    "report_cc": "",
+    "ors_api_key": "",
+    "route_start_address": "5325 S. Kyrene Rd, Suite 103, Tempe, AZ 85283",
+    "route_start_time": "08:00",
+    "route_visit_minutes": "20",
+    "route_return_to_start": "1",
 }
 
 STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
             "Installed", "Completed", "On Hold", "Cancelled"]
+ACTIVITY_KINDS = ["Call", "Text", "Email", "Site visit", "Drop-in", "Meeting", "Trade show", "Voicemail", "Other"]
+CUSTOMER_STATUSES = ["Lead", "Prospect", "Active", "Inactive"]
+DEAL_STAGES = ["Lead", "Contacted", "Quote sent", "Negotiating", "Won", "Lost"]
+TOPICS = ["Doors", "Pre-hung doors", "Bi-pass doors", "Screen doors", "Window screens", "Vertical blinds",
+          "Horizontal blinds", "Baseboards", "Cabinets", "Pricing", "Delivery", "Vendor setup", "Turn schedule",
+          "Rehab / renovation", "Complaint", "Samples"]
 OPEN_STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "On Hold"]
 
 
@@ -107,9 +121,55 @@ def connect(path=None):
     return con
 
 
+CRM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS activities (
+    id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL, contact_name TEXT,
+    kind TEXT NOT NULL, occurred_at TEXT NOT NULL, location TEXT, subject TEXT, topics TEXT,
+    notes TEXT, outcome TEXT, owner TEXT, created TEXT
+);
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    activity_id INTEGER REFERENCES activities(id) ON DELETE SET NULL,
+    title TEXT NOT NULL, due_date TEXT, done INTEGER DEFAULT 0, done_at TEXT, owner TEXT, created TEXT
+);
+CREATE TABLE IF NOT EXISTS deals (
+    id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    name TEXT NOT NULL, product TEXT, value REAL, stage TEXT DEFAULT 'Lead', close_date TEXT,
+    notes TEXT, owner TEXT, created TEXT, updated TEXT
+);
+CREATE TABLE IF NOT EXISTS route_days (
+    day TEXT PRIMARY KEY, start_address TEXT, start_time TEXT, total_drive_s REAL, total_m REAL,
+    legs TEXT, geometry TEXT, estimated INTEGER DEFAULT 0, optimized_at TEXT
+);
+CREATE TABLE IF NOT EXISTS route_stops (
+    id INTEGER PRIMARY KEY, day TEXT NOT NULL, position INTEGER DEFAULT 0,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL, label TEXT, address TEXT,
+    lat REAL, lon REAL, purpose TEXT, visit_min INTEGER, status TEXT DEFAULT 'Planned', source TEXT,
+    notes TEXT, activity_id INTEGER, created TEXT
+);
+CREATE TABLE IF NOT EXISTS geocache (address TEXT PRIMARY KEY, lat REAL, lon REAL, provider TEXT, updated TEXT);
+CREATE INDEX IF NOT EXISTS ix_act_cust ON activities(customer_id);
+CREATE INDEX IF NOT EXISTS ix_act_when ON activities(occurred_at);
+CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
+"""
+
+# columns added to existing tables after v1.1 (added in place, data kept)
+MIGRATIONS = {
+    "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
+                  "owner": "TEXT"},
+}
+
+
 def init_db(path=None):
     con = connect(path)
     con.executescript(SCHEMA)
+    con.executescript(CRM_SCHEMA)
+    for table, cols in MIGRATIONS.items():
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        for col, typ in cols.items():
+            if col not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     con.commit()

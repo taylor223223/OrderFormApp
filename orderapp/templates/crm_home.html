@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block title %}CRM{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>CRM</h1><div class="muted">Who you talked to, where and about what, plus follow-ups and deals.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('crm.activities') }}">All activity</a><a class="btn" href="{{ url_for('crm.tasks') }}">Tasks</a><a class="btn" href="{{ url_for('crm.pipeline') }}">Pipeline</a><a class="btn primary" href="{{ url_for('crm.report') }}">Weekly report</a></div></div>
+{% set next_url = url_for('crm.home') %}{% include '_quick_log.html' %}
+<div class="grid g2">
+  <div>
+    <h2>Follow-ups due</h2>
+    <div class="tablewrap"><table>
+    {% for t in tasks %}<tr class="{{ 'overdue' if t.due_date and t.due_date < today }}"><td style="width:30px"><form method="post" action="{{ url_for('crm.task_toggle', tid=t.id) }}"><input type="hidden" name="next" value="{{ url_for('crm.home') }}"><button class="btn sm" title="Mark done">✓</button></form></td>
+      <td><b>{{ t.title }}</b><div class="small muted">{% if t.customer_id %}<a href="{{ url_for('customers.view', cid=t.customer_id, tab='crm') }}">{{ t.cname }}</a>{% endif %}</div></td>
+      <td class="nowrap {{ 'err' if t.due_date and t.due_date < today }}">{{ t.due_date or '' }}{% if t.due_date and t.due_date < today %} <span class="tag" style="background:var(--err-soft);color:var(--err)">overdue</span>{% elif t.due_date == today %} <span class="tag warn">today</span>{% endif %}</td></tr>
+    {% else %}<tr><td class="empty">Nothing due this week.</td></tr>{% endfor %}
+    </table></div>
+    <h2>This week</h2>
+    <div class="card row">{% for w in week %}<span class="tag">{{ w.kind }}: <b>{{ w.n }}</b></span>{% else %}<span class="muted">Nothing logged yet this week.</span>{% endfor %}</div>
+    <h2>Pipeline</h2>
+    <div class="card">{% for s in stages %}<div class="row" style="justify-content:space-between;padding:2px 0"><span>{{ s }}</span><span>{{ pipe[s].n if s in pipe else 0 }} deal(s){% if s in pipe and pipe[s].v %} · ${{ '{:,.0f}'.format(pipe[s].v) }}{% endif %}</span></div>{% endfor %}</div>
+  </div>
+  <div>
+    <h2>Recent activity</h2>
+    <div class="tablewrap"><table>
+    {% for a in recent %}<tr><td class="small nowrap">{{ a.occurred_at[5:16] }}</td><td><span class="tag">{{ a.kind }}</span></td>
+      <td><a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.cname or '(no property)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %}<div class="small muted">{{ a.subject or '' }}{% if a.topics %} · {{ a.topics }}{% endif %}</div></td></tr>
+    {% else %}<tr><td class="empty">No activity yet - log your first call above.</td></tr>{% endfor %}
+    </table></div>
+    <h2>Haven't talked to in 30+ days</h2>
+    <div class="tablewrap"><table>
+    {% for c in stale %}<tr><td><a href="{{ url_for('customers.view', cid=c.id, tab='crm') }}">{{ c.name }}</a></td><td><span class="tag">{{ c.status }}</span></td><td class="small muted">{{ (c.last or 'never')[:10] }}</td></tr>
+    {% else %}<tr><td class="empty small">Mark properties Active or Prospect (on their CRM tab) and they'll show here when they go quiet.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+</div>
+{% endblock %}

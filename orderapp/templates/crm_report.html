@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Weekly report{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('crm.home') }}">← CRM</a></div><h1>Weekly report</h1>
+<div class="row"><a class="btn sm" href="?week={{ prev }}">← Prev week</a><b>{{ dd.mon.strftime('%m/%d') }} - {{ dd.sun.strftime('%m/%d/%Y') }}</b><a class="btn sm" href="?week={{ nxt }}">Next week →</a></div></div>
+<div class="row"><a class="btn" href="{{ url_for('crm.report_file', kind='pdf', week=mon.isoformat()) }}" target="_blank">View PDF</a><a class="btn" href="{{ url_for('crm.report_file', kind='csv', week=mon.isoformat()) }}">Download spreadsheet</a></div></div>
+<form method="post" action="{{ url_for('crm.report_send') }}" class="card row"><input type="hidden" name="week" value="{{ mon.isoformat() }}">
+<label style="margin:0">Send to</label><input name="to" value="{{ report_to }}" placeholder="manager@apartmentinterior.net" style="max-width:280px">
+<label style="margin:0">CC</label><input name="cc" value="{{ report_cc }}" style="max-width:220px">
+<select name="mode" style="width:auto"><option value="review">Open draft to review</option>{% if provider != 'eml' %}<option value="send">Send now</option>{% endif %}</select>
+<button class="btn primary">Email report (PDF + spreadsheet)</button></form>
+<div class="card report">{{ html|safe }}</div>
+{% endblock %}

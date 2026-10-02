@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Deal{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('crm.pipeline') }}">← Pipeline</a></div>
+<h1>{{ d.name }}</h1>
+<form method="post" class="card grid g2" style="max-width:820px">
+<div style="grid-column:1/-1"><label>Property</label>{% set picker_id='deal_cust' %}{% set pre_customer=d.customer_id %}{% include '_cust_picker.html' %}</div>
+<div style="grid-column:1/-1"><label>Deal name</label><input name="name" value="{{ d.name }}"></div>
+<div><label>Product</label><input name="product" value="{{ d.product or '' }}"></div>
+<div><label>Est. value ($)</label><input name="value" value="{{ d.value or '' }}"></div>
+<div><label>Stage</label><select name="stage">{% for s in stages %}<option {{ 'selected' if s==d.stage }}>{{ s }}</option>{% endfor %}</select></div>
+<div><label>Expected close</label><input type="date" name="close_date" value="{{ d.close_date or '' }}"></div>
+<div style="grid-column:1/-1"><label>Notes</label><textarea name="notes" rows="4">{{ d.notes or '' }}</textarea></div>
+<div class="row" style="grid-column:1/-1"><button class="btn primary">Save</button><span class="spacer"></span><button class="btn danger" name="delete" value="1" onclick="return confirm('Delete this deal?')">Delete</button></div>
+</form>
+{% endblock %}

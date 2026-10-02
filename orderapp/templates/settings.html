@@ -30,6 +30,20 @@
     </div>
     <div class="small muted">See README → "Microsoft 365 setup" for the 5-minute app registration.</div>
   </div>
+  <h3 id="routes">CRM weekly report</h3>
+  <div class="grid g2">
+    <div><label>Send weekly report to (manager)</label><input name="report_to" value="{{ v.report_to }}" placeholder="manager@company.com"></div>
+    <div><label>CC</label><input name="report_cc" value="{{ v.report_cc }}"></div>
+  </div>
+  <h3>Route planner</h3>
+  <div class="grid g2">
+    <div><label>Start each day from</label><input name="route_start_address" value="{{ v.route_start_address }}"></div>
+    <div><label>Leave at</label><input type="time" name="route_start_time" value="{{ v.route_start_time }}"></div>
+    <div><label>Default minutes at each stop</label><input name="route_visit_minutes" value="{{ v.route_visit_minutes }}" inputmode="numeric"></div>
+    <div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="route_return_to_start" value="1" {{ 'checked' if v.route_return_to_start == '1' }}> Return to start at end of day</label></div>
+    <div style="grid-column:1/-1"><label>OpenRouteService key (free, optional)</label><input name="ors_api_key" value="{{ v.ors_api_key }}" placeholder="Paste key for real road drive times" autocomplete="off">
+    <div class="small muted">Without a key, drive times are estimated. For real road times: sign up free at <b>openrouteservice.org/dev/#/signup</b> → Dashboard → copy the API key → paste here.</div></div>
+  </div>
   <button class="btn primary">Save settings</button>
 </form>
 <div class="card" id="graphcard"><h3 style="margin-top:0">Microsoft account</h3>
