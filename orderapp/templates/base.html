@@ -16,7 +16,7 @@
 <body>
 {% if username %}
 <header class="top">
-  <a class="brand" href="{{ url_for('main.dashboard') }}">Order Form App</a>
+  <a class="brand" href="{{ url_for('main.dashboard') }}" title="Version {{ app_version }}">Order Form App <span style="font-weight:400;font-size:11px;opacity:.6">v{{ app_version }}</span></a>
   <nav>
     {% set ep = request.endpoint or '' %}
     <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}">Dashboard</a>
@@ -50,6 +50,7 @@ document.querySelectorAll('form[method=post], form[method=POST]').forEach(f => {
 });
 </script>
 {% block scripts %}{% endblock %}
-<script>if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
+<script>{% if not cloud %}setInterval(() => fetch('/__alive').catch(() => {}), 30000);{% endif %}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 </body>
 </html>

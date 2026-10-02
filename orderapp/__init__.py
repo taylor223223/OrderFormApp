@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, resource_path
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 
 def _secret_key():
@@ -40,8 +40,18 @@ def create_app(db_path=None, testing=False):
     from .security import csrf_token, parse_flash, verify_csrf
     app.jinja_env.filters["flashparse"] = parse_flash
 
+    @app.route("/__version")
+    def app_version_route():
+        return __version__, 200, {"Content-Type": "text/plain"}
+
+    @app.route("/__alive")
+    def app_alive():
+        return "ok", 200, {"Content-Type": "text/plain"}
+
     @app.before_request
     def _guard():
+        import time as _t
+        app.config["LAST_SEEN"] = _t.time()
         # only answer to this computer (blocks DNS-rebinding style attacks)
         host = (request.host or "").split(":")[0]
         if not testing and not app.config["CLOUD"] and host not in ("127.0.0.1", "localhost"):
