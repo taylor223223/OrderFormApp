@@ -132,7 +132,7 @@ def test_full_flow(client, tmp_path):
     j = c.get(f"/api/unit?customer={cid}&form=vertical_blind&unit=103").get_json()
     assert j["ok"] and j["blocks"][0]["width"] == "72" and j["blocks"][0]["room"] == "Living Room"
     j = c.get(f"/api/unit?customer={cid}&form=door&unit=103").get_json()
-    assert j["blocks"][0]["style"] == "Six-Panel Embossed (Colonist)"
+    assert j["blocks"][0]["style"] == "Colonist (6-Panel)"
     # save + pdf
     payload = {"header": {"name": "Sunrise Villas Apartments", "acct": "1045", "po": "PO-1", "date": "09/30/2026",
                           "phone": "602-555-0000"},
@@ -264,3 +264,37 @@ def test_lockout(client):
         post(c, "/login", {"username": "taylor", "password": "wrong"}, page="/login")
     r = post(c, "/login", {"username": "taylor", "password": "secret123"}, page="/login")
     assert "Too many failed attempts" in r.get_data(as_text=True)
+
+
+def test_merged_forms_pick_paper_version():
+    """Door / Vertical Blind are one choice in the app; the right paper form is printed."""
+    from orderapp.catalog import choose_variant, form_list, public_spec
+    keys = [k for k, _ in form_list()]
+    assert "new_door" not in keys and "vertical_blind_2" not in keys
+    styles = next(f for f in public_spec("door")["fields"] if f["key"] == "style")["options"]
+    assert "Carrera (2-Panel)" in styles and "Classique (2-Panel Embossed)" in styles
+    assert "mount" in [f["key"] for f in public_spec("vertical_blind")["fields"]]
+    hdr = {"name": "Sunrise", "po": "P1", "date": "10/02/2026"}
+    # Carrera only exists on the New Door paper form
+    d = {"header": hdr, "blocks": [{"qty": "1", "style": "Carrera (2-Panel)", "finish": "Primecoat",
+                                    "width": "30", "height": "80", "swing": "Left Hand"}]}
+    assert choose_variant("door", d) == "new_door"
+    pdf, warns = fill_form("door", d)
+    fk, back = read_filled_form(pdf)
+    assert fk == "new_door" and back["blocks"][0]["style"] == "Carrera (2-Panel)"
+    assert any("New Door" in w for w in warns)
+    # Classique only on the original Door form; Colonist works on both -> original
+    d["blocks"][0]["style"] = "Classique (2-Panel Embossed)"
+    assert choose_variant("door", d) == "door"
+    fk, back = read_filled_form(fill_form("door", d)[0])
+    assert fk == "door" and back["blocks"][0]["style"] == "Two-Panel Embossed (Classique)"
+    d["blocks"][0]["style"] = "Colonist (6-Panel)"
+    assert choose_variant("door", d) == "door"
+    # verticals: a mount choice with no valance -> the inside/outside mount paper form
+    v = {"header": hdr, "blocks": [{"qty": "1", "mount": "Outside Mount", "om_headrail": "98", "om_slat": "84",
+                                    "color": "White"}]}
+    assert choose_variant("vertical_blind", v) == "vertical_blind_2"
+    assert read_filled_form(fill_form("vertical_blind", v)[0])[0] == "vertical_blind_2"
+    v["blocks"][0]["valance"] = "Upgrade Valance"
+    assert choose_variant("vertical_blind", v) == "vertical_blind"
+    assert read_filled_form(fill_form("vertical_blind", v)[0])[0] == "vertical_blind"

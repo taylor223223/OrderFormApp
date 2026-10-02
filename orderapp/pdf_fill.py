@@ -159,6 +159,18 @@ def _fill_block(page, idx, fields, block, notes, line_no):
 
 def fill_form(form_key, data):
     """Return (pdf_bytes, warnings). data = {header:{}, sales_rep, comments, blocks:[{}]}"""
+    from .catalog import MERGED, choose_variant, translate_for_variant
+    if form_key in MERGED:
+        variant = choose_variant(form_key, data)
+        data = translate_for_variant(form_key, variant, data)
+        pdf, warns = fill_form(variant, data) if variant != form_key else _fill(form_key, data)
+        if variant != MERGED[form_key]["default"]:
+            warns = [f"Printed on the {FORMS[variant]['title']} paper form (matches what you ordered)."] + list(warns)
+        return pdf, warns
+    return _fill(form_key, data)
+
+
+def _fill(form_key, data):
     spec = FORMS[form_key]
     per_page = len(spec["blocks"])
     blocks = [b for b in (data.get("blocks") or []) if any(str(v).strip() for v in b.values() if v is not None)]

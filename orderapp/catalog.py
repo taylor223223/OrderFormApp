@@ -410,8 +410,10 @@ FORMS = {
     },
 }
 
-FORM_ORDER = ["door", "new_door", "prehung", "bypass", "screen_door", "window_screen",
-              "horizontal_blind", "vertical_blind", "vertical_blind_2"]
+# "new_door" and "vertical_blind_2" are the company's alternate versions of the same paper forms.
+# In the app they're merged into one Door form and one Vertical Blind form (see MERGED below);
+# the app prints whichever paper version fits what was ordered.
+FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind"]
 
 # --------------------------------------------------------------------------
 # Products serviced (for saved unit / floorplan measurements)
@@ -481,6 +483,130 @@ for _fk in FORMS:
 GENERIC_FIELDS = _lwh_order(GENERIC_FIELDS)
 
 
+# --------------------------------------------------------------------------
+# Merged forms: one choice in the app, two paper versions behind it
+# --------------------------------------------------------------------------
+DOOR_STYLES = [  # app label -> label on each paper form (None = not on that form)
+    ("Colonist (6-Panel)", {"door": "Six-Panel Embossed (Colonist)", "new_door": "Colonist (6-Panel)"}),
+    ("Carrera (2-Panel)", {"door": None, "new_door": "Carrera (2-Panel)"}),
+    ("Camden", {"door": None, "new_door": "Camden"}),
+    ("Riverside (5-Panel)", {"door": None, "new_door": "Riverside (5-Panel)"}),
+    ("Classique (2-Panel Embossed)", {"door": "Two-Panel Embossed (Classique)", "new_door": None}),
+    ("Carmelle (4-Panel Embossed)", {"door": "Four-Panel Embossed (Carmelle)", "new_door": None}),
+    ("Clermont (3-Panel Embossed)", {"door": "Three-Panel Embossed (Clermont)", "new_door": None}),
+    ("Steel (6-Panel)", {"door": "Six Panel Steel", "new_door": "Steel Door"}),
+    ("Other", {"door": "Other", "new_door": None}),
+]
+DOOR_FINISHES = [
+    ("Primecoat", {"door": "Primecoat", "new_door": "Primecoat"}),
+    ("Embossed Primecoat", {"door": "Embossed Primecoat", "new_door": "Embossed Primecoat"}),
+    ("Oak Legacy", {"door": "Oak Legacy", "new_door": "Oak Legacy"}),
+    ("Walnut Legacy", {"door": "Walnut Legacy", "new_door": None}),
+    ("Other", {"door": None, "new_door": "Other"}),
+]
+MERGED = {
+    "door": {"variants": ["door", "new_door"], "default": "door"},
+    "vertical_blind": {"variants": ["vertical_blind", "vertical_blind_2"], "default": "vertical_blind"},
+}
+VARIANT_PARENT = {v: k for k, m in MERGED.items() for v in m["variants"] if v != k}
+
+
+def _choice(key, label, table, other_field=None):
+    return {"key": key, "label": label, "kind": "choice", "options": [(u, None) for u, _ in table],
+            "other_option": "Other" if any(u == "Other" for u, _ in table) else None, "other_field": other_field}
+
+
+def editor_fields(form_key):
+    """Fields shown in the app for a form. Merged forms show everything both paper versions can take."""
+    if form_key == "door":
+        out = []
+        for f in FORMS["door"]["blocks"][0]:
+            if f["key"] == "style":
+                out.append(_choice("style", "Door Style", DOOR_STYLES, "style_other"))
+            elif f["key"] == "style_other":
+                out.append(dict(f, label="Other style"))
+            elif f["key"] == "finish":
+                out.append(_choice("finish", "Finish", DOOR_FINISHES, "finish_other"))
+                out.append(next(dict(x, label="Other finish") for x in FORMS["new_door"]["blocks"][0]
+                                if x["key"] == "finish_other"))
+            else:
+                out.append(f)
+        # style first, then finish (each followed by its "Other" box)
+        order = ["style", "style_other", "finish", "finish_other"]
+        picked = [next(x for x in out if x["key"] == k) for k in order]
+        rest = [x for x in out if x["key"] not in order]
+        i = next(i for i, x in enumerate(rest) if x["key"] not in ("qty", "item_no"))
+        return rest[:i] + picked + rest[i:]
+    if form_key == "vertical_blind":
+        base = list(FORMS["vertical_blind"]["blocks"][0])
+        mount = next(x for x in FORMS["vertical_blind_2"]["blocks"][0] if x["key"] == "mount")
+        i = [x["key"] for x in base].index("room") + 1
+        return base[:i] + [mount] + base[i:]
+    return FORMS[form_key]["blocks"][0]
+
+
+def choose_variant(form_key, data):
+    """Which paper form to print for a merged form, based on what was ordered."""
+    m = MERGED.get(form_key)
+    if not m:
+        return form_key
+    blocks = [b for b in (data.get("blocks") or []) if any(v for v in b.values())]
+    if form_key == "door":
+        score = {"door": 0, "new_door": 0}
+        for b in blocks:
+            for table, key in ((DOOR_STYLES, "style"), (DOOR_FINISHES, "finish")):
+                row = dict(table).get(match_option(b.get(key), [(u, u) for u, _ in table]) or "")
+                if row:
+                    if row["door"] is None:
+                        score["new_door"] += 1
+                    if row["new_door"] is None:
+                        score["door"] += 1
+        if score["new_door"] > score["door"]:
+            return "new_door"
+        return "door"
+    if form_key == "vertical_blind":
+        if any(b.get(k) for b in blocks for k in ("valance", "val_only", "item_no")):
+            return "vertical_blind"
+        if any(b.get("mount") for b in blocks):
+            return "vertical_blind_2"
+    return m["default"]
+
+
+def translate_for_variant(form_key, variant, data):
+    """Re-label one merged order's values for the paper form being printed."""
+    import copy
+    d = copy.deepcopy(data)
+    notes = []
+    keys = {f["key"] for f in FORMS[variant]["blocks"][0]}
+    for i, b in enumerate(d.get("blocks") or [], 1):
+        if form_key == "door":
+            for table, key, other in ((DOOR_STYLES, "style", "style_other"), (DOOR_FINISHES, "finish", "finish_other")):
+                val = b.get(key)
+                if not val:
+                    continue
+                u = match_option(val, [(x, x) for x, _ in table])
+                target = dict(table)[u][variant] if u else None
+                if target and target != "Other":
+                    b[key] = target
+                elif target == "Other" or (u == "Other" and b.get(other)):
+                    if other in keys:
+                        b[key] = "Other"
+                    else:   # this paper form has no "Other" box: write it out
+                        b[key] = b.get(other) or val
+                else:
+                    b[key] = val
+        if form_key == "vertical_blind" and variant == "vertical_blind" and b.get("mount"):
+            notes.append(f"Line {i}: {b['mount']}")
+        for k in list(b):
+            if k not in keys and k not in ("unit", "room", "_room", "product") and b.get(k):
+                if k in ("style_other", "finish_other") and variant == "new_door" and k == "style_other":
+                    notes.append(f"Line {i} style: {b[k]}")
+                b.pop(k, None)
+    if notes:
+        d["comments"] = "; ".join([x for x in [d.get("comments", "")] if x] + notes)
+    return d
+
+
 def product_fields(product_key):
     """Union of the block fields of every form for that product, so a saved
     measurement can fill any of them. Choices become suggestion lists so custom
@@ -533,7 +659,7 @@ def public_spec(form_key):
     """JSON-safe description of a form for the browser UI."""
     f = FORMS[form_key]
     fields = []
-    for fd in f["blocks"][0]:
+    for fd in editor_fields(form_key):
         d = {"key": fd["key"], "label": fd["label"], "kind": fd["kind"]}
         if fd["kind"] == "choice":
             d["options"] = [o[0] for o in fd["options"]]
@@ -553,6 +679,7 @@ def public_spec(form_key):
         "blocks_per_page": len(f["blocks"]),
         "fields": fields,
         "has_unit_field": any(x["key"] == "unit" for x in f["blocks"][0]),
+        "merged": form_key in MERGED,
     }
 
 

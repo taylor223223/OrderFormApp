@@ -70,7 +70,8 @@ def suggestions(form_key, customer_id=None, limit=15):
 
 def to_form_block(form_key, data, room=None, unit=None):
     """Translate saved measurement data into a block for this form."""
-    fields = {f["key"]: f for f in FORMS[form_key]["blocks"][0]}
+    from .catalog import editor_fields
+    fields = {f["key"]: f for f in editor_fields(form_key)}
     blk = {}
     data = dict(data or {})
     # imported history only knows a generic "color": use it for this form's finish field
