@@ -29,7 +29,11 @@ def dashboard():
     due = q(f"""SELECT o.*, c.name AS customer FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
                 WHERE o.status IN ({ph}) AND coalesce(o.due_date,'')<>'' ORDER BY o.due_date LIMIT 8""",
             OPEN_STATUSES)
-    return render_template("dashboard.html", stats=stats, by_status=by_status, recent=recent, due=due,
+    from datetime import date
+    today = date.today().isoformat()
+    stats["stops_today"] = q("SELECT COUNT(*) n FROM route_stops WHERE day=? AND status<>'Skipped'", (today,), one=True)["n"]
+    stats["followups_due"] = q("SELECT COUNT(*) n FROM tasks WHERE done=0 AND due_date<=?", (today,), one=True)["n"]
+    return render_template("dashboard.html", today=today, stats=stats, by_status=by_status, recent=recent, due=due,
                            forms=form_list(), batches=pending_batches())
 
 

@@ -1,12 +1,16 @@
 {% extends "base.html" %}{% block title %}Dashboard{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Dashboard</h1><div class="muted">Start an order, check what's open, or review incoming info.</div></div>
-  <div class="row"><a class="btn primary" href="{{ url_for('orders.new') }}">+ New order</a><a class="btn" href="{{ url_for('photos.field_order') }}">Photo order</a><a class="btn" href="{{ url_for('emails.inbox') }}">Check email</a></div></div>
+  <div class="row"><a class="btn primary" href="{{ url_for('orders.new') }}">+ New order</a><a class="btn" href="{{ url_for('photos.field_order') }}">Photo order</a><a class="btn" href="{{ url_for('emails.inbox') }}">Check email</a><a class="btn" href="{{ url_for('crm.home') }}#quicklog">CRM</a><a class="btn" href="{{ url_for('plan.day', day=today) }}">Today's route</a></div></div>
 <div class="grid g4">
   <a class="stat" href="{{ url_for('customers.index') }}"><div class="n">{{ stats.customers }}</div><div class="l">Customers</div></a>
   <div class="stat"><div class="n">{{ stats.units }}</div><div class="l">Units saved</div></div>
   <div class="stat"><div class="n">{{ stats.measurements }}</div><div class="l">Saved measurements</div></div>
   <a class="stat" href="{{ url_for('orders.tracking') }}"><div class="n">{{ stats.open_orders }}</div><div class="l">Open orders</div></a>
+</div>
+<div class="grid g2" style="margin-top:12px">
+  <a class="stat shortcut" href="{{ url_for('crm.home') }}"><div class="n">{{ stats.followups_due }}</div><div class="l">CRM - follow-ups due today · log a call or visit →</div></a>
+  <a class="stat shortcut" href="{{ url_for('plan.day', day=today) }}"><div class="n">{{ stats.stops_today }}</div><div class="l">Today's route - stops planned · plan the week →</div></a>
 </div>
 {% if batches %}
 <div class="card" style="margin-top:16px"><b>Waiting for your review</b>

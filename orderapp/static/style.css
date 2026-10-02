@@ -123,3 +123,4 @@ details summary{cursor:pointer;color:var(--brand);font-weight:600}
 .sheetrow{padding:10px 0;border-bottom:1px solid var(--line)}
 .writein{border-bottom:1px dotted #bbb;height:22px}
 @media print{header.top,.noprint,.flash{display:none!important} body{background:#fff} .card{border:0;box-shadow:none;padding:0} main{padding:0;max-width:none}}
+.stat.shortcut{border-left:4px solid var(--brand)}
