@@ -449,6 +449,38 @@ PRODUCTS = {
 }
 
 
+def _lwh_order(fields):
+    """Standard L x W x H: length / width (and depth) always come before height.
+    Only changes the on-screen order - the PDF is filled by field name, not position."""
+    fields = list(fields)
+    keys = [f["key"] for f in fields]
+    for hk in [k for k in keys if k == "height" or k.endswith("_height")]:
+        pre = hk[: -len("height")]
+        partners = [pre + s for s in ("length", "width", "depth") if pre + s in keys]
+        if not partners:
+            continue
+        hi = keys.index(hk)
+        last = max(keys.index(k) for k in partners)
+        if hi < last:
+            f = fields.pop(hi)
+            keys.pop(hi)
+            last = max(keys.index(k) for k in partners)
+            fields.insert(last + 1, f)
+            keys.insert(last + 1, hk)
+    # length before width when both exist
+    if "length" in keys and "width" in keys and keys.index("length") > keys.index("width"):
+        f = fields.pop(keys.index("length"))
+        keys.remove("length")
+        fields.insert(keys.index("width"), f)
+        keys.insert(keys.index("width"), "length")
+    return fields
+
+
+for _fk in FORMS:
+    FORMS[_fk]["blocks"] = [_lwh_order(b) for b in FORMS[_fk]["blocks"]]
+GENERIC_FIELDS = _lwh_order(GENERIC_FIELDS)
+
+
 def product_fields(product_key):
     """Union of the block fields of every form for that product, so a saved
     measurement can fill any of them. Choices become suggestion lists so custom
