@@ -128,7 +128,7 @@ def _place_photo(page, idx, fields, block, ref):
             p = option_photos.find(f["photos"], block[f["key"]])
             if p:
                 try:
-                    page.insert_image(ws[0].rect, filename=p, keep_proportion=True, overlay=False)
+                    page.insert_image(ws[0].rect, filename=p, keep_proportion=True)
                 except Exception:   # noqa: BLE001
                     pass
                 return
@@ -253,6 +253,9 @@ def _fill(form_key, data):
             _fill_block(page, idx, spec["blocks"][i], blk, bn, line_no)
             if spec.get("app_made"):
                 _place_photo(page, idx, spec["blocks"][i], blk, f"L{i}.photo")
+            for f in spec["blocks"][i]:   # company forms with a photo box per option group
+                if f.get("photos") and f"Photo {f['photos']}.{i}" in idx:
+                    _place_photo(page, idx, [f], blk, f"Photo {f['photos']}.{i}")
             lc = next((f for f in spec["blocks"][i] if f["key"] == "line_comments"), None)
             if bn and not spec.get("comments") and lc:
                 # no general comments box: this line's extras go in this line's own comments
@@ -326,11 +329,13 @@ def read_filled_form(pdf_bytes):
         tmpl = fitz.open(template_path(fk))
         tnames = {_clean(w.field_name) for w in tmpl[0].widgets()}
         tmpl.close()
-        scores.append((len(names & tnames) / max(len(tnames | names), 1), fk))
+        # how much of the filled copy this form explains (older copies have fewer boxes than ours)
+        cover = len(names & tnames) / max(len(names), 1)
+        scores.append((round(cover, 3), len(names & tnames) / max(len(tnames | names), 1), fk))
     scores.sort(reverse=True)
-    if not scores or scores[0][0] < 0.8:
+    if not scores or scores[0][0] < 0.85:
         return None, None
-    top = [fk for sc, fk in scores if sc >= scores[0][0] - 0.02]
+    top = [fk for sc, _, fk in scores if sc >= scores[0][0] - 0.02]
     best = top[0]
     if "prehung" in top or "door" in top:
         # the Pre-Hung form reuses the Door form's field names; tell them apart by title

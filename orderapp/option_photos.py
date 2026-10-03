@@ -44,9 +44,14 @@ def _safe(part):
     return re.fullmatch(r"[a-z0-9_-]+", part or "") is not None
 
 
+# company-form names that are the same product as a brochure photo
+ALIASES = {"door_style": {"six-panel-embossed": "6-panel"}}
+
+
 def find(group, label_or_slug):
     """Path of the photo for an option, or None."""
     sl = slug(label_or_slug)
+    sl = ALIASES.get(group, {}).get(sl, sl)
     if not (_safe(group) and _safe(sl)):
         return None
     for d in (user_dir(group), bundled_dir(group)):

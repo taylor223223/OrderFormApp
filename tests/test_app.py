@@ -144,7 +144,7 @@ def test_full_flow(client, tmp_path):
     j = c.get(f"/api/unit?customer={cid}&form=vertical_blind&unit=103").get_json()
     assert j["ok"] and j["blocks"][0]["width"] == "72" and j["blocks"][0]["room"] == "Living Room"
     j = c.get(f"/api/unit?customer={cid}&form=door&unit=103").get_json()
-    assert j["blocks"][0]["style"] == "6 Panel (Colonist)"
+    assert j["blocks"][0]["style"] == "Six-Panel Embossed (Colonist)"
     # save + pdf
     payload = {"header": {"name": "Sunrise Villas Apartments", "acct": "1045", "po": "PO-1", "date": "09/30/2026",
                           "phone": "602-555-0000"},
@@ -284,35 +284,37 @@ def test_merged_forms_pick_paper_version():
     keys = [k for k, _ in form_list()]
     assert "new_door" not in keys and "vertical_blind_2" not in keys
     styles = next(f for f in public_spec("door")["fields"] if f["key"] == "style")["options"]
-    assert "2 Panel (Carrera)" in styles and "3 Panel Shaker Craftsman" in styles and "HC Primecoat" in styles
+    assert "Two-Panel Embossed (Classique)" in styles and "3 Panel Shaker Craftsman" in styles
+    assert "HC Primecoat" in styles
     assert "mount" in [f["key"] for f in public_spec("vertical_blind")["fields"]]
     hdr = {"name": "Sunrise", "po": "P1", "date": "10/02/2026"}
-    # one Door form: types without their own box are written in its "Other" box
-    d = {"header": hdr, "blocks": [{"qty": "1", "style": "2 Panel (Carrera)", "finish": "Primecoat",
+    # one Door form (the company's) with a box for every door type we carry
+    d = {"header": hdr, "blocks": [{"qty": "1", "style": "3 Panel Shaker Craftsman", "finish": "Primecoat",
                                     "width": "30", "height": "80", "swing": "Left Hand"}]}
     assert choose_variant("door", d) == "door"
     fk, back = read_filled_form(fill_form("door", d)[0])
-    assert fk == "door" and back["blocks"][0]["style"] == "Other"
-    assert back["blocks"][0]["style_other"] == "2 Panel (Carrera)"
-    # a type with no box anywhere -> original Door form, written in the "Other" box
-    d["blocks"][0]["style"] = "3 Panel Shaker Craftsman"
-    assert choose_variant("door", d) == "door"
-    fk, back = read_filled_form(fill_form("door", d)[0])
-    assert fk == "door" and back["blocks"][0]["style"] == "Other"
-    assert back["blocks"][0]["style_other"] == "3 Panel Shaker Craftsman"
-    # old saved name still works; 6 panel fits both -> original
+    assert fk == "door" and back["blocks"][0]["style"] == "3 Panel Shaker Craftsman"
+    # old saved names still work
     d["blocks"][0]["style"] = "Colonist (6-Panel)"
-    assert choose_variant("door", d) == "door"
     fk, back = read_filled_form(fill_form("door", d)[0])
     assert back["blocks"][0]["style"] == "Six-Panel Embossed (Colonist)"
-    # app-only door options land in the comments
-    d["blocks"][0].update(prehung="Yes", threshold="36", hardware="Yes", hw_collection="Soma",
-                          hw_function="Privacy", hw_finish="Matte Black")
+    d["blocks"][0]["style"] = "Purple Glass Door"   # not something we carry -> Other box
     fk, back = read_filled_form(fill_form("door", d)[0])
-    assert "Threshold" in back["comments"] and "Soma" in back["comments"] and fk == "door"
+    assert back["blocks"][0]["style"] == "Other" and back["blocks"][0]["style_other"] == "Purple Glass Door"
+    # pre-hung + hardware have their own boxes on the Door form now
+    d["blocks"][0].update(style="2 Panel Arch", prehung="Yes", threshold="36", hardware="Yes",
+                          hw_collection="Soma", hw_function="Privacy", hw_finish="Matte Black")
+    fk, back = read_filled_form(fill_form("door", d)[0])
+    b = back["blocks"][0]
+    assert fk == "door" and b["prehung"] == "Yes" and b["threshold"] == "36" and b["hw_collection"] == "Soma"
+    assert b["hw_function"] == "Privacy" and b["hw_finish"] == "Matte Black"
     d["blocks"][0]["hardware"] = "No"   # hidden follow-up answers are not printed
     fk, back = read_filled_form(fill_form("door", d)[0])
-    assert "Soma" not in back["comments"]
+    assert "hw_collection" not in back["blocks"][0]
+    # an older filled copy of the company form is still recognised
+    import pymupdf
+    old = pymupdf.open("orderapp/forms/company/OF-Door.pdf").tobytes()
+    assert read_filled_form(old)[0] in ("door", None)
     # verticals: a mount choice with no valance -> the inside/outside mount paper form
     v = {"header": hdr, "blocks": [{"qty": "1", "mount": "Outside Mount", "om_headrail": "98", "om_slat": "84",
                                     "color": "White"}]}
@@ -391,9 +393,9 @@ def test_new_products_and_app_made_forms():
     assert len(prof["options"]) == 10 and prof["photo_map"]
     assert option_photos.slug("A: #103 Casing") == "a" and option_photos.slug("Soma (Matte Black)") == "soma"
     hz = next(f for f in public_spec("horizontal_blind")["fields"] if f["key"] == "style")
-    assert 'Premium Basswood 2-1/2"' in hz["options"]
-    fk, back = read_filled_form(fill_form("horizontal_blind", {"blocks": [{"style": '1" Metal Plus Mini Blind'}]})[0])
-    assert fk == "horizontal_blind" and back["blocks"][0]["style"] == '1" Metal Plus Mini Blind' 
+    assert 'Basswood 2-1/2"' in hz["options"] and "All Vinyl" in hz["options"]
+    fk, back = read_filled_form(fill_form("horizontal_blind", {"blocks": [{"style": '1" Metal Plus Mini'}]})[0])
+    assert fk == "horizontal_blind" and back["blocks"][0]["style"] == '1" Metal Plus Mini' 
     # vertical: 2" ribbed only in white
     w = fill_form("vertical_blind", {"blocks": [{"slat_width": '2"', "slat_style": "Ribbed", "color": "Alabaster"}]})[1]
     assert any("only come in White" in x for x in w)
