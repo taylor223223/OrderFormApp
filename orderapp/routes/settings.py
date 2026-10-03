@@ -196,3 +196,45 @@ def restore():
     session.clear()
     flash("Data restored. Log in with the username and password from the app the backup came from.", "ok")
     return redirect(url_for("auth.login"))
+
+
+# ---------------------------------------------------------------- product option photos
+@bp.route("/option-photo/<group>/<name>")
+@login_required
+def option_photo(group, name):
+    from .. import option_photos
+    p = option_photos.find(group, name)
+    if not p:
+        return ("", 404)
+    resp = send_file(p, max_age=0)
+    return resp
+
+
+@bp.route("/settings/product-photos", methods=["GET", "POST"])
+@login_required
+def product_photos():
+    from .. import option_photos
+    groups = option_photos.catalog_groups()
+    if request.method == "POST":
+        group, label = request.form.get("group", ""), request.form.get("label", "")
+        if group not in groups or label not in groups[group]:
+            flash("Unknown product option.", "error")
+        elif request.form.get("action") == "reset":
+            option_photos.remove_upload(group, label)
+            flash(f"{label}: back to the catalog photo.", "ok")
+        else:
+            f = request.files.get("photo")
+            if not f or not f.filename:
+                flash("Pick a picture first.", "error")
+            else:
+                try:
+                    option_photos.save_upload(group, label, f)
+                    flash(f"{label}: photo saved.", "ok")
+                except ValueError as e:
+                    flash(str(e), "error")
+        return redirect(url_for("settings.product_photos", _anchor=group))
+    rows = [(g, option_photos.GROUP_LABELS.get(g, g),
+             [(lab, option_photos.slug(lab), bool(option_photos.find(g, lab)), option_photos.is_custom(g, lab))
+              for lab in labs])
+            for g, labs in groups.items()]
+    return render_template("product_photos.html", rows=rows)

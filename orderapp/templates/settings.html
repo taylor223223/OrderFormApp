@@ -76,6 +76,7 @@
     <label>Restore / move data from a backup file (.db)</label>
     <div class="row"><input type="file" name="backup" accept=".db" style="max-width:260px"><button class="btn sm danger">Restore</button></div>
     <div class="small muted">Use this to move your PC data online: Download backup on the PC app, then restore it here.</div></form>
+  <p style="margin-top:12px"><a class="btn" href="{{ url_for('settings.product_photos') }}">🖼️ Product photos</a> <span class="small muted">Pictures shown on order forms for door types, trim, hardware and cabinet styles.</span></p>
   <p class="small muted">Version {{ app_version }}</p></div>
 </div>
 {% endblock %}

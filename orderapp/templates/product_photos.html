@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Product photos{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Product photos</h1>
+<div class="muted small">These small pictures pop up on the order form when an option is picked, so you can check it's the right one. Most come from the AIS brochure - upload your own to replace any of them.</div></div>
+<a class="btn" href="{{ url_for('settings.index') }}">Back to Settings</a></div>
+{% for g, title, opts in rows %}
+<div class="card" id="{{ g }}"><h2>{{ title }}</h2>
+  <div class="photo-grid">
+  {% for lab, sl, has, custom in opts %}
+    <div class="photo-tile">
+      {% if has %}<img src="{{ url_for('settings.option_photo', group=g, name=sl) }}?v={{ range(1, 99999)|random }}" alt="{{ lab }}">{% else %}<div class="nophoto">No photo</div>{% endif %}
+      <div class="small"><b>{{ lab }}</b>{% if custom %} <span class="muted">(yours)</span>{% endif %}</div>
+      <form method="post" enctype="multipart/form-data" class="row" style="gap:4px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="group" value="{{ g }}"><input type="hidden" name="label" value="{{ lab }}">
+        <input type="file" name="photo" accept="image/*" style="max-width:150px" onchange="this.form.submit()">
+        {% if custom %}<button class="btn sm" name="action" value="reset" title="Use the catalog photo again">Reset</button>{% endif %}
+      </form>
+    </div>
+  {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

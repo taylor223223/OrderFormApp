@@ -24,6 +24,24 @@ from copy import deepcopy
 # --------------------------------------------------------------------------
 DOOR_FINISHES = ["Primecoat", "Embossed Primecoat", "Oak Legacy", "Walnut Legacy"]
 YES_NO = ["Y", "N"]
+YN = [("Yes", None), ("No", None)]
+SUNSCREEN_COLORS = ["Black", "Brown", "Beige", "Stucco", "Gray", "Dark Bronze"]
+HARDWARE_COLLECTIONS = ["Marina", "Soma", "Lombard", "Sea Cliff", "Tiburon"]
+BATH_COLLECTIONS = [("Waterfront", "Satin Nickel"), ("Soma", "Matte Black"), ("Palo Alto", "Satin Nickel"),
+                    ("Tiburon", "Matte Black"), ("Santa Cruz", "Satin Nickel")]
+TRIM_PROFILES = [
+    ("A", '#103 Casing MDF Ultralight 103MUL 9/16" x 2-1/4"'),
+    ("B", '#356 Casing MDF Ultralight 152MUL 5/8" x 2-1/4"'),
+    ("C", '#366 Casing MDF Ultralight 162MUL-2 5/8" x 2-1/4"'),
+    ("D", '#366 Casing MDF Ultralight 162MUL-3 5/8" x 3-1/4"'),
+    ("E", 'Cambridge Casing MDF Ultralight 161MUL 11/16" x 3-1/4"'),
+    ("F", '1" Eased Edge Craftsman Base 387MUL-3 1/2" x 3-1/2"'),
+    ("G", '1" Eased Edge Craftsman Base 387MUL-4 1/2" x 4-1/2"'),
+    ("H", '1" Eased Edge Craftsman Base 387MUL-5 1/2" x 5-1/2"'),
+    ("I", '#711 Base MDF Ultralight 311MUL 3/8" x 3-1/2"'),
+    ("J", 'Victorian/Newport Base 329MUL 9/16" x 3-7/8"'),
+]
+CABINET_STYLES = ["Shaker", "Shaker Slim", "Italia", "Bradford", "Elegante", "Elegante Gauntlet Supermatte"]
 
 HEADER_STD = {
     "name": "Name", "acct": "Acct #", "address": "Addr", "city": "City",
@@ -222,9 +240,10 @@ def _screen_door_block(i):
         _t("height", "Door Height (in)", f"DoorHeight{s}", measure=True),
         _c("frame_style", "Frame Style", [("600 Series (Standard)", f"600Series{s}"),
                                           ("1250 Series (Extruded)", f"1250Series{s}")]),
-        _c("frame_finish", "Frame Finish", [("Almond", f"Almond{s}"), ("Champagne", f"Champagne{s}"),
-                                            ("Mill", f"Mill{s}"), ("Bronze", f"Bronze{s}"),
-                                            ("White", f"White{s}")]),
+        _c("frame_finish", "Trim / Frame Color", [("White", f"White{s}"), ("Tan", None), ("Bronze", f"Bronze{s}"),
+                                                  ("Gray", None), ("Champagne", f"Champagne{s}"),
+                                                  ("Almond", f"Almond{s}"), ("Mill", f"Mill{s}")],
+           photos="patio_trim"),
         _c("screen_color", "Screen Color", [("Charcoal", f"Charcoal{s}"), ("Grey", f"Grey{s}")]),
         _c("screen_type", "Screen Type", [("Bug Screen", f"Bug Screen{s}"), ("Sun Screen", f"Sun{s}")]),
         {"key": "line_comments", "label": "Line Comments", "kind": "lines",
@@ -290,15 +309,20 @@ def _window_screen_block(i):
         _c("frame_size", "Frame Size", [('1/4"', f"FrmSze1/4{s}"), ('5/16"', f"FrmSze5/16{s}"),
                                         ('3/8"', f"FrmSze3/8{s}"), ('7/16"', f"FrmSze7/16{s}"),
                                         ('1"', f"FrmSze1{s}")]),
-        _c("frame_finish", "Frame Finish", [("Almond", f"FinishAlmond{s}"), ("Champagne", f"FinishChamp{s}"),
-                                            ("Mill", f"FinishMill{s}"), ("Bronze", f"FinishBronze{s}"),
-                                            ("White", f"FinishWhite{s}")]),
+        _c("frame_finish", "Trim / Frame Color", [("White", f"FinishWhite{s}"), ("Tan", None),
+                                                  ("Champagne", f"FinishChamp{s}"), ("Bronze", f"FinishBronze{s}"),
+                                                  ("Mill", f"FinishMill{s}"), ("Almond", f"FinishAlmond{s}")],
+           photos="sunscreen_trim"),
         _c("screen_color", "Screen Color", [("Charcoal", f"ColChar{s}"), ("Grey", f"ColGrey{s}"),
                                             ("Other", f"ColOther{s}")],
            other_option="Other", other_field="screen_color_other"),
         _t("screen_color_other", "Screen Color - Other", f"ColOtherTXT{s}"),
         _c("screen_type", "Screen Type", [("Bug Screen", f"TypBug{s}"), ("Sun Screen", f"TypSun{s}")]),
         _t("sun_percent", "Sun Screen %", f"TypSunPercent{s}"),
+        _c("sun_fabric", "Sunscreen Fabric", [("Suntex 80", None), ("Suntex 90", None)], extra=True,
+           show_if=("screen_type", ["Sun Screen"])),
+        _c("sun_color", "Sunscreen Color", [(x, None) for x in SUNSCREEN_COLORS], extra=True,
+           photos="sunscreen_color", show_if=("screen_type", ["Sun Screen"])),
         _c("pull_tabs", "Pull Tabs", [
             ("1 Pull Tab - Height side", [f"Pull1Tab{s}", loc("PT", 1, "Height")]),
             ("1 Pull Tab - Width side", [f"Pull1Tab{s}", loc("PT", 1, "Width")]),
@@ -321,8 +345,14 @@ def _horiz_block(i):
         _t("qty", "Quantity", f"{p} Quantity", w=4),
         _t("item_no", "Item #", f"{p} Item #"),
         _t("unit", "Unit #", f"{p} Unit #"),
-        _c("style", "Style", [("All Vinyl", f"{p} Style All Vinyl"), ("Vinyl Plus", f"{p} Style Vinyl Plus"),
-                              ("All Metal", f"{p} Style All Metal"), ("Faux Wood", f"{p} Style Faux Wood")]),
+        # Products we carry -> nearest box on the paper form; the exact product always goes in the comments
+        _c("style", "Style", [('2" Faux Wood', f"{p} Style Faux Wood"),
+                              ('Premium Basswood 2"', None),
+                              ('Premium Basswood 2-1/2"', None),
+                              ('1" Aluminum Mini Blind', f"{p} Style All Metal"),
+                              ('1" Vinyl Mini Blind', f"{p} Style All Vinyl"),
+                              ('1" Metal Plus Mini Blind', f"{p} Style Vinyl Plus"),
+                              ('2" Metal Plus Blind', f"{p} Style Vinyl Plus")], note_always=True),
         _c("room", "Location", [("Bedroom", f"{p} Location Bedroom"), ("Kitchen", f"{p} Location Kitchen"),
                                 ("Living Room", f"{p} Location Living Room"), ("Other", f"{p} Location Other")],
            other_option="Other", other_field="room_other"),
@@ -413,7 +443,8 @@ FORMS = {
 # "new_door" and "vertical_blind_2" are the company's alternate versions of the same paper forms.
 # In the app they're merged into one Door form and one Vertical Blind form (see MERGED below);
 # the app prints whichever paper version fits what was ordered.
-FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind"]
+FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
+              "roller_shade", "trim", "door_hardware", "bath_hardware", "cabinet", "closet_shower"]
 
 # --------------------------------------------------------------------------
 # Products serviced (for saved unit / floorplan measurements)
@@ -437,16 +468,23 @@ PRODUCTS = {
     "entry_door": {"label": "Entry / Exterior Door", "forms": ["door", "new_door", "prehung"]},
     "prehung_door": {"label": "Pre-Hung Door", "forms": ["prehung"]},
     "bypass_door": {"label": "Bi-Pass Closet Door", "forms": ["bypass"]},
-    "closet_door": {"label": "Closet Door (bifold / other)", "forms": ["bypass", "door"]},
+    "closet_door": {"label": "Closet Door (bifold / other)", "forms": ["bypass", "closet_shower", "door"]},
     "storage_door": {"label": "Storage / Utility Door", "forms": ["door", "new_door"]},
     "garage_door": {"label": "Garage Door", "forms": []},
     "screen_door": {"label": "Screen Door", "forms": ["screen_door"]},
     "window_screen": {"label": "Window Screen", "forms": ["window_screen"]},
     "horizontal_blind": {"label": "Horizontal Blind", "forms": ["horizontal_blind"]},
     "vertical_blind": {"label": "Vertical Blind", "forms": ["vertical_blind", "vertical_blind_2"]},
-    "baseboard": {"label": "Baseboard", "forms": []},
-    "cabinet": {"label": "Cabinet", "forms": []},
-    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": []},
+    "roller_shade": {"label": "Roller Shade", "forms": ["roller_shade"]},
+    "baseboard": {"label": "Baseboard", "forms": ["trim"]},
+    "casing": {"label": "Casing", "forms": ["trim"]},
+    "door_hardware": {"label": "Door Hardware", "forms": ["door_hardware"]},
+    "bath_hardware": {"label": "Bath Hardware", "forms": ["bath_hardware"]},
+    "cabinet": {"label": "Cabinet", "forms": ["cabinet"]},
+    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet"]},
+    "countertop": {"label": "Countertop", "forms": ["cabinet"]},
+    "wardrobe_door": {"label": "Wardrobe / Mirrored Door", "forms": ["closet_shower"]},
+    "shower_door": {"label": "Shower Door / Enclosure", "forms": ["closet_shower"]},
     "other": {"label": "Other", "forms": []},
 }
 
@@ -478,6 +516,153 @@ def _lwh_order(fields):
     return fields
 
 
+# --------------------------------------------------------------------------
+# App-only fields (no box on the paper form -> printed in the comments)
+# --------------------------------------------------------------------------
+def _x(key, label, kind="text", options=None, **kw):
+    d = {"key": key, "label": label, "kind": kind, "pdf": None, "extra": True}
+    if options is not None:
+        d["options"] = options
+    d.update(kw)
+    return d
+
+
+def _mirror_frame_fields():
+    show = ("mirror_frame", ["Yes"])
+    return [
+        _x("mirror_frame", "Mirror Frame", "choice", YN, photos="mirror_frame"),
+        _x("mirror_length", "Mirror Frame Length (in)", measure=True, show_if=show),
+        _x("mirror_height", "Mirror Frame Height (in)", measure=True, show_if=show),
+        _x("mirror_finish", "Mirror Frame Finish", show_if=show),
+    ]
+
+
+def _door_hardware_fields():
+    show = ("hardware", ["Yes"])
+    return [
+        _x("hardware", "Door Hardware", "choice", YN),
+        _x("hw_collection", "Hardware Style", "choice", [(x, None) for x in HARDWARE_COLLECTIONS],
+           photos="hardware_style", show_if=show),
+        _x("hw_function", "Hardware Type", "choice", [(x, None) for x in ("Passage", "Privacy", "Entry")],
+           show_if=show),
+        _x("hw_finish", "Hardware Finish", "choice", [("Satin Nickel", None), ("Matte Black", None)], show_if=show),
+    ]
+
+
+def _prehung_fields():
+    return [
+        _x("prehung", "Pre-Hung", "choice", YN),
+        _x("threshold", "Threshold Measurement (in)", measure=True, show_if=("prehung", ["Yes"])),
+    ]
+
+
+for _fk in ("door", "new_door"):
+    FORMS[_fk]["blocks"] = [b + _prehung_fields() + _door_hardware_fields() for b in FORMS[_fk]["blocks"]]
+FORMS["prehung"]["blocks"] = [b + _door_hardware_fields() for b in FORMS["prehung"]["blocks"]]
+FORMS["bypass"]["blocks"] = [b + _mirror_frame_fields() for b in FORMS["bypass"]["blocks"]]
+
+
+# --------------------------------------------------------------------------
+# App-made forms (no official paper form; the app draws the PDF itself)
+# --------------------------------------------------------------------------
+def _g(key, label, kind="text", options=None, **kw):
+    d = {"key": key, "label": label, "kind": kind, "pdf": None}
+    if options is not None:
+        d["options"] = options
+    d.update(kw)
+    return d
+
+
+def _gc(key, label, names, **kw):
+    return _g(key, label, "choice", [(x, None) for x in names], **kw)
+
+
+_LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
+
+GENERATED = {
+    "roller_shade": {
+        "title": "Roller Shade Order Form",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _g("width", "Window Width (in)", measure=True), _g("length", "Window Length (in)", measure=True),
+            _gc("chain_side", "Chain Side", ["Left", "Right"]),
+            _gc("color", "Color", ["Champagne", "Tan", "White", "Other"], other_option="Other",
+                other_field="color_other"),
+            _g("color_other", "Color - Other", show_if=("color", ["Other"])),
+            _LINE_COMMENTS]],
+        "products": ["roller_shade"],
+    },
+    "trim": {
+        "title": "Baseboard & Casing Order Form",
+        "blocks": [[
+            _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("trim_type", "Casing or Baseboard", ["Casing", "Baseboard"]),
+            _gc("profile", "Type", [f"{k}: {d}" for k, d in TRIM_PROFILES], photos="trim_profile"),
+            _g("length", "Linear Feet Needed", measure=True),
+            _LINE_COMMENTS]],
+        "products": ["baseboard", "casing"],
+    },
+    "door_hardware": {
+        "title": "Door Hardware Order Form",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("hw_collection", "Hardware Style", HARDWARE_COLLECTIONS, photos="hardware_style"),
+            _gc("hw_function", "Hardware Type", ["Passage", "Privacy", "Entry"]),
+            _gc("hw_finish", "Finish", ["Satin Nickel", "Matte Black"]),
+            _LINE_COMMENTS]],
+        "products": ["door_hardware"],
+    },
+    "bath_hardware": {
+        "title": "Bath Hardware Order Form",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("bath_collection", "Collection", [f"{n} ({fin})" for n, fin in BATH_COLLECTIONS],
+                photos="bath_collection"),
+            _gc("bath_item", "Item", ["Towel Ring", "Paper Holder", "Towel Bar"]),
+            _LINE_COMMENTS]],
+        "products": ["bath_hardware"],
+    },
+    "cabinet": {
+        "title": "Cabinet & Countertop Order Form",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
+            _gc("cab_room", "Cabinet Type", ["Kitchen", "Bathroom"]),
+            _gc("cab_item", "Item", ["Doors", "Single Box", "Double Box", "Double Box with Sink",
+                                     "Extended Double Box with Sink"]),
+            _gc("style", "Door Style", CABINET_STYLES, photos="cabinet_style"),
+            _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
+            _g("height", "Height (in)", measure=True),
+            _gc("drawers", "Drawers Included", ["Yes", "No"]),
+            _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
+            _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
+            _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
+            _g("countertop", "Countertop *", placeholder="* countertop samples coming soon - type it in"),
+            ] + _mirror_frame_fields() + [_LINE_COMMENTS]],
+        "products": ["cabinet", "cabinet_door", "countertop"],
+    },
+    "closet_shower": {
+        "title": "Wardrobe, Closet & Shower Door Order Form",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("closet_type", "Door Type", ["Mirrored Swing Door", "Mirrored Bypass Door",
+                                             "White Vinyl Closet Door", "Shower Door / Enclosure"],
+                photos="closet_type"),
+            _gc("finish", "Frame Finish", ["White", "Satin Nickel", "Aztec Gold", "Other"],
+                other_option="Other", other_field="finish_other",
+                show_if=("closet_type", ["Mirrored Swing Door", "Mirrored Bypass Door"])),
+            _g("finish_other", "Finish - Other", show_if=("finish", ["Other"])),
+            _g("width", "Opening Width (in)", measure=True), _g("height", "Opening Height (in)", measure=True),
+            _g("shower_style", "Shower Style / Custom Details",
+               placeholder="Many styles and custom options - describe it",
+               show_if=("closet_type", ["Shower Door / Enclosure"])),
+            ] + _mirror_frame_fields() + [_LINE_COMMENTS]],
+        "products": ["closet_door", "wardrobe_door", "shower_door"],
+    },
+}
+for _fk, _spec in GENERATED.items():
+    FORMS[_fk] = dict(_spec, generated=True, file=None, header=dict(HEADER_STD), sales_rep=True,
+                      comments=True)
+
 for _fk in FORMS:
     FORMS[_fk]["blocks"] = [_lwh_order(b) for b in FORMS[_fk]["blocks"]]
 GENERIC_FIELDS = _lwh_order(GENERIC_FIELDS)
@@ -486,15 +671,18 @@ GENERIC_FIELDS = _lwh_order(GENERIC_FIELDS)
 # --------------------------------------------------------------------------
 # Merged forms: one choice in the app, two paper versions behind it
 # --------------------------------------------------------------------------
-DOOR_STYLES = [  # app label -> label on each paper form (None = not on that form)
-    ("Colonist (6-Panel)", {"door": "Six-Panel Embossed (Colonist)", "new_door": "Colonist (6-Panel)"}),
-    ("Carrera (2-Panel)", {"door": None, "new_door": "Carrera (2-Panel)"}),
-    ("Camden", {"door": None, "new_door": "Camden"}),
-    ("Riverside (5-Panel)", {"door": None, "new_door": "Riverside (5-Panel)"}),
-    ("Classique (2-Panel Embossed)", {"door": "Two-Panel Embossed (Classique)", "new_door": None}),
-    ("Carmelle (4-Panel Embossed)", {"door": "Four-Panel Embossed (Carmelle)", "new_door": None}),
-    ("Clermont (3-Panel Embossed)", {"door": "Three-Panel Embossed (Clermont)", "new_door": None}),
-    ("Steel (6-Panel)", {"door": "Six Panel Steel", "new_door": "Steel Door"}),
+DOOR_STYLES = [  # app label -> label on each paper form (None = not on that form; "Other" = written in)
+    ("6 Panel (Colonist)", {"door": "Six-Panel Embossed (Colonist)", "new_door": "Colonist (6-Panel)"}),
+    ("5 Panel (Riverside)", {"door": "Other", "new_door": "Riverside (5-Panel)"}),
+    ("2 Panel (Carrera)", {"door": "Other", "new_door": "Carrera (2-Panel)"}),
+    ("2 Panel Arch", {"door": "Other", "new_door": None}),
+    ("2 Panel Arch Plank", {"door": "Other", "new_door": None}),
+    ("5 Panel Shaker", {"door": "Other", "new_door": None}),
+    ("3 Panel Shaker Equal", {"door": "Other", "new_door": None}),
+    ("3 Panel Shaker Craftsman", {"door": "Other", "new_door": None}),
+    ("2 Panel Shaker", {"door": "Other", "new_door": None}),
+    ("1 Panel Shaker", {"door": "Other", "new_door": None}),
+    ("HC Primecoat", {"door": "Other", "new_door": None}),
     ("Other", {"door": "Other", "new_door": None}),
 ]
 DOOR_FINISHES = [
@@ -511,9 +699,11 @@ MERGED = {
 VARIANT_PARENT = {v: k for k, m in MERGED.items() for v in m["variants"] if v != k}
 
 
-def _choice(key, label, table, other_field=None):
-    return {"key": key, "label": label, "kind": "choice", "options": [(u, None) for u, _ in table],
-            "other_option": "Other" if any(u == "Other" for u, _ in table) else None, "other_field": other_field}
+def _choice(key, label, table, other_field=None, **kw):
+    d = {"key": key, "label": label, "kind": "choice", "options": [(u, None) for u, _ in table],
+         "other_option": "Other" if any(u == "Other" for u, _ in table) else None, "other_field": other_field}
+    d.update(kw)
+    return d
 
 
 def editor_fields(form_key):
@@ -522,12 +712,13 @@ def editor_fields(form_key):
         out = []
         for f in FORMS["door"]["blocks"][0]:
             if f["key"] == "style":
-                out.append(_choice("style", "Door Style", DOOR_STYLES, "style_other"))
+                out.append(_choice("style", "Door Type", DOOR_STYLES, "style_other", photos="door_style"))
             elif f["key"] == "style_other":
-                out.append(dict(f, label="Other style"))
+                out.append(dict(f, label="Other type", show_if=("style", ["Other"])))
             elif f["key"] == "finish":
                 out.append(_choice("finish", "Finish", DOOR_FINISHES, "finish_other"))
-                out.append(next(dict(x, label="Other finish") for x in FORMS["new_door"]["blocks"][0]
+                out.append(next(dict(x, label="Other finish", show_if=("finish", ["Other"]))
+                                for x in FORMS["new_door"]["blocks"][0]
                                 if x["key"] == "finish_other"))
             else:
                 out.append(f)
@@ -558,8 +749,12 @@ def choose_variant(form_key, data):
                 row = dict(table).get(match_option(b.get(key), [(u, u) for u, _ in table]) or "")
                 if row:
                     if row["door"] is None:
-                        score["new_door"] += 1
+                        score["new_door"] += 2
+                    elif row["door"] == "Other" and row["new_door"] not in (None, "Other"):
+                        score["new_door"] += 1   # has its own box on the New Door form
                     if row["new_door"] is None:
+                        score["door"] += 2
+                    elif row["new_door"] == "Other" and row["door"] not in (None, "Other"):
                         score["door"] += 1
         if score["new_door"] > score["door"]:
             return "new_door"
@@ -586,13 +781,16 @@ def translate_for_variant(form_key, variant, data):
                     continue
                 u = match_option(val, [(x, x) for x, _ in table])
                 target = dict(table)[u][variant] if u else None
+                written = b.get(other) if u == "Other" else u   # what to write in by hand
                 if target and target != "Other":
                     b[key] = target
-                elif target == "Other" or (u == "Other" and b.get(other)):
+                elif target == "Other" or u == "Other":
                     if other in keys:
                         b[key] = "Other"
+                        if written:
+                            b[other] = written
                     else:   # this paper form has no "Other" box: write it out
-                        b[key] = b.get(other) or val
+                        b[key] = written or val
                 else:
                     b[key] = val
         if form_key == "vertical_blind" and variant == "vertical_blind" and b.get("mount"):
@@ -669,6 +867,15 @@ def public_spec(form_key):
             d["measure"] = True
         if fd.get("w"):
             d["w"] = fd["w"]
+        for k in ("placeholder", "extra"):
+            if fd.get(k):
+                d[k] = fd[k]
+        if fd.get("show_if"):
+            d["show_if"] = {"key": fd["show_if"][0], "in": list(fd["show_if"][1])}
+        if fd.get("photos") and fd["kind"] == "choice":
+            from . import option_photos as photos
+            d["photos"] = fd["photos"]
+            d["photo_map"] = {o: photos.slug(o) for o in d["options"] if photos.find(fd["photos"], o)}
         fields.append(d)
     return {
         "key": form_key, "title": f["title"],
@@ -676,10 +883,11 @@ def public_spec(form_key):
                    if k in f["header"] or (k in ("city", "state", "zip") and f.get("address_combined"))],
         "has_sales_rep": bool(f.get("sales_rep")),
         "has_comments": bool(f.get("comments")),
-        "blocks_per_page": len(f["blocks"]),
+        "blocks_per_page": 3 if f.get("generated") else len(f["blocks"]),
         "fields": fields,
         "has_unit_field": any(x["key"] == "unit" for x in f["blocks"][0]),
         "merged": form_key in MERGED,
+        "generated": bool(f.get("generated")),
     }
 
 

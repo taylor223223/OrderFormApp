@@ -82,21 +82,46 @@ document.querySelectorAll('[data-h]').forEach(i => i.value = H[i.dataset.h] || '
 if ($('#sales_rep')) $('#sales_rep').value = DATA.sales_rep || '';
 $('#comments').value = DATA.comments || '';
 
+const PHOTO_URL = {{ url_for('settings.option_photo', group='G', name='N')|tojson }};
+function wrapAttrs(f){
+  return ` data-f="${f.key}"` + (f.show_if ? ` data-show-k="${esc(f.show_if.key)}" data-show-in="${esc(JSON.stringify(f.show_if.in))}"` : '');
+}
 function fieldHTML(f, bi){
   const id = `b${bi}_${f.key}`;
+  const ph = f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : '';
   if (f.kind === 'choice') {
-    return `<div><label for="${id}">${esc(f.label)}</label><select id="${id}" data-k="${f.key}"><option value=""></option>${
-      f.options.map(o => `<option>${esc(o)}</option>`).join('')}</select></div>`;
+    const pic = f.photos ? `<div class="opt-photo" title="Click to enlarge"><img alt=""></div>` : '';
+    return `<div${wrapAttrs(f)}><label for="${id}">${esc(f.label)}</label><select id="${id}" data-k="${f.key}"><option value=""></option>${
+      f.options.map(o => `<option>${esc(o)}</option>`).join('')}</select>${pic}</div>`;
   }
   if (f.kind === 'bool') {
-    return `<div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" id="${id}" data-k="${f.key}"> ${esc(f.label)}</label></div>`;
+    return `<div${wrapAttrs(f)}><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" id="${id}" data-k="${f.key}"> ${esc(f.label)}</label></div>`;
   }
   if (f.kind === 'lines') {
-    return `<div class="wide"><label for="${id}">${esc(f.label)}</label><input id="${id}" data-k="${f.key}"></div>`;
+    return `<div class="wide"${wrapAttrs(f)}><label for="${id}">${esc(f.label)}</label><input id="${id}" data-k="${f.key}"${ph}></div>`;
   }
   const dl = (SUGG.suggest && SUGG.suggest[f.key] && SUGG.suggest[f.key].length) ? `list="dl_${f.key}"` : '';
-  return `<div><label for="${id}">${esc(f.label)}</label><input id="${id}" data-k="${f.key}" ${dl} ${f.measure ? 'inputmode="decimal"' : ''}></div>`;
+  return `<div${wrapAttrs(f)}><label for="${id}">${esc(f.label)}</label><input id="${id}" data-k="${f.key}" ${dl} ${f.measure ? 'inputmode="decimal"' : ''}${ph}></div>`;
 }
+
+// show follow-up questions only when they apply (e.g. threshold only if Pre-Hung = Yes), and product photos
+const FIELD = Object.fromEntries(SPEC.fields.map(f => [f.key, f]));
+function refreshBlock(el){
+  el.querySelectorAll('[data-show-k]').forEach(w => {
+    const src = el.querySelector(`[data-k="${w.dataset.showK}"]`);
+    const srcWrap = src && src.closest('[data-f]');
+    const srcShown = !srcWrap || !srcWrap.classList.contains('hidden-if');
+    const ok = srcShown && src && JSON.parse(w.dataset.showIn).includes(src.value);
+    w.classList.toggle('hidden-if', !ok);
+  });
+  el.querySelectorAll('.opt-photo').forEach(box => {
+    const wrap = box.closest('[data-f]'), f = FIELD[wrap.dataset.f], sel = wrap.querySelector('select');
+    const slug = f && f.photo_map && f.photo_map[sel.value];
+    box.style.display = slug ? 'block' : 'none';
+    if (slug) box.querySelector('img').src = PHOTO_URL.replace('/G/', '/' + f.photos + '/').replace(/N$/, slug);
+  });
+}
+document.addEventListener('click', e => { const b = e.target.closest('.opt-photo'); if (b) b.classList.toggle('big'); });
 
 let blockCount = 0;
 function addBlock(values, predictedKeys){
@@ -112,8 +137,8 @@ function addBlock(values, predictedKeys){
      <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit').map(f => fieldHTML(f, bi)).join('')}</div>`;
   $('#blocks').appendChild(el);
   setBlock(el, values || {}, predictedKeys);
-  el.addEventListener('input', ev => onUserEdit(el, ev.target));
-  el.addEventListener('change', ev => onUserEdit(el, ev.target));
+  el.addEventListener('input', ev => { onUserEdit(el, ev.target); refreshBlock(el); });
+  el.addEventListener('change', ev => { onUserEdit(el, ev.target); refreshBlock(el); });
   el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
   el.querySelector('[data-act=clear]').onclick = () => { setBlock(el, {}, null, true); dirty = true; };
   el.querySelector('[data-act=dup]').onclick = () => { const v = getBlock(el); const n = addBlock(v); el.after(n); renumber(); dirty = true; };
@@ -139,12 +164,14 @@ function setBlock(el, v, predictedKeys, clearAll){
     } else i.value = val ?? '';
     i.classList.toggle('predicted', !!(predictedKeys && val !== '' && val !== undefined && predictedKeys.includes(k)));
   });
+  refreshBlock(el);
 }
 
 function getBlock(el){
   const v = {};
   el.querySelectorAll('[data-k]').forEach(i => {
     const k = i.dataset.k;
+    if (i.closest('.hidden-if')) return;   // follow-up question that doesn't apply
     if (i.type === 'checkbox') { if (i.checked) v[k] = 'Yes'; }
     else if (i.value.trim() !== '') v[k] = i.value.trim();
   });
@@ -172,6 +199,7 @@ function renumber(){
 }
 function updatePageNote(){
   const n = [...document.querySelectorAll('#blocks .blk')].filter(b => Object.keys(getBlock(b)).length).length;
+  if (SPEC.generated) { $('#pageNote').textContent = `${n} line(s) filled · app-made form, any number of lines`; return; }
   const pages = Math.max(1, Math.ceil(n / SPEC.blocks_per_page));
   $('#pageNote').textContent = `${n} line(s) filled · this form holds ${SPEC.blocks_per_page} per page` + (pages > 1 ? ` → ${pages} pages` : '');
 }

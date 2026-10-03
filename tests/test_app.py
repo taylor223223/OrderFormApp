@@ -67,11 +67,19 @@ def test_fill_every_form_roundtrip(fk):
     got_fk, got = read_filled_form(pdf)
     assert got_fk == fk
     assert got["header"]["name"] == "Sunrise Villas"
+    gen = FORMS[fk].get("generated")
     widget_keys = {f["key"] for f in FORMS[fk]["blocks"][0] if not f.get("overlay")
-                   and not any(isinstance(o[1], dict) for o in f.get("options", []))}
+                   and not any(isinstance(o[1], dict) for o in f.get("options", []))
+                   and (gen or not f.get("extra"))}
+    opts = {f["key"]: dict(f["options"]) for f in FORMS[fk]["blocks"][0] if f["kind"] == "choice"}
     for i, blk in enumerate(data["blocks"]):
         for k in widget_keys:
+            if not gen and k in opts and opts[k].get(blk.get(k)) is None:
+                continue   # app-only option: goes in the comments, not a box
             if FORMS[fk]["blocks"][0][0]["kind"] and k in blk:
+                if k == "line_comments":   # app-only details are added after the rep's own comments
+                    assert str(got["blocks"][i].get(k)).startswith(str(blk[k])), (fk, i, k)
+                    continue
                 assert str(got["blocks"][i].get(k)) == str(blk[k]), (fk, i, k)
 
 
@@ -89,7 +97,8 @@ def test_match_option():
     vs = [o for o in FORMS["vertical_blind"]["blocks"][0] if o["key"] == "slat_width"][0]["options"]
     assert match_option('3.5"', vs) == '3-1/2"'
     assert match_option("purple", opts) is None
-    assert product_fields("baseboard")[0]["key"] == "qty"
+    assert "length" in [f["key"] for f in product_fields("baseboard")]
+    assert product_fields("garage_door")[0]["key"] == "qty"
 
 
 def test_email_line_parser():
@@ -132,7 +141,7 @@ def test_full_flow(client, tmp_path):
     j = c.get(f"/api/unit?customer={cid}&form=vertical_blind&unit=103").get_json()
     assert j["ok"] and j["blocks"][0]["width"] == "72" and j["blocks"][0]["room"] == "Living Room"
     j = c.get(f"/api/unit?customer={cid}&form=door&unit=103").get_json()
-    assert j["blocks"][0]["style"] == "Colonist (6-Panel)"
+    assert j["blocks"][0]["style"] == "6 Panel (Colonist)"
     # save + pdf
     payload = {"header": {"name": "Sunrise Villas Apartments", "acct": "1045", "po": "PO-1", "date": "09/30/2026",
                           "phone": "602-555-0000"},
@@ -272,24 +281,36 @@ def test_merged_forms_pick_paper_version():
     keys = [k for k, _ in form_list()]
     assert "new_door" not in keys and "vertical_blind_2" not in keys
     styles = next(f for f in public_spec("door")["fields"] if f["key"] == "style")["options"]
-    assert "Carrera (2-Panel)" in styles and "Classique (2-Panel Embossed)" in styles
+    assert "2 Panel (Carrera)" in styles and "3 Panel Shaker Craftsman" in styles and "HC Primecoat" in styles
     assert "mount" in [f["key"] for f in public_spec("vertical_blind")["fields"]]
     hdr = {"name": "Sunrise", "po": "P1", "date": "10/02/2026"}
-    # Carrera only exists on the New Door paper form
-    d = {"header": hdr, "blocks": [{"qty": "1", "style": "Carrera (2-Panel)", "finish": "Primecoat",
+    # Carrera has its own box only on the New Door paper form
+    d = {"header": hdr, "blocks": [{"qty": "1", "style": "2 Panel (Carrera)", "finish": "Primecoat",
                                     "width": "30", "height": "80", "swing": "Left Hand"}]}
     assert choose_variant("door", d) == "new_door"
     pdf, warns = fill_form("door", d)
     fk, back = read_filled_form(pdf)
     assert fk == "new_door" and back["blocks"][0]["style"] == "Carrera (2-Panel)"
     assert any("New Door" in w for w in warns)
-    # Classique only on the original Door form; Colonist works on both -> original
-    d["blocks"][0]["style"] = "Classique (2-Panel Embossed)"
+    # a type with no box anywhere -> original Door form, written in the "Other" box
+    d["blocks"][0]["style"] = "3 Panel Shaker Craftsman"
     assert choose_variant("door", d) == "door"
     fk, back = read_filled_form(fill_form("door", d)[0])
-    assert fk == "door" and back["blocks"][0]["style"] == "Two-Panel Embossed (Classique)"
+    assert fk == "door" and back["blocks"][0]["style"] == "Other"
+    assert back["blocks"][0]["style_other"] == "3 Panel Shaker Craftsman"
+    # old saved name still works; 6 panel fits both -> original
     d["blocks"][0]["style"] = "Colonist (6-Panel)"
     assert choose_variant("door", d) == "door"
+    fk, back = read_filled_form(fill_form("door", d)[0])
+    assert back["blocks"][0]["style"] == "Six-Panel Embossed (Colonist)"
+    # app-only door options land in the comments
+    d["blocks"][0].update(prehung="Yes", threshold="36", hardware="Yes", hw_collection="Soma",
+                          hw_function="Privacy", hw_finish="Matte Black")
+    fk, back = read_filled_form(fill_form("door", d)[0])
+    assert "Threshold" in back["comments"] and "Soma" in back["comments"] and fk == "door"
+    d["blocks"][0]["hardware"] = "No"   # hidden follow-up answers are not printed
+    fk, back = read_filled_form(fill_form("door", d)[0])
+    assert "Soma" not in back["comments"]
     # verticals: a mount choice with no valance -> the inside/outside mount paper form
     v = {"header": hdr, "blocks": [{"qty": "1", "mount": "Outside Mount", "om_headrail": "98", "om_slat": "84",
                                     "color": "White"}]}
@@ -351,3 +372,34 @@ def test_auto_draft_order_emails(client):
     assert "turned into draft orders" in dash
     page = c.get("/email").get_data(as_text=True)
     assert "Review draft #" in page and "pick form" in page and "ORDER - Sunrise Villas" in page
+
+
+def test_new_products_and_app_made_forms():
+    from orderapp.catalog import form_list, public_spec
+    from orderapp import option_photos
+    keys = [k for k, _ in form_list()]
+    for fk in ("roller_shade", "trim", "door_hardware", "bath_hardware", "cabinet", "closet_shower"):
+        assert fk in keys
+    spec = public_spec("door")
+    style = next(f for f in spec["fields"] if f["key"] == "style")
+    assert style["photos"] == "door_style" and "2 Panel Arch" in style["photo_map"]
+    thr = next(f for f in spec["fields"] if f["key"] == "threshold")
+    assert thr["show_if"] == {"key": "prehung", "in": ["Yes"]}
+    prof = next(f for f in public_spec("trim")["fields"] if f["key"] == "profile")
+    assert len(prof["options"]) == 10 and prof["photo_map"]
+    assert option_photos.slug("A: #103 Casing") == "a" and option_photos.slug("Soma (Matte Black)") == "soma"
+    hz = next(f for f in public_spec("horizontal_blind")["fields"] if f["key"] == "style")
+    assert 'Premium Basswood 2-1/2"' in hz["options"]
+    # vertical: 2" ribbed only in white
+    w = fill_form("vertical_blind", {"blocks": [{"slat_width": '2"', "slat_style": "Ribbed", "color": "Alabaster"}]})[1]
+    assert any("only come in White" in x for x in w)
+    # cabinet form: drawn by the app, data comes back out of the PDF
+    d = {"header": {"name": "Sunrise"}, "comments": "x",
+         "blocks": [{"qty": "1", "cab_room": "Kitchen", "cab_item": "Double Box with Sink", "style": "Shaker",
+                     "refacing": "No", "thermofoil_color": "hidden", "mirror_frame": "Yes", "mirror_height": "36"}]}
+    pdf, warns = fill_form("cabinet", d)
+    fk, back = read_filled_form(pdf)
+    assert fk == "cabinet" and back["blocks"][0]["style"] == "Shaker"
+    import pymupdf
+    txt = pymupdf.open("pdf", pdf)[0].get_text()
+    assert "Double Box with Sink" in txt and "hidden" not in txt and "Mirror Frame Height" in txt

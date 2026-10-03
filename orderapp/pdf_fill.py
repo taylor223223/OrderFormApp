@@ -107,10 +107,33 @@ def _combined_address(h):
     return ", ".join(parts)
 
 
+def _visible(f, block):
+    """Fields that only apply when another answer is picked (e.g. threshold only if pre-hung = Yes)."""
+    cond = f.get("show_if")
+    if not cond:
+        return True
+    k, allowed = cond
+    v = block.get(k)
+    return bool(v) and (match_option(v, [(a, a) for a in allowed]) is not None)
+
+
+def check_order(form_key, data):
+    """Warnings about combinations we don't carry."""
+    warns = []
+    for i, b in enumerate(data.get("blocks") or [], 1):
+        if form_key in ("vertical_blind", "vertical_blind_2"):
+            sw, st, col = (str(b.get(k) or "").lower() for k in ("slat_width", "slat_style", "color"))
+            if sw.startswith("2") and "rib" in st and "alab" in col:
+                warns.append(f"Line {i}: 2\" ribbed vertical slats only come in White - double-check the color.")
+    return warns
+
+
 def _fill_block(page, idx, fields, block, notes, line_no):
     for f in fields:
         key, kind = f["key"], f["kind"]
         val = block.get(key)
+        if not _visible(f, block):
+            continue
         if kind == "text":
             if val in (None, ""):
                 continue
@@ -118,6 +141,8 @@ def _fill_block(page, idx, fields, block, notes, line_no):
                 _overlay_text(page, f, val)
             elif f.get("pdf"):
                 _set_text(idx, f["pdf"], val)
+            else:   # app-only field: no box on this paper form
+                notes.append(f"Line {line_no} {f['label']}: {val}")
             if f.get("auto_check"):
                 _set_check(idx, f["auto_check"], True)
         elif kind == "bool":
@@ -148,6 +173,10 @@ def _fill_block(page, idx, fields, block, notes, line_no):
                 notes.append(f"Line {line_no} {f['label']}: {val}")
                 continue
             target = dict((o[0], o[1]) for o in f["options"])[opt]
+            if f.get("note_always") or target is None:
+                notes.append(f"Line {line_no} {f['label']}: {val if target is None else opt}")
+            if target is None:
+                continue
             if isinstance(target, dict) and "mark" in target:
                 _overlay_mark(page, target["mark"])
             elif isinstance(target, list):
@@ -159,11 +188,19 @@ def _fill_block(page, idx, fields, block, notes, line_no):
 
 def fill_form(form_key, data):
     """Return (pdf_bytes, warnings). data = {header:{}, sales_rep, comments, blocks:[{}]}"""
+    pdf, warns = _fill_any(form_key, data)
+    return pdf, check_order(form_key, data) + list(warns)
+
+
+def _fill_any(form_key, data):
     from .catalog import MERGED, choose_variant, translate_for_variant
+    if FORMS[form_key].get("generated"):
+        from .pdf_generated import fill_generated
+        return fill_generated(form_key, data)
     if form_key in MERGED:
         variant = choose_variant(form_key, data)
         data = translate_for_variant(form_key, variant, data)
-        pdf, warns = fill_form(variant, data) if variant != form_key else _fill(form_key, data)
+        pdf, warns = _fill(variant, data)
         if variant != MERGED[form_key]["default"]:
             warns = [f"Printed on the {FORMS[variant]['title']} paper form (matches what you ordered)."] + list(warns)
         return pdf, warns
@@ -198,7 +235,20 @@ def _fill(form_key, data):
         notes = []
         for i, blk in enumerate(chunk):
             line_no = pnum * per_page + i + 1
-            _fill_block(page, idx, spec["blocks"][i], blk, notes, line_no)
+            bn = []
+            _fill_block(page, idx, spec["blocks"][i], blk, bn, line_no)
+            lc = next((f for f in spec["blocks"][i] if f["key"] == "line_comments"), None)
+            if bn and not spec.get("comments") and lc:
+                # no general comments box: this line's extras go in this line's own comments
+                txt = "; ".join([x for x in [blk.get("line_comments", "")] if x] +
+                                [re.sub(r"^Line \d+ ", "", n) for n in bn])
+                lines, rest = _wrap(txt, lc["chars"])
+                for ref, ln in zip(lc["pdf"], lines):
+                    _set_text(idx, ref, ln)
+                if rest:
+                    warnings.append(f"Line {line_no} comments cut off: '{rest}'")
+            else:
+                notes.extend(bn)
             if not has_unit_field and blk.get("unit"):
                 notes.insert(0, f"Line {line_no}: Unit {blk['unit']}" +
                              (f" ({blk['room']})" if blk.get("room") and not any(
@@ -216,7 +266,8 @@ def _fill(form_key, data):
         elif all_comments:
             # forms without a general comments box: use the last block's line comments
             lc = next((f for f in spec["blocks"][len(chunk) - 1] if f["key"] == "line_comments"), None)
-            if lc and not chunk[-1].get("line_comments"):
+            last_used = lc and lc["pdf"][0] in idx and any(w.field_value for w in idx[lc["pdf"][0]])
+            if lc and not last_used:
                 _set_text(idx, lc["pdf"][0], all_comments)
             else:
                 warnings.append("This form has no comments box; not printed: " + all_comments)
@@ -240,6 +291,10 @@ def read_filled_form(pdf_bytes):
         return None, None
     if doc.page_count == 0:
         return None, None
+    from .pdf_generated import read_generated
+    got = read_generated(doc)
+    if got:
+        return got
     page = doc[0]
     vals = {}
     names = set()
@@ -256,6 +311,8 @@ def read_filled_form(pdf_bytes):
         return None, None
     scores = []
     for fk in FORMS:
+        if FORMS[fk].get("generated"):
+            continue
         tmpl = fitz.open(template_path(fk))
         tnames = {_clean(w.field_name) for w in tmpl[0].widgets()}
         tmpl.close()
@@ -267,7 +324,7 @@ def read_filled_form(pdf_bytes):
     best = top[0]
     if "prehung" in top or "door" in top:
         # the Pre-Hung form reuses the Door form's field names; tell them apart by title
-        best = "prehung" if "PRE-HUNG" in page.get_text().upper() else ("door" if "door" in top else best)
+        best = "prehung" if "PRE-HUNG DOOR FORM" in page.get_text().upper() else ("door" if "door" in top else best)
     spec = FORMS[best]
 
     def text(ref):
@@ -320,6 +377,8 @@ def validate_catalog():
     """Return list of problems: pdf field names in the catalog that don't exist."""
     problems = []
     for fk, spec in FORMS.items():
+        if spec.get("generated"):
+            continue
         doc = fitz.open(template_path(fk))
         idx = _index_widgets(doc[0])
 
@@ -337,6 +396,8 @@ def validate_catalog():
                 chk(r, False)
         for fields in spec["blocks"]:
             for f in fields:
+                if f.get("extra"):
+                    continue
                 if f["kind"] == "text" and not f.get("overlay"):
                     chk(f["pdf"], False)
                     if f.get("auto_check"):
@@ -348,7 +409,7 @@ def validate_catalog():
                         chk(r, False)
                 elif f["kind"] == "choice":
                     for _, t in f["options"]:
-                        if isinstance(t, dict):
+                        if isinstance(t, dict) or t is None:
                             continue
                         for r in (t if isinstance(t, list) else [t]):
                             chk(r, True)
