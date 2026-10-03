@@ -73,6 +73,10 @@ CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders(customer_id);
 CUSTOMER_FIELDS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email", "notes"]
 
 DEFAULT_SETTINGS = {
+    "email_order_word": "Order",      # only emails with this in the subject are read automatically
+    "email_auto_minutes": "15",       # 0 = off
+    "email_lookback_days": "3",
+    "email_last_check": "",
     "sales_rep": "Taylor M. Anderson",
     "order_to": "orders@apartmentinterior.net",
     "order_cc": "",
@@ -159,6 +163,7 @@ MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
                   "owner": "TEXT"},
     "route_stops": {"products": "TEXT", "done_at": "TEXT"},
+    "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
 }
 
 # quick picks for "what am I estimating" on a route stop

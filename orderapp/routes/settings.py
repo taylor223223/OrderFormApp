@@ -18,7 +18,8 @@ bp = Blueprint("settings", __name__)
 EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", "graph_client_id", "graph_tenant",
             "subject_template", "body_template", "output_dir", "date_format", "session_minutes",
             "report_to", "report_cc", "ors_api_key", "route_start_address", "route_start_time",
-            "route_visit_minutes", "route_return_to_start"]
+            "route_visit_minutes", "route_return_to_start", "email_order_word", "email_auto_minutes",
+            "email_lookback_days"]
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -28,9 +29,12 @@ def index():
         for k in EDITABLE:
             if k in request.form:
                 v = request.form.get(k, "").strip() if k != "body_template" else request.form.get(k, "")
-                if k in ("session_minutes", "route_visit_minutes") and not v.isdigit():
+                if k in ("session_minutes", "route_visit_minutes", "email_auto_minutes", "email_lookback_days") \
+                        and not v.isdigit():
                     v = DEFAULT_SETTINGS[k]
                 set_setting(k, v)
+        if "email_order_word" in request.form and not request.form.get("email_order_word", "").strip():
+            set_setting("email_order_word", "Order")
         if "route_start_address" in request.form:
             set_setting("route_return_to_start", "1" if request.form.get("route_return_to_start") else "0")
         flash("Settings saved.", "ok")

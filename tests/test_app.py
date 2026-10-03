@@ -298,3 +298,56 @@ def test_merged_forms_pick_paper_version():
     v["blocks"][0]["valance"] = "Upgrade Valance"
     assert choose_variant("vertical_blind", v) == "vertical_blind"
     assert read_filled_form(fill_form("vertical_blind", v)[0])[0] == "vertical_blind"
+
+
+class _FakeInbox:
+    """Stands in for Outlook: three emails, only two have 'Order' in the subject."""
+    name = "graph"
+
+    def __init__(self):
+        self.read_bodies = []
+        self.msgs = [
+            {"msg_id": "m1", "subject": "ORDER - Sunrise Villas", "sender": "maria@sunrisevillas.com",
+             "sender_name": "Maria", "received": "2026-10-03 08:00",
+             "body": "PO 5512\nUnit 102 needs a new bedroom door, left hand\n"
+                     "Unit 104 - vertical blind living room 70 x 84\nMaria"},
+            {"msg_id": "m2", "subject": "Lunch friday?", "sender": "friend@example.com", "sender_name": "Bob",
+             "received": "2026-10-03 09:00", "body": "tacos"},
+            {"msg_id": "m3", "subject": "Re: order for Desert Palms", "sender": "unknown@nowhere.com",
+             "sender_name": "Sam", "received": "2026-10-03 10:00", "body": "Can you call me back?"},
+        ]
+
+    def available(self):
+        return True, ""
+
+    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
+        return [dict(m, preview="") for m in self.msgs if subject_word.lower() in m["subject"].lower()]
+
+    def get_message(self, msg_id):
+        m = next(x for x in self.msgs if x["msg_id"] == msg_id)
+        self.read_bodies.append(msg_id)
+        return dict(m, attachments=[])
+
+
+def test_auto_draft_order_emails(client):
+    c = client
+    from orderapp.routes.emails import auto_check
+    fake = _FakeInbox()
+    with c.app.test_request_context():
+        from orderapp.db import q
+        before = q("SELECT COUNT(*) n FROM orders", one=True)["n"]
+        r = auto_check(fake)
+        assert r["found"] == 2 and r["new"] == 2 and not r["error"]
+        assert "m2" not in fake.read_bodies                     # non-order email never opened
+        drafts = q("SELECT * FROM orders WHERE notes LIKE 'Auto-drafted%' ORDER BY id")
+        assert len(drafts) >= 2 and q("SELECT COUNT(*) n FROM orders", one=True)["n"] == before + len(drafts)
+        assert {d["form_key"] for d in drafts} >= {"door", "vertical_blind"}
+        assert all(d["status"] == "Draft" and d["customer_id"] == 1 and d["po"] == "5512" for d in drafts)
+        m3 = q("SELECT * FROM email_messages WHERE msg_id='m3'", one=True)
+        assert m3["status"] == "needs form" and not m3["order_id"]
+        again = auto_check(fake)                                 # second run: nothing new
+        assert again["new"] == 0 and q("SELECT COUNT(*) n FROM orders", one=True)["n"] == before + len(drafts)
+    dash = c.get("/").get_data(as_text=True)
+    assert "turned into draft orders" in dash
+    page = c.get("/email").get_data(as_text=True)
+    assert "Review draft #" in page and "pick form" in page and "ORDER - Sunrise Villas" in page

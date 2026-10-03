@@ -3,6 +3,7 @@
 {% block body %}
 <div class="pagehead"><div><h1>Dashboard</h1><div class="muted">Start an order, check what's open, or review incoming info.</div></div>
   <div class="row"><a class="btn primary" href="{{ url_for('orders.new') }}">+ New order</a><a class="btn" href="{{ url_for('photos.field_order') }}">Photo order</a><a class="btn" href="{{ url_for('emails.inbox') }}">Check email</a><a class="btn" href="{{ url_for('crm.home') }}#quicklog">CRM</a><a class="btn" href="{{ url_for('plan.day', day=today) }}">Today's route</a></div></div>
+{% if email_drafts %}<div class="flash" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><span>📥 <b>{{ email_drafts }} order email{{ '' if email_drafts == 1 else 's' }}</b> turned into draft orders. Review them before sending.</span><a class="btn sm primary" href="{{ url_for('emails.inbox') }}#auto">Review drafts</a></div>{% endif %}
 <div class="grid g4">
   <a class="stat" href="{{ url_for('customers.index') }}"><div class="n">{{ stats.customers }}</div><div class="l">Customers</div></a>
   <div class="stat"><div class="n">{{ stats.units }}</div><div class="l">Units saved</div></div>

@@ -84,7 +84,7 @@ class OutlookDesktop:
         except Exception:  # noqa: BLE001
             return ""
 
-    def list_messages(self, days=14, limit=75, unread_only=False, search=""):
+    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
         _, ns = self._ns()
         inbox = ns.GetDefaultFolder(6)
         items = inbox.Items
@@ -97,10 +97,14 @@ class OutlookDesktop:
         out = []
         it = items.GetFirst()
         s = (search or "").lower()
+        sw = (subject_word or "").strip().lower()
         while it is not None and len(out) < int(limit):
             try:
                 if it.Class == 43:  # MailItem
                     subj = it.Subject or ""
+                    if sw and sw not in subj.lower():     # cheap check first - skip the body entirely
+                        it = items.GetNext()
+                        continue
                     body = it.Body or ""
                     if not s or s in subj.lower() or s in body[:3000].lower() or s in (it.SenderName or "").lower():
                         out.append({
@@ -245,7 +249,7 @@ class GraphMail:
             raise MailError(f"Microsoft Graph error {r.status_code}: {r.text[:300]}")
         return r.json() if r.content and "json" in r.headers.get("Content-Type", "") else {}
 
-    def list_messages(self, days=14, limit=75, unread_only=False, search=""):
+    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
         since = (datetime.utcnow() - timedelta(days=int(days))).strftime("%Y-%m-%dT%H:%M:%SZ")
         flt = f"receivedDateTime ge {since}"
         if unread_only:
@@ -262,6 +266,9 @@ class GraphMail:
             out.append({"msg_id": m["id"], "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                         "sender_name": fr.get("name", ""), "received": (m.get("receivedDateTime") or "")[:16].replace("T", " "),
                         "preview": m.get("bodyPreview", "")[:180], "has_attachments": m.get("hasAttachments")})
+        sw = (subject_word or "").strip().lower()
+        if sw:
+            out = [m for m in out if sw in (m["subject"] or "").lower()]
         return out
 
     def get_message(self, msg_id):

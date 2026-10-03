@@ -27,7 +27,7 @@
     <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
     <a href="{{ url_for('plan.week') }}" class="{{ 'on' if ep.startswith('plan.') }}" style="--c:#65a30d"><span class="ic">🗺️</span>Routes</a>
     <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}" style="--c:#0d9488"><span class="ic">📦</span>Order Tracking</a>
-    <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email</a>
+    <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email{% if email_drafts %}<span class="badge" title="Order emails turned into drafts, waiting for review">{{ email_drafts }}</span>{% endif %}</a>
     <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') }}" style="--c:#a16207"><span class="ic">📥</span>Import CSV</a>
     <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}" style="--c:#b45309"><span class="ic">✅</span>Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>
     <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}" style="--c:#78716c"><span class="ic">⚙️</span>Settings</a>

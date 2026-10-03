@@ -3,12 +3,30 @@
 <div class="pagehead"><div><h1>Email</h1><div class="muted">Read order requests from Outlook and turn them into draft orders.
 Connected via: <b>{{ {'outlook_desktop':'Outlook on this PC','graph':'Microsoft 365 sign-in','eml':'none (draft files)'}[provider] }}</b> · <a href="{{ url_for('settings.index') }}#email">change</a></div></div></div>
 {% if not ok and provider != 'eml' %}<div class="flash warn">{{ why }}</div>{% endif %}
+<div class="card" id="auto" style="border-left:5px solid #c2410c">
+  <div class="row" style="justify-content:space-between">
+    <div><h3 style="margin:0">📥 Order emails → draft orders</h3>
+      <div class="small muted">Only emails with <b>"{{ auto.word }}"</b> in the subject are read.
+      {% if auto.minutes|int > 0 and provider != 'eml' %}Checked automatically every {{ auto.minutes }} min while the app is open.{% else %}Automatic checking is off.{% endif %}
+      Last check: {{ auto.last }}. Drafts are never sent until you review them. <a href="{{ url_for('settings.index') }}#email">Change</a></div></div>
+    <form method="post" action="{{ url_for('emails.check_orders') }}"><button class="btn primary" {{ 'disabled' if provider == 'eml' }}>Check for order emails now</button></form>
+  </div>
+  {% if auto.rows %}
+  <div class="tablewrap" style="margin-top:10px"><table>
+  <tr><th>Received</th><th>From</th><th>Subject</th><th>Property</th><th>Draft</th></tr>
+  {% for r in auto.rows %}<tr><td class="small nowrap">{{ r.received }}</td><td class="small">{{ r.sender_name or r.sender }}</td>
+  <td><a href="{{ url_for('emails.message', rid=r.id) }}">{{ r.subject or '(no subject)' }}</a></td>
+  <td class="small">{{ r.cname or '' }}{% if not r.cname %}<span class="tag warn">match customer</span>{% endif %}</td>
+  <td class="nowrap">{% for oid in (r.order_ids or '').split(',') if oid %}<a class="tag ok" href="{{ url_for('orders.editor', order=oid) }}">Review draft #{{ oid }}</a> {% else %}<a class="tag warn" href="{{ url_for('emails.message', rid=r.id) }}">pick form</a>{% endfor %}</td></tr>{% endfor %}
+  </table></div>{% endif %}
+</div>
 {% if provider != 'eml' %}
 <form class="card row">
   <input type="hidden" name="check" value="1">
   <label style="margin:0">Last</label><select name="days" style="width:auto">{% for d in ['3','7','14','30','60'] %}<option {{ 'selected' if d==days }}>{{ d }}</option>{% endfor %}</select><span>days</span>
   <input name="q" value="{{ search }}" placeholder="Search (e.g. order, PO, a property name)" style="max-width:300px">
   <label style="margin:0;font-weight:400;color:var(--ink)"><input type="checkbox" name="unread" value="1" {{ 'checked' if unread }}> Unread only</label>
+  <label style="margin:0;font-weight:400;color:var(--ink)"><input type="checkbox" name="orders_only" value="1" {{ 'checked' if request.args.get('orders_only') or not checked }}> Only "{{ auto.word }}" in subject</label>
   <button class="btn primary">Check inbox</button>
 </form>
 {% endif %}

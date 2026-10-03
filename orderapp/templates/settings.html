@@ -30,6 +30,14 @@
     </div>
     <div class="small muted">See README → "Microsoft 365 setup" for the 5-minute app registration.</div>
   </div>
+  <h3>Order emails</h3>
+  <div class="grid g2">
+    <div><label>Only read emails with this word in the subject</label><input name="email_order_word" value="{{ v.email_order_word }}" placeholder="Order">
+      <div class="small muted">Tell clients to put this in the subject (e.g. "Order - Saguaro Ridge unit 104"). Everything else in your inbox is ignored.</div></div>
+    <div><label>Check automatically every (minutes, 0 = off)</label><input name="email_auto_minutes" value="{{ v.email_auto_minutes }}" inputmode="numeric">
+      <div class="small muted">Only while the app is open. Each new order email becomes a <b>draft</b> order for you to review. Nothing is sent automatically.</div></div>
+    <div><label>Look back (days)</label><input name="email_lookback_days" value="{{ v.email_lookback_days }}" inputmode="numeric"></div>
+  </div>
   <h3 id="routes">CRM weekly report</h3>
   <div class="grid g2">
     <div><label>Send weekly report to (manager)</label><input name="report_to" value="{{ v.report_to }}" placeholder="manager@company.com"></div>

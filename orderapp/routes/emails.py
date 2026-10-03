@@ -59,7 +59,9 @@ def inbox():
             error = why
         else:
             try:
-                messages = prov.list_messages(days=days, unread_only=unread, search=search)
+                messages = prov.list_messages(days=days, unread_only=unread, search=search,
+                                              subject_word=(setting("email_order_word") or "Order")
+                                              if request.args.get("orders_only") else "")
             except MailError as e:
                 error = str(e)
             except Exception as e:  # noqa: BLE001
@@ -70,8 +72,12 @@ def inbox():
         m["row"] = dict(r) if r else None
     recent = q("""SELECT e.*, c.name AS cname FROM email_messages e LEFT JOIN orders o ON o.id=e.order_id
                   LEFT JOIN customers c ON c.id=o.customer_id ORDER BY e.id DESC LIMIT 25""")
+    auto_rows = q("""SELECT e.*, c.name AS cname FROM email_messages e LEFT JOIN orders o ON o.id=e.order_id
+                     LEFT JOIN customers c ON c.id=o.customer_id WHERE e.auto=1 ORDER BY e.id DESC LIMIT 30""")
+    auto = {"word": setting("email_order_word") or "Order", "minutes": setting("email_auto_minutes") or "0",
+            "last": setting("email_last_check") or "never", "rows": auto_rows}
     return render_template("email_inbox.html", provider=prov.name, ok=ok, why=why, messages=messages, error=error,
-                           days=days, search=search, unread=unread, recent=recent,
+                           days=days, search=search, unread=unread, recent=recent, auto=auto,
                            checked=bool(request.args.get("check")))
 
 
@@ -161,19 +167,12 @@ def _blocks_from_email(form_key, cid, p, units_override=None):
     return blocks
 
 
-@bp.route("/email/msg/<int:rid>/order", methods=["POST"])
-@login_required
-def make_order(rid):
-    r = q("SELECT * FROM email_messages WHERE id=?", (rid,), one=True) or abort(404)
+def create_draft(rid, form_key, cid=None, po="", units=None, add_contact=False, auto=False):
+    """Turn a stored email into a Draft order (never sent - you review it first). Returns order id."""
+    r = q("SELECT * FROM email_messages WHERE id=?", (rid,), one=True)
     p = loads(r["parsed"])
-    form_key = request.form.get("form_key")
-    if form_key not in FORMS:
-        flash("Pick which order form to use.", "error")
-        return redirect(url_for("emails.message", rid=rid))
-    cid = request.form.get("customer_id", type=int)
     c = q("SELECT * FROM customers WHERE id=?", (cid,), one=True) if cid else None
-    po = request.form.get("po", "").strip() or p.get("po", "")
-    units = [u.strip() for u in re.split(r"[,\s]+", request.form.get("units", "")) if u.strip()]
+    po = po or p.get("po", "")
     filled = next((ff for ff in p.get("filled_forms", []) if ff["form_key"] == form_key), None)
     if filled:
         data = filled["data"]
@@ -184,19 +183,21 @@ def make_order(rid):
     else:
         data = {"header": customer_header(c), "blocks": _blocks_from_email(form_key, cid, p, units or None)}
     data["header"]["po"] = po or data["header"].get("po", "")
-    data["header"].setdefault("date", today())
     if not data["header"].get("date"):
         data["header"]["date"] = today()
     data.setdefault("sales_rep", setting("sales_rep"))
-    note = f"From email: {r['sender_name'] or r['sender']} - {r['subject']}"[:200]
+    note = (("Auto-drafted from email: " if auto else "From email: ")
+            + f"{r['sender_name'] or r['sender']} - {r['subject']}")[:200]
     data["comments"] = data.get("comments") or ""
     oid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, notes, created,
                updated) VALUES (?,?,?,?,?,'Draft',?,'email',?,?,?)""",
             (cid, form_key, FORMS[form_key]["title"], data["header"]["po"], data["header"]["date"], dumps(data),
              note, now(), now()))
     add_status(oid, "Draft", note)
-    x("UPDATE email_messages SET status='ordered', order_id=? WHERE id=?", (oid, rid))
-    if c is not None and r["sender"] and request.form.get("add_contact"):
+    ids = [i for i in (r["order_ids"] or "").split(",") if i] + [str(oid)]
+    x("UPDATE email_messages SET status=?, order_id=coalesce(order_id, ?), order_ids=? WHERE id=?",
+      ("drafted" if auto else "ordered", oid, ",".join(ids), rid))
+    if c is not None and r["sender"] and add_contact:
         b = new_batch("email", f"Contact from email: {r['sender']}")
         if propose_contact(b, c, {"name": r["sender_name"], "email": r["sender"],
                                   "phone": p.get("contact", {}).get("phone", "")}):
@@ -204,7 +205,98 @@ def make_order(rid):
                        url_for("imports.review_batch", bid=b), "Review contact", "info")
         else:
             x("DELETE FROM change_batches WHERE id=?", (b,))
-    n = len(data.get("blocks", []))
+    return oid
+
+
+def forms_for_email(p):
+    """Which order forms an email needs: attached filled forms first, then one per product mentioned."""
+    from ..catalog import VARIANT_PARENT, forms_for_product
+    out = [ff["form_key"] for ff in p.get("filled_forms", [])]
+    for it in p.get("items", []):
+        fk = (forms_for_product(it.get("product")) or [None])[0] if it.get("product") else None
+        fk = VARIANT_PARENT.get(fk, fk)
+        if fk and fk not in out and VARIANT_PARENT.get(fk, fk) not in [VARIANT_PARENT.get(o, o) for o in out]:
+            out.append(fk)
+    if not out and p.get("form_key"):
+        out.append(VARIANT_PARENT.get(p["form_key"], p["form_key"]))
+    return out
+
+
+def auto_check(prov=None):
+    """Read only emails whose subject contains the order word, and draft orders from the new ones.
+    Returns a summary dict. Nothing is ever sent."""
+    prov = prov or provider(setting)
+    word = (setting("email_order_word") or "Order").strip()
+    days = setting("email_lookback_days") or "3"
+    res = {"found": 0, "new": 0, "drafts": 0, "no_form": 0, "error": ""}
+    if prov.name == "eml":
+        res["error"] = "Email isn't connected (Settings -> Email)."
+        return res
+    ok, why = prov.available()
+    if not ok:
+        res["error"] = why
+        return res
+    try:
+        msgs = prov.list_messages(days=days, limit=100, subject_word=word)
+    except Exception as e:  # noqa: BLE001
+        res["error"] = f"Couldn't read the inbox: {e}"
+        return res
+    res["found"] = len(msgs)
+    seen = {r["msg_id"] for r in q("SELECT msg_id FROM email_messages WHERE msg_id IS NOT NULL")}
+    for m in msgs:
+        if m["msg_id"] in seen:
+            continue
+        try:
+            full = prov.get_message(m["msg_id"])
+        except Exception:  # noqa: BLE001
+            continue
+        rid = _store(full, prov.name)
+        x("UPDATE email_messages SET auto=1 WHERE id=?", (rid,))
+        res["new"] += 1
+        p = loads(q("SELECT parsed FROM email_messages WHERE id=?", (rid,), one=True)["parsed"])
+        forms = forms_for_email(p)
+        if not forms:
+            x("UPDATE email_messages SET status='needs form' WHERE id=?", (rid,))
+            res["no_form"] += 1
+            continue
+        for fk in forms:
+            if fk in FORMS:
+                create_draft(rid, fk, p.get("customer_id"), auto=True)
+                res["drafts"] += 1
+    from datetime import datetime as _dt
+    from ..db import set_setting
+    set_setting("email_last_check", _dt.now().strftime("%Y-%m-%d %H:%M"))
+    return res
+
+
+@bp.route("/email/check_orders", methods=["POST"])
+@login_required
+def check_orders():
+    r = auto_check()
+    if r["error"]:
+        flash(r["error"], "error")
+    elif not r["new"]:
+        flash(f"Checked: no new emails with \"{setting('email_order_word') or 'Order'}\" in the subject.", "ok")
+    else:
+        flash(f"{r['new']} new order email(s): {r['drafts']} draft order(s) ready to review"
+              + (f", {r['no_form']} need you to pick the form" if r["no_form"] else "") + ".", "ok")
+    nxt = request.form.get("next") or ""
+    return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("emails.inbox") + "#auto")
+
+
+@bp.route("/email/msg/<int:rid>/order", methods=["POST"])
+@login_required
+def make_order(rid):
+    q("SELECT id FROM email_messages WHERE id=?", (rid,), one=True) or abort(404)
+    form_key = request.form.get("form_key")
+    if form_key not in FORMS:
+        flash("Pick which order form to use.", "error")
+        return redirect(url_for("emails.message", rid=rid))
+    units = [u.strip() for u in re.split(r"[,\s]+", request.form.get("units", "")) if u.strip()]
+    oid = create_draft(rid, form_key, request.form.get("customer_id", type=int), request.form.get("po", "").strip(),
+                       units, add_contact=bool(request.form.get("add_contact")))
+    o = q("SELECT data FROM orders WHERE id=?", (oid,), one=True)
+    n = len(loads(o["data"]).get("blocks", []))
     flash(f"Draft order created with {n} line(s) - check the predicted values (highlighted) and save.", "ok")
     return redirect(url_for("orders.editor", order=oid))
 
