@@ -41,6 +41,8 @@ TRIM_PROFILES = [
     ("I", '#711 Base MDF Ultralight 311MUL 3/8" x 3-1/2"'),
     ("J", 'Victorian/Newport Base 329MUL 9/16" x 3-7/8"'),
 ]
+HORIZONTAL_STYLES = ['2" Faux Wood', 'Premium Basswood 2"', 'Premium Basswood 2-1/2"', '1" Aluminum Mini Blind',
+                     '1" Vinyl Mini Blind', '1" Metal Plus Mini Blind', '2" Metal Plus Blind']
 CABINET_STYLES = ["Shaker", "Shaker Slim", "Italia", "Bradford", "Elegante", "Elegante Gauntlet Supermatte"]
 
 HEADER_STD = {
@@ -345,14 +347,8 @@ def _horiz_block(i):
         _t("qty", "Quantity", f"{p} Quantity", w=4),
         _t("item_no", "Item #", f"{p} Item #"),
         _t("unit", "Unit #", f"{p} Unit #"),
-        # Products we carry -> nearest box on the paper form; the exact product always goes in the comments
-        _c("style", "Style", [('2" Faux Wood', f"{p} Style Faux Wood"),
-                              ('Premium Basswood 2"', None),
-                              ('Premium Basswood 2-1/2"', None),
-                              ('1" Aluminum Mini Blind', f"{p} Style All Metal"),
-                              ('1" Vinyl Mini Blind', f"{p} Style All Vinyl"),
-                              ('1" Metal Plus Mini Blind', f"{p} Style Vinyl Plus"),
-                              ('2" Metal Plus Blind', f"{p} Style Vinyl Plus")], note_always=True),
+        _c("style", "Style", [("All Vinyl", f"{p} Style All Vinyl"), ("Vinyl Plus", f"{p} Style Vinyl Plus"),
+                              ("All Metal", f"{p} Style All Metal"), ("Faux Wood", f"{p} Style Faux Wood")]),
         _c("room", "Location", [("Bedroom", f"{p} Location Bedroom"), ("Kitchen", f"{p} Location Kitchen"),
                                 ("Living Room", f"{p} Location Living Room"), ("Other", f"{p} Location Other")],
            other_option="Other", other_field="room_other"),
@@ -431,12 +427,12 @@ FORMS = {
         "blocks": [_window_screen_block(i) for i in range(3)],
         "products": ["window_screen"],
     },
-    "horizontal_blind": {
-        "title": "Horizontal Blind Order Form", "file": "OF-Horizontal Blind Order Form.pdf",
+    "horizontal_blind_paper": {
+        "title": "Horizontal Blind Order Form (old paper version)", "file": "OF-Horizontal Blind Order Form.pdf",
         "header": {"name": "Customer Name", "po": "PO Number", "date": "Date"},
         "sales_rep": None, "comments": None,
         "blocks": [_horiz_block(i) for i in range(3)],
-        "products": ["horizontal_blind"],
+        "products": [],
     },
 }
 
@@ -580,6 +576,22 @@ def _gc(key, label, names, **kw):
 _LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
 
 GENERATED = {
+    # Same layout as the company's Blind Order Form, with the blinds we actually carry as checkboxes
+    "horizontal_blind": {
+        "title": "Horizontal Blind Order Form", "form_title": "BLIND ORDER FORM",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("item_no", "Item #"), _g("unit", "Unit #"),
+            _gc("style", "Style", HORIZONTAL_STYLES),
+            _gc("room", "Location", ["Bedroom", "Kitchen", "Living Room", "Other"], other_option="Other",
+                other_field="room_other"),
+            _g("room_other", "Location - Other", show_if=("room", ["Other"])),
+            _g("bedroom_no", "Bedroom #", show_if=("room", ["Bedroom"])),
+            _gc("color", "Color", ["Alabaster", "White"]),
+            _g("width", "Actual Window Width in Inches", measure=True),
+            _g("height", "Actual Window Height in Inches", measure=True),
+            _LINE_COMMENTS]],
+        "products": ["horizontal_blind"],
+    },
     "roller_shade": {
         "title": "Roller Shade Order Form",
         "blocks": [[
@@ -659,9 +671,38 @@ GENERATED = {
         "products": ["closet_door", "wardrobe_door", "shower_door"],
     },
 }
+GENERATED_FILES = {"horizontal_blind": "OF-Blind Order Form.pdf", "roller_shade": "OF-Roller Shade.pdf", "trim": "OF-Baseboard and Casing.pdf",
+                   "door_hardware": "OF-Door Hardware.pdf", "bath_hardware": "OF-Bath Hardware.pdf",
+                   "cabinet": "OF-Cabinet and Countertop.pdf", "closet_shower": "OF-Closet and Shower Door.pdf"}
+
+
+def _bind(fields, n):
+    """Give an app-made form's fields their widget names for line n (see form_builder)."""
+    from .form_builder import cname, tname
+    out = []
+    for f in fields:
+        g = {k: v for k, v in f.items() if k != "extra"}
+        if f["kind"] == "text":
+            g["pdf"] = tname(n, f["key"])
+        elif f["kind"] == "lines":
+            g["pdf"] = [tname(n, f["key"])]
+        elif f["kind"] == "choice":
+            g["options"] = [(o[0], cname(n, f["key"], o[0])) for o in f["options"]]
+        out.append(g)
+    return out
+
+
+def _app_made(spec, fk):
+    from .form_builder import per_page
+    fields = _lwh_order(spec["blocks"][0])
+    n = per_page(fields)
+    return dict(spec, app_made=True, file=GENERATED_FILES[fk], header=dict(HEADER_STD), sales_rep="Sales Rep",
+                comments={"pdf": ["Comments1", "Comments2", "Comments3"], "chars": [55, 55, 55]},
+                blocks=[_bind(fields, i) for i in range(n)])
+
+
 for _fk, _spec in GENERATED.items():
-    FORMS[_fk] = dict(_spec, generated=True, file=None, header=dict(HEADER_STD), sales_rep=True,
-                      comments=True)
+    FORMS[_fk] = _app_made(_spec, _fk)
 
 for _fk in FORMS:
     FORMS[_fk]["blocks"] = [_lwh_order(b) for b in FORMS[_fk]["blocks"]]
@@ -743,22 +784,7 @@ def choose_variant(form_key, data):
         return form_key
     blocks = [b for b in (data.get("blocks") or []) if any(v for v in b.values())]
     if form_key == "door":
-        score = {"door": 0, "new_door": 0}
-        for b in blocks:
-            for table, key in ((DOOR_STYLES, "style"), (DOOR_FINISHES, "finish")):
-                row = dict(table).get(match_option(b.get(key), [(u, u) for u, _ in table]) or "")
-                if row:
-                    if row["door"] is None:
-                        score["new_door"] += 2
-                    elif row["door"] == "Other" and row["new_door"] not in (None, "Other"):
-                        score["new_door"] += 1   # has its own box on the New Door form
-                    if row["new_door"] is None:
-                        score["door"] += 2
-                    elif row["new_door"] == "Other" and row["door"] not in (None, "Other"):
-                        score["door"] += 1
-        if score["new_door"] > score["door"]:
-            return "new_door"
-        return "door"
+        return "door"   # one Door Order Form; types without a box are written in its "Other" box
     if form_key == "vertical_blind":
         if any(b.get(k) for b in blocks for k in ("valance", "val_only", "item_no")):
             return "vertical_blind"
@@ -883,11 +909,10 @@ def public_spec(form_key):
                    if k in f["header"] or (k in ("city", "state", "zip") and f.get("address_combined"))],
         "has_sales_rep": bool(f.get("sales_rep")),
         "has_comments": bool(f.get("comments")),
-        "blocks_per_page": 3 if f.get("generated") else len(f["blocks"]),
+        "blocks_per_page": len(f["blocks"]),
         "fields": fields,
         "has_unit_field": any(x["key"] == "unit" for x in f["blocks"][0]),
         "merged": form_key in MERGED,
-        "generated": bool(f.get("generated")),
     }
 
 

@@ -117,6 +117,23 @@ def _visible(f, block):
     return bool(v) and (match_option(v, [(a, a) for a in allowed]) is not None)
 
 
+def _place_photo(page, idx, fields, block, ref):
+    """App-made forms: show the picked product's photo in the line's photo box."""
+    from . import option_photos
+    ws = idx.get(ref)
+    if not ws:
+        return
+    for f in fields:
+        if f.get("photos") and block.get(f["key"]) and _visible(f, block):
+            p = option_photos.find(f["photos"], block[f["key"]])
+            if p:
+                try:
+                    page.insert_image(ws[0].rect, filename=p, keep_proportion=True, overlay=False)
+                except Exception:   # noqa: BLE001
+                    pass
+                return
+
+
 def check_order(form_key, data):
     """Warnings about combinations we don't carry."""
     warns = []
@@ -194,9 +211,6 @@ def fill_form(form_key, data):
 
 def _fill_any(form_key, data):
     from .catalog import MERGED, choose_variant, translate_for_variant
-    if FORMS[form_key].get("generated"):
-        from .pdf_generated import fill_generated
-        return fill_generated(form_key, data)
     if form_key in MERGED:
         variant = choose_variant(form_key, data)
         data = translate_for_variant(form_key, variant, data)
@@ -237,6 +251,8 @@ def _fill(form_key, data):
             line_no = pnum * per_page + i + 1
             bn = []
             _fill_block(page, idx, spec["blocks"][i], blk, bn, line_no)
+            if spec.get("app_made"):
+                _place_photo(page, idx, spec["blocks"][i], blk, f"L{i}.photo")
             lc = next((f for f in spec["blocks"][i] if f["key"] == "line_comments"), None)
             if bn and not spec.get("comments") and lc:
                 # no general comments box: this line's extras go in this line's own comments
@@ -291,10 +307,6 @@ def read_filled_form(pdf_bytes):
         return None, None
     if doc.page_count == 0:
         return None, None
-    from .pdf_generated import read_generated
-    got = read_generated(doc)
-    if got:
-        return got
     page = doc[0]
     vals = {}
     names = set()
@@ -311,8 +323,6 @@ def read_filled_form(pdf_bytes):
         return None, None
     scores = []
     for fk in FORMS:
-        if FORMS[fk].get("generated"):
-            continue
         tmpl = fitz.open(template_path(fk))
         tnames = {_clean(w.field_name) for w in tmpl[0].widgets()}
         tmpl.close()
@@ -377,8 +387,6 @@ def validate_catalog():
     """Return list of problems: pdf field names in the catalog that don't exist."""
     problems = []
     for fk, spec in FORMS.items():
-        if spec.get("generated"):
-            continue
         doc = fitz.open(template_path(fk))
         idx = _index_widgets(doc[0])
 

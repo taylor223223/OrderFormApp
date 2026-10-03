@@ -199,7 +199,6 @@ function renumber(){
 }
 function updatePageNote(){
   const n = [...document.querySelectorAll('#blocks .blk')].filter(b => Object.keys(getBlock(b)).length).length;
-  if (SPEC.generated) { $('#pageNote').textContent = `${n} line(s) filled · app-made form, any number of lines`; return; }
   const pages = Math.max(1, Math.ceil(n / SPEC.blocks_per_page));
   $('#pageNote').textContent = `${n} line(s) filled · this form holds ${SPEC.blocks_per_page} per page` + (pages > 1 ? ` → ${pages} pages` : '');
 }

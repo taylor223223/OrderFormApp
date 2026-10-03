@@ -12,7 +12,7 @@ os.environ["ORDERAPP_DATA"] = _tmp
 from orderapp import create_app  # noqa: E402
 from orderapp.catalog import FORMS, match_option, product_fields  # noqa: E402
 from orderapp.email_parse import parse_lines  # noqa: E402
-from orderapp.pdf_fill import fill_form, read_filled_form, validate_catalog  # noqa: E402
+from orderapp.pdf_fill import _visible, fill_form, read_filled_form, validate_catalog  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -67,13 +67,16 @@ def test_fill_every_form_roundtrip(fk):
     got_fk, got = read_filled_form(pdf)
     assert got_fk == fk
     assert got["header"]["name"] == "Sunrise Villas"
-    gen = FORMS[fk].get("generated")
+    gen = FORMS[fk].get("app_made")
     widget_keys = {f["key"] for f in FORMS[fk]["blocks"][0] if not f.get("overlay")
                    and not any(isinstance(o[1], dict) for o in f.get("options", []))
                    and (gen or not f.get("extra"))}
     opts = {f["key"]: dict(f["options"]) for f in FORMS[fk]["blocks"][0] if f["kind"] == "choice"}
     for i, blk in enumerate(data["blocks"]):
         for k in widget_keys:
+            fd = next(f for f in FORMS[fk]["blocks"][0] if f["key"] == k)
+            if not _visible(fd, blk):
+                continue   # follow-up question that doesn't apply to this line
             if not gen and k in opts and opts[k].get(blk.get(k)) is None:
                 continue   # app-only option: goes in the comments, not a box
             if FORMS[fk]["blocks"][0][0]["kind"] and k in blk:
@@ -284,14 +287,13 @@ def test_merged_forms_pick_paper_version():
     assert "2 Panel (Carrera)" in styles and "3 Panel Shaker Craftsman" in styles and "HC Primecoat" in styles
     assert "mount" in [f["key"] for f in public_spec("vertical_blind")["fields"]]
     hdr = {"name": "Sunrise", "po": "P1", "date": "10/02/2026"}
-    # Carrera has its own box only on the New Door paper form
+    # one Door form: types without their own box are written in its "Other" box
     d = {"header": hdr, "blocks": [{"qty": "1", "style": "2 Panel (Carrera)", "finish": "Primecoat",
                                     "width": "30", "height": "80", "swing": "Left Hand"}]}
-    assert choose_variant("door", d) == "new_door"
-    pdf, warns = fill_form("door", d)
-    fk, back = read_filled_form(pdf)
-    assert fk == "new_door" and back["blocks"][0]["style"] == "Carrera (2-Panel)"
-    assert any("New Door" in w for w in warns)
+    assert choose_variant("door", d) == "door"
+    fk, back = read_filled_form(fill_form("door", d)[0])
+    assert fk == "door" and back["blocks"][0]["style"] == "Other"
+    assert back["blocks"][0]["style_other"] == "2 Panel (Carrera)"
     # a type with no box anywhere -> original Door form, written in the "Other" box
     d["blocks"][0]["style"] = "3 Panel Shaker Craftsman"
     assert choose_variant("door", d) == "door"
@@ -390,6 +392,8 @@ def test_new_products_and_app_made_forms():
     assert option_photos.slug("A: #103 Casing") == "a" and option_photos.slug("Soma (Matte Black)") == "soma"
     hz = next(f for f in public_spec("horizontal_blind")["fields"] if f["key"] == "style")
     assert 'Premium Basswood 2-1/2"' in hz["options"]
+    fk, back = read_filled_form(fill_form("horizontal_blind", {"blocks": [{"style": '1" Metal Plus Mini Blind'}]})[0])
+    assert fk == "horizontal_blind" and back["blocks"][0]["style"] == '1" Metal Plus Mini Blind' 
     # vertical: 2" ribbed only in white
     w = fill_form("vertical_blind", {"blocks": [{"slat_width": '2"', "slat_style": "Ribbed", "color": "Alabaster"}]})[1]
     assert any("only come in White" in x for x in w)
