@@ -10,6 +10,7 @@ from .catalog import FORMS, match_option
 from .paths import resource_path
 
 CHECK_TYPES = ("CheckBox", "RadioButton")
+FILL_BLUE = (0.05, 0.25, 0.75)      # what the rep filled in stands out from the printed black form
 
 
 def template_path(form_key):
@@ -41,6 +42,7 @@ def _set_text(idx, ref, value):
     ws = _get(idx, ref, False)
     for w in ws:
         w.field_value = "" if value is None else str(value)
+        w.text_color = FILL_BLUE
         w.update()
     return bool(ws)
 
@@ -49,6 +51,10 @@ def _set_check(idx, ref, on=True):
     ws = _get(idx, ref, True)
     for w in ws:
         w.field_value = w.on_state() if on else "Off"
+        if on:   # solid blue box with a white check - easy to spot
+            w.fill_color = FILL_BLUE
+            w.border_color = FILL_BLUE
+            w.text_color = (1, 1, 1)
         w.update()
     return bool(ws)
 
@@ -81,11 +87,13 @@ def _overlay_text(page, spec, value):
     x, y, w = spec["overlay"]
     txt = str(value)
     size = _fit_size(txt, w, spec.get("size", 9))
-    page.insert_text((x, y), txt, fontsize=size, fontname="helv", color=(0, 0, 0))
+    page.insert_text((x, y), txt, fontsize=size, fontname="helv", color=FILL_BLUE)
 
 
 def _overlay_mark(page, xy):
-    page.insert_text(xy, "4", fontsize=9, fontname="zadb", color=(0, 0, 0))
+    x, y = xy
+    page.draw_rect(fitz.Rect(x - 1, y - 8.5, x + 8.5, y + 1), color=FILL_BLUE, fill=FILL_BLUE)
+    page.insert_text((x + 0.3, y - 0.5), "4", fontsize=8, fontname="zadb", color=(1, 1, 1))
 
 
 def _reset(page):

@@ -319,7 +319,31 @@ def patch_blind(doc):
     p.finish(doc)
 
 
+def remove_leftovers(doc):
+    """Take off the gray "Clear Name" / "Clear Items" buttons (left over from the system the forms were
+    made in) and the Foxit trial-editor notice some forms carry."""
+    page = doc[0]
+    spots = []
+    for w in list(page.widgets()):
+        if w.field_name in ("ClrName", "ClrItems"):
+            spots.append(fitz.Rect(w.rect))
+            page.delete_widget(w)
+    for info in page.get_image_info():
+        r = fitz.Rect(info["bbox"])
+        if any(r.intersects(sp) and r.width < 110 and r.height < 40 for sp in spots):
+            page.add_redact_annot(r + (-1, -1, 1, 1), fill=False)
+    if spots:
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE, graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                              text=fitz.PDF_REDACT_TEXT_NONE)
+    if page.search_for("foxitsoftware") or page.search_for("To remove this notice"):
+        area = fitz.Rect(440, 0, 612, 53)   # the notice sits above the title bar (which starts at 54)
+        page.add_redact_annot(area, fill=False)
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE,
+                              graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
+
+
 PATCHES = {
+    "OF-Vertical Blind.pdf": lambda d: None,     # only the clean-up below
     "OF-Door.pdf": patch_door,
     "OF-Pre-Hung.pdf": lambda d: patch_door(d, prehung=True),
     "OF-Bypass Door.pdf": patch_bypass,
@@ -339,6 +363,7 @@ def build_all():
             shutil.copy(os.path.join(forms, fn), src)
         doc = fitz.open(src)
         fix(doc)
+        remove_leftovers(doc)
         doc.save(os.path.join(forms, fn), garbage=3, deflate=True)
         doc.close()
         print("updated", fn)
