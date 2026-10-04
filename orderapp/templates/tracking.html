@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Order tracking{% endblock %}
 {% block body %}
-<div class="pagehead"><div><h1>Order tracking</h1><div class="muted">Your own status board. Orders made here show up automatically; add ones placed elsewhere manually.</div></div></div>
+<div class="pagehead"><div><h1>Order tracking</h1><div class="muted">Your own status board. Orders made here show up automatically; add ones placed elsewhere manually.</div>{% if month %}<div style="margin-top:6px"><span class="tag" style="background:var(--brand-soft)">Orders sent in {{ month }}</span> <a class="small" href="{{ url_for('orders.tracking') }}">show all open orders</a></div>{% endif %}</div></div>
 <div class="row" style="margin-bottom:10px">
   {% for k in ['open','all'] + statuses %}
   <a class="tag {{ 'st-' ~ k.split()[0] if k not in ('open','all') }}" style="{{ 'outline:2px solid var(--brand)' if st==k }}" href="{{ url_for('orders.tracking', status=k, q=s) }}">{{ k|capitalize if k in ('open','all') else k }}{% if k in counts %} ({{ counts[k] }}){% endif %}</a>

@@ -12,14 +12,39 @@ from ..security import login_required
 bp = Blueprint("main", __name__)
 
 
+def orders_in_month(month):
+    """Orders sent (or dated, if sent outside the app) in a YYYY-MM month - drafts don't count."""
+    return q("""SELECT o.* FROM orders o WHERE o.status<>'Draft'
+                AND substr(coalesce(nullif(o.sent_at,''), nullif(o.order_date,''), o.created), 1, 7)=?""", (month,))
+
+
+def order_value(data):
+    """$ total of an order's lines that have a price (qty x price each)."""
+    import json
+    import re
+    try:
+        d = json.loads(data or "{}")
+    except ValueError:
+        return 0
+    total = 0.0
+    for b in d.get("blocks") or []:
+        price = re.sub(r"[^0-9.]", "", str(b.get("price") or ""))
+        if not price:
+            continue
+        try:
+            qty = float(re.sub(r"[^0-9.]", "", str(b.get("qty") or "1")) or 1)
+            total += qty * float(price)
+        except ValueError:
+            pass
+    return round(total, 2)
+
+
 @bp.route("/")
 @login_required
 def dashboard():
     ph = ",".join("?" * len(OPEN_STATUSES))
     stats = {
         "customers": q("SELECT COUNT(*) n FROM customers", one=True)["n"],
-        "units": q("SELECT COUNT(*) n FROM units", one=True)["n"],
-        "measurements": q("SELECT COUNT(*) n FROM measurements", one=True)["n"],
         "open_orders": q(f"SELECT COUNT(*) n FROM orders WHERE status IN ({ph})", OPEN_STATUSES, one=True)["n"],
     }
     by_status = q(f"""SELECT status, COUNT(*) n FROM orders WHERE status IN ({ph})
@@ -32,7 +57,13 @@ def dashboard():
     from datetime import date
     today = date.today().isoformat()
     stats["stops_today"] = q("SELECT COUNT(*) n FROM route_stops WHERE day=? AND status<>'Skipped'", (today,), one=True)["n"]
+    stats["stops_left"] = q("SELECT COUNT(*) n FROM route_stops WHERE day=? AND status='Planned'", (today,), one=True)["n"]
     stats["followups_due"] = q("SELECT COUNT(*) n FROM tasks WHERE done=0 AND due_date<=?", (today,), one=True)["n"]
+    month = today[:7]
+    stats["month"] = month
+    month_orders = orders_in_month(month)
+    stats["orders_month"] = len(month_orders)
+    stats["orders_month_total"] = sum(order_value(o["data"]) for o in month_orders)
     # live previews: today's route + CRM quick note
     from .routes_plan import day_timeline, fmt_dur
     from .crm import _contact_options

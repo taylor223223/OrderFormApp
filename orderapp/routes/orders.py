@@ -363,10 +363,15 @@ def delete(oid):
 @bp.route("/tracking")
 @login_required
 def tracking():
-    st = request.args.get("status", "open")
+    month = request.args.get("month", "").strip()[:7]
+    st = request.args.get("status", "all" if month else "open")
     s = request.args.get("q", "").strip()
     sql = """SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE 1=1"""
     args = []
+    if month:   # dashboard "Orders this month"
+        sql += """ AND o.status<>'Draft'
+                   AND substr(coalesce(nullif(o.sent_at,''), nullif(o.order_date,''), o.created), 1, 7)=?"""
+        args.append(month)
     if st == "open":
         sql += f" AND o.status IN ({','.join('?' * len(OPEN_STATUSES))})"
         args += OPEN_STATUSES
@@ -381,7 +386,7 @@ def tracking():
     counts = {r["status"]: r["n"] for r in q("SELECT status, COUNT(*) n FROM orders GROUP BY status")}
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
     return render_template("tracking.html", rows=rows, statuses=STATUSES, st=st, s=s, counts=counts,
-                           customers=customers)
+                           customers=customers, month=month)
 
 
 @bp.route("/tracking/add", methods=["POST"])

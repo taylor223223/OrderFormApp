@@ -53,7 +53,32 @@ document.querySelectorAll('form[method=post], form[method=POST]').forEach(f => {
 });
 </script>
 {% block scripts %}{% endblock %}
-<script>{% if not cloud %}setInterval(() => fetch('/__alive').catch(() => {}), 30000);{% endif %}
+{% if not cloud %}<div id="appGone"><b>AIS Sales Support isn't running right now.</b> Open it again from your desktop shortcut (or the Start menu), then <button type="button" class="btn sm" onclick="location.reload()">Try again</button></div>
+<script>
+(function () {
+  // Shows a plain message instead of the browser's "can't reach 127.0.0.1" page if the app was closed.
+  const gone = document.getElementById('appGone');
+  async function check() {
+    let ok = false;
+    try { ok = (await fetch('/__alive', {cache: 'no-store'})).ok; } catch (e) { ok = false; }
+    gone.style.display = ok ? 'none' : 'block';
+    return ok;
+  }
+  setInterval(check, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  window.addEventListener('focus', check);
+  document.addEventListener('click', async e => {
+    if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest('a[href]');
+    if (!a || a.target || a.hasAttribute('download') || a.origin !== location.origin) return;
+    const href = a.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+    e.preventDefault();
+    if (await check()) location.href = a.href;
+  });
+})();
+</script>{% endif %}
+<script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 </body>
 </html>

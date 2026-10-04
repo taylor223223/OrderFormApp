@@ -69,7 +69,7 @@ def stop_old_copy():
     return stopped and not port_in_use()
 
 
-def idle_watchdog(app, idle_seconds=180):
+def idle_watchdog(app, idle_seconds=180):   # no longer started (see main)
     """Close the background server once every app window has been closed.
     Open pages ping /__alive every 30 s; sleep/hibernate gaps are ignored."""
     last_loop = time.time()
@@ -138,7 +138,8 @@ def main():
             sys.exit(1)
     app = create_app()
     app.config["LAST_SEEN"] = time.time()
-    threading.Thread(target=idle_watchdog, args=(app,), daemon=True).start()
+    # No idle shut-off: Edge pauses minimized windows, which looked like "all windows closed" and stopped
+    # the app while it was still in use. It now runs until Quit (or sign-out / restart).
     threading.Timer(1.0, open_window).start()
     from waitress import serve
     logging.info("Starting on %s", URL)
