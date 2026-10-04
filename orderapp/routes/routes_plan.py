@@ -1,4 +1,4 @@
-"""Route planner: plan stops a week at a time, optimize the driving order, drive times, map."""
+"""Route planner: a rolling 7 days of stops, driving order, drive times, map, and a trip log of past days."""
 import json
 from datetime import date, datetime, timedelta
 
@@ -202,24 +202,100 @@ def fmt_dur(s):
 
 
 # ---------------------------------------------------------------- pages
+ROLLING_DAYS = 7
+
+
+def log_past_days():
+    """Save finished days (before today) to the trip log: stops, visits, miles, drive time.
+    Days roll off the planner once they're over; this is where they're kept for expenses/reports."""
+    today = date.today().isoformat()
+    days = [r["day"] for r in q("SELECT DISTINCT day FROM route_stops WHERE day<? ORDER BY day", (today,))]
+    for ds in days:
+        st = stops_for(ds)
+        if not st:
+            continue
+        rd = q("SELECT * FROM route_days WHERE day=?", (ds,), one=True)   # saved whenever the day was planned
+        visited = [s for s in st if s["status"] == "Done"]
+        places = "; ".join((s["label"] or s["cname"] or s["address"] or "").strip() for s in visited) or ""
+        x("""INSERT INTO trip_log(day, stops, visited, skipped, miles, drive_s, estimated, start_address, places, updated)
+             VALUES (?,?,?,?,?,?,?,?,?,?)
+             ON CONFLICT(day) DO UPDATE SET stops=excluded.stops, visited=excluded.visited, skipped=excluded.skipped,
+               miles=excluded.miles, drive_s=excluded.drive_s, estimated=excluded.estimated,
+               start_address=excluded.start_address, places=excluded.places, updated=excluded.updated""",
+          (ds, len(st), len(visited), sum(1 for s in st if s["status"] == "Skipped"),
+           round(rd["total_m"] / 1609.34, 1) if rd and rd["total_m"] else 0.0,
+           rd["total_drive_s"] if rd else 0, int(bool(rd and rd["estimated"])),
+           (rd["start_address"] if rd and rd["start_address"] else setting("route_start_address")) or "",
+           places, now()))
+
+
 @bp.route("/routes")
 @login_required
 def week():
-    d = _day(request.args.get("week")) or date.today()
-    mon = d - timedelta(days=d.weekday())
+    """Rolling planner: today and the next 6 days (past days drop off into the trip log)."""
+    today = date.today()
+    start = _day(request.args.get("start")) or today
+    if start < today:
+        start = today
+    try:
+        log_past_days()
+    except Exception:   # noqa: BLE001 - never block the planner on the log
+        pass
     days = []
-    for i in range(7):
-        dd = mon + timedelta(days=i)
+    for i in range(ROLLING_DAYS):
+        dd = start + timedelta(days=i)
         ds = dd.isoformat()
         st = stops_for(ds)
         rd = q("SELECT * FROM route_days WHERE day=?", (ds,), one=True)
-        days.append({"date": dd, "iso": ds, "name": DAYS[i], "stops": st,
+        days.append({"date": dd, "iso": ds, "name": DAYS[dd.weekday()], "stops": st,
                      "drive": fmt_dur(rd["total_drive_s"]) if rd and rd["total_drive_s"] else "",
-                     "estimated": bool(rd and rd["estimated"]), "today": dd == date.today()})
+                     "miles": round(rd["total_m"] / 1609.34, 1) if rd and rd["total_m"] and st else None,
+                     "estimated": bool(rd and rd["estimated"]), "today": dd == today})
     customers = q("SELECT id, name, city FROM customers ORDER BY name COLLATE NOCASE")
-    return render_template("route_week.html", days=days, mon=mon, prev=(mon - timedelta(days=7)).isoformat(),
-                           nxt=(mon + timedelta(days=7)).isoformat(), customers=customers,
-                           today=date.today().isoformat(), has_key=bool(_key()), items=ESTIMATE_ITEMS)
+    nxt = start + timedelta(days=ROLLING_DAYS)
+    prev = start - timedelta(days=ROLLING_DAYS)
+    return render_template("route_week.html", days=days, start=start, end=start + timedelta(days=ROLLING_DAYS - 1),
+                           prev=(prev if prev > today else today).isoformat(), at_today=start == today,
+                           nxt=nxt.isoformat(), customers=customers, today=today.isoformat(),
+                           has_key=bool(_key()), items=ESTIMATE_ITEMS)
+
+
+@bp.route("/routes/log")
+@login_required
+def trip_log():
+    """Past days: stops, visits, miles and drive time - for expenses and reporting."""
+    try:
+        log_past_days()
+    except Exception:   # noqa: BLE001
+        pass
+    month = (request.args.get("month") or date.today().isoformat()[:7])[:7]
+    rows = q("SELECT * FROM trip_log WHERE substr(day,1,7)=? ORDER BY day DESC", (month,))
+    months = [r["m"] for r in q("SELECT DISTINCT substr(day,1,7) m FROM trip_log ORDER BY m DESC")]
+    if month not in months:
+        months = sorted(set(months) | {month}, reverse=True)
+    tot = {"days": len(rows), "stops": sum(r["stops"] or 0 for r in rows),
+           "visited": sum(r["visited"] or 0 for r in rows), "miles": round(sum(r["miles"] or 0 for r in rows), 1),
+           "drive": fmt_dur(sum(r["drive_s"] or 0 for r in rows))}
+    if request.args.get("csv"):
+        import csv
+        import io
+        from flask import Response
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Date", "Day", "Stops planned", "Visited", "Skipped", "Miles", "Drive time",
+                    "Miles are estimated", "Start address", "Places visited"])
+        for r in sorted(rows, key=lambda r: r["day"]):
+            dd = _day(r["day"])
+            w.writerow([r["day"], dd.strftime("%A") if dd else "", r["stops"], r["visited"], r["skipped"],
+                        r["miles"], fmt_dur(r["drive_s"]), "Yes" if r["estimated"] else "No",
+                        r["start_address"], r["places"]])
+        w.writerow([])
+        w.writerow(["Total", "", tot["stops"], tot["visited"], "", tot["miles"], tot["drive"]])
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=Trip log {month}.csv"})
+    for_view = [dict(r, dname=(_day(r["day"]).strftime("%a %m/%d") if _day(r["day"]) else r["day"]),
+                     drive=fmt_dur(r["drive_s"])) for r in rows]
+    return render_template("trip_log.html", rows=for_view, month=month, months=months, tot=tot)
 
 
 @bp.route("/routes/add", methods=["POST"])
@@ -278,7 +354,7 @@ def day(day):
     points = [{"lat": r["s"]["lat"], "lon": r["s"]["lon"], "label": r["s"]["label"] or r["s"]["cname"],
                "n": i + 1, "status": r["s"]["status"]} for i, r in enumerate(rows) if r["s"]["lat"] is not None]
     customers = q("SELECT id, name, city FROM customers ORDER BY name COLLATE NOCASE")
-    week_days = [(d - timedelta(days=d.weekday()) + timedelta(days=i)).isoformat() for i in range(14)]
+    week_days = [(date.today() + timedelta(days=i)).isoformat() for i in range(14)]
     return render_template("route_day.html", day=day, d=d, rows=rows, res=res, total=fmt_dur(res["total_s"]),
                            miles=round(res["total_m"] / 1609.34, 1), finish=finish, gmaps=gmaps,
                            points=points, start=res["start"], customers=customers, week_days=week_days,

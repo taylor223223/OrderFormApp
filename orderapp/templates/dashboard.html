@@ -42,7 +42,7 @@
       <div class="small muted" style="margin-top:4px">New stops go into the stops you haven't visited yet, wherever they add the least driving.</div></form>
     {% if route.rows|selectattr('s.status', 'equalto', 'Planned')|list|length > 1 %}
     <form method="post" action="{{ url_for('plan.optimize', day=today) }}" style="margin-top:6px"><input type="hidden" name="next" value="/"><button class="btn sm" title="Re-order the stops you haven't visited yet, starting from your last visited stop">🔄 Re-plan rest of today</button></form>{% endif %}
-    <div class="row small" style="justify-content:space-between;margin-top:6px"><a href="{{ url_for('plan.day', day=today) }}">Open today's route →</a><a href="{{ url_for('plan.week') }}">Plan the week →</a></div>
+    <div class="row small" style="justify-content:space-between;margin-top:6px"><a href="{{ url_for('plan.day', day=today) }}">Open today's route →</a><a href="{{ url_for('plan.week') }}">Plan the next 7 days →</a></div>
   </div>
   <!-- CRM quick note -->
   <div class="card pv pv-crm">

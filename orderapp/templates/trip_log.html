@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}Trip log{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Trip log</h1>
+<div class="muted">Every finished day from the route planner: stops, visits, miles and drive time. Use it for mileage expenses and reports.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('plan.week') }}">← Route planner</a>
+<a class="btn primary" href="{{ url_for('plan.trip_log', month=month, csv=1) }}">Download for Excel</a></div></div>
+<form class="row card" style="gap:8px"><label style="margin:0">Month</label>
+<select name="month" onchange="this.form.submit()" style="width:auto">{% for m in months %}<option {{ 'selected' if m==month }}>{{ m }}</option>{% endfor %}</select>
+<span class="muted small">Miles and drive times come from the planned route (round trip from your start address).</span></form>
+<div class="grid g4">
+  <div class="stat"><div class="n">{{ tot.days }}</div><div class="l">Days on the road</div></div>
+  <div class="stat"><div class="n">{{ tot.visited }}<span class="of" style="font-size:15px;color:var(--muted)"> of {{ tot.stops }}</span></div><div class="l">Stops visited</div></div>
+  <div class="stat"><div class="n">{{ tot.miles }}</div><div class="l">Miles</div></div>
+  <div class="stat"><div class="n" style="font-size:22px">{{ tot.drive }}</div><div class="l">Drive time</div></div>
+</div>
+<div class="tablewrap" style="margin-top:12px">
+{% if rows %}<table>
+<thead><tr><th>Date</th><th>Stops</th><th>Miles</th><th>Drive time</th><th>Places visited</th><th></th></tr></thead>
+<tbody>{% for r in rows %}<tr>
+<td><b>{{ r.dname }}</b></td>
+<td>{{ r.visited }} of {{ r.stops }}{% if r.skipped %} <span class="muted small">({{ r.skipped }} skipped)</span>{% endif %}</td>
+<td>{{ r.miles }}{% if r.estimated %} <span class="muted small">est.</span>{% endif %}</td>
+<td>{{ r.drive }}</td>
+<td class="small">{{ r.places or '—' }}</td>
+<td><a class="btn sm" href="{{ url_for('plan.day', day=r.day) }}">Open day</a></td>
+</tr>{% endfor %}</tbody>
+<tfoot><tr><th>Total</th><th>{{ tot.visited }} of {{ tot.stops }}</th><th>{{ tot.miles }}</th><th>{{ tot.drive }}</th><th></th><th></th></tr></tfoot>
+</table>{% else %}<p class="muted">No finished days in {{ month }} yet. Days move here from the route planner once they're over.</p>{% endif %}
+</div>
+{% endblock %}

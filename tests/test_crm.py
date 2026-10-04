@@ -113,7 +113,7 @@ def test_crm_and_routes(client):
         from orderapp.db import q
         assert q("SELECT COUNT(*) n FROM activities WHERE kind='Site visit'", one=True)["n"] == 1
         assert q("SELECT COUNT(*) n FROM route_stops WHERE day=?", (tomorrow,), one=True)["n"] == 1
-    assert "Week of" in c.get("/routes").get_data(as_text=True)
+    assert "Next 7 days" in c.get("/routes").get_data(as_text=True)
     # estimate + notes on a stop, then the stop list
     post(c, f"/routes/stop/{stops[2]['id']}", {"act": "notes", "products": ["Doors", "Blinds"],
                                                "notes": "Unit 104 vacant, 212 occupied"})
@@ -210,3 +210,36 @@ def test_live_route_insertion(client):
     post(c, "/routes/add", {"customer_id": cids[0], "day": tmr, "next": "/"})
     with c.app.app_context():
         assert q("SELECT COUNT(*) n FROM route_stops WHERE day=? AND customer_id=?", (tmr, cids[0]), one=True)["n"] == 1
+
+
+def test_rolling_week_and_trip_log():
+    """Planner shows today + 6 days (past days drop off); finished days land in the trip log."""
+    import os
+    import re
+    import tempfile
+    from datetime import date, timedelta
+    d = tempfile.mkdtemp()
+    os.environ["ORDERAPP_DATA"] = d
+    from orderapp import create_app
+    app = create_app(db_path=os.path.join(d, "t.db"), testing=True)
+    c = app.test_client()
+    h = c.get("/setup").get_data(as_text=True)
+    tok = re.search(r'name="csrf-token" content="([^"]+)"', h).group(1)
+    c.post("/setup", data={"username": "taylor", "password": "secret123", "password2": "secret123", "csrf_token": tok})
+    today = date.today()
+    yday = (today - timedelta(days=1)).isoformat()
+    with app.app_context():
+        from orderapp.db import x
+        cid = x("INSERT INTO customers(name) VALUES ('Sunrise Villas')")
+        x("INSERT INTO route_stops(day, customer_id, label, status) VALUES (?,?,?,?)", (yday, cid, "Sunrise Villas", "Done"))
+        x("INSERT INTO route_stops(day, label, status) VALUES (?,?,?)", (yday, "Somewhere", "Skipped"))
+        x("INSERT INTO route_days(day, total_m, total_drive_s, estimated) VALUES (?,?,?,1)", (yday, 16093.4, 1800))
+    html = c.get("/routes").get_data(as_text=True)
+    assert today.strftime("%m/%d") in html and (today + timedelta(days=6)).strftime("%m/%d") in html
+    assert f'href="/routes/day/{yday}"' not in html          # yesterday has rolled off the planner
+    nxt = c.get(f"/routes?start={(today + timedelta(days=7)).isoformat()}").get_data(as_text=True)
+    assert (today + timedelta(days=13)).strftime("%m/%d") in nxt
+    log = c.get(f"/routes/log?month={yday[:7]}").get_data(as_text=True)
+    assert "Sunrise Villas" in log and "10.0" in log and "1 of 2" in log
+    csv = c.get(f"/routes/log?month={yday[:7]}&csv=1")
+    assert csv.status_code == 200 and b"Sunrise Villas" in csv.data and b"10.0" in csv.data

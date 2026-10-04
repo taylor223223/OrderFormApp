@@ -152,6 +152,10 @@ CREATE TABLE IF NOT EXISTS route_stops (
     lat REAL, lon REAL, purpose TEXT, visit_min INTEGER, status TEXT DEFAULT 'Planned', source TEXT,
     notes TEXT, activity_id INTEGER, created TEXT, products TEXT
 );
+CREATE TABLE IF NOT EXISTS trip_log (
+    day TEXT PRIMARY KEY, stops INTEGER, visited INTEGER, skipped INTEGER, miles REAL, drive_s REAL,
+    estimated INTEGER DEFAULT 0, start_address TEXT, places TEXT, updated TEXT
+);
 CREATE TABLE IF NOT EXISTS geocache (address TEXT PRIMARY KEY, lat REAL, lon REAL, provider TEXT, updated TEXT);
 CREATE INDEX IF NOT EXISTS ix_act_cust ON activities(customer_id);
 CREATE INDEX IF NOT EXISTS ix_act_when ON activities(occurred_at);

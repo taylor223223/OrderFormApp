@@ -1,8 +1,9 @@
 {% extends "base.html" %}{% block title %}Routes{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Route planner</h1>
-<div class="row"><a class="btn sm" href="?week={{ prev }}">← Prev week</a><b>Week of {{ mon.strftime('%b %d, %Y') }}</b><a class="btn sm" href="?week={{ nxt }}">Next week →</a>{% if mon.isoformat() > today or (mon.isoformat() <= today and nxt <= today) %}<a class="btn sm" href="{{ url_for('plan.week') }}">This week</a>{% endif %}</div></div>
+<div class="row">{% if not at_today %}<a class="btn sm" href="?start={{ prev }}">← Earlier</a>{% endif %}<b>{{ start.strftime('%a %b %d') }} – {{ end.strftime('%a %b %d') }}</b><a class="btn sm" href="?start={{ nxt }}">Next 7 days →</a>{% if not at_today %}<a class="btn sm" href="{{ url_for('plan.week') }}">Back to today</a>{% endif %}</div></div>
 <div class="row"><a class="btn primary" href="{{ url_for('plan.day', day=today) }}">Today's route</a>
+<a class="btn" href="{{ url_for('plan.trip_log') }}" title="Past days: stops, miles and drive time for expenses">🧾 Trip log</a>
 <form method="post" action="{{ url_for('plan.geocode_all') }}"><button class="btn" title="Look up map locations for every property with an address">Locate all properties</button></form></div></div>
 {% if not has_key %}<div class="flash">Drive times are <b>estimated</b> until you add a free OpenRouteService key in <a href="{{ url_for('settings.index') }}#routes">Settings</a> (2 minutes, no credit card).</div>{% endif %}
 <form method="post" action="{{ url_for('plan.add') }}" class="card"><input type="hidden" name="next" value="{{ request.full_path }}">
@@ -10,7 +11,7 @@
 <div class="grid g4">
 <div style="grid-column:span 2"><label>Property</label>{% set picker_id='rw_cust' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
 <div><label>Or an address</label><input name="address" placeholder="123 Main St, Mesa"></div>
-<div><label>Day</label><select name="day">{% for d in days %}<option value="{{ d.iso }}" {{ 'selected' if d.today or (loop.first and today < days[0].iso) }}>{{ d.name }} {{ d.date.strftime('%m/%d') }}</option>{% endfor %}</select></div>
+<div><label>Day</label><select name="day">{% for d in days %}<option value="{{ d.iso }}" {{ 'selected' if d.today or (loop.first and today < days[0].iso) }}>{{ 'Today' if d.today else d.name }} {{ d.date.strftime('%m/%d') }}</option>{% endfor %}</select></div>
 <div><label>Why</label><input name="purpose" placeholder="Measure 3 units, drop off samples..."></div>
 <div><label>They reached out by</label><select name="source"><option value="">(I planned it)</option><option>Call</option><option>Text</option><option>Email</option></select></div>
 <div><label>Visit length (min)</label><input name="visit_min" type="number" min="5" step="5" placeholder="default"></div>
@@ -21,7 +22,7 @@
 <div class="week">
 {% for d in days %}<div class="wday {{ 'today' if d.today }}">
 <div class="row" style="justify-content:space-between"><a href="{{ url_for('plan.day', day=d.iso) }}"><b>{{ d.name }} {{ d.date.strftime('%m/%d') }}</b></a><span class="small muted">{{ d.stops|length }} stop{{ '' if d.stops|length==1 else 's' }}</span></div>
-{% if d.drive %}<div class="small">🚗 {{ d.drive }}{% if d.estimated %} <span class="muted">(est.)</span>{% endif %}</div>{% endif %}
+{% if d.drive %}<div class="small">🚗 {{ d.drive }}{% if d.miles %} · {{ d.miles }} mi{% endif %}{% if d.estimated %} <span class="muted">(est.)</span>{% endif %}</div>{% endif %}
 {% for s in d.stops %}<div class="stop" style="{{ 'opacity:.5;text-decoration:line-through' if s.status=='Skipped' }}">{{ '✓ ' if s.status=='Done' }}{{ s.label or s.cname }}{% if s.products %}<div class="muted">{{ s.products }}</div>{% elif s.purpose %}<div class="muted">{{ s.purpose }}</div>{% endif %}</div>{% endfor %}
 <a class="btn sm" style="margin-top:6px" href="{{ url_for('plan.day', day=d.iso) }}">Open day</a>
 </div>{% endfor %}
