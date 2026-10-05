@@ -142,11 +142,12 @@ def test_crm_and_routes(client):
     dash = c.get("/").get_data(as_text=True)
     assert "Follow up: Needs screens for 12 units" in dash
     # weekly report: page, pdf, csv, send as draft file
-    html = c.get("/crm/report").get_data(as_text=True)
+    # (with no week given, Mon/Tue default to LAST week's report - so ask for this week explicitly)
+    html = c.get(f"/crm/report?week={today}").get_data(as_text=True)
     assert "Test Apts 0" in html and "Maria Lopez" in html
-    pdf = c.get("/crm/report/file/pdf")
+    pdf = c.get(f"/crm/report/file/pdf?week={today}")
     assert pdf.status_code == 200 and pdf.data[:4] == b"%PDF"
-    csv = c.get("/crm/report/file/csv")
+    csv = c.get(f"/crm/report/file/csv?week={today}")
     assert b"Verticals quote" in csv.data
     post(c, "/settings", {"email_provider": "eml", "output_dir": _tmp, "route_start_address": "5325 S. Kyrene Rd, Suite 103, Tempe, AZ 85283"})
     r = post(c, "/crm/report/send", {"to": "boss@example.com", "mode": "review", "week": date.today().isoformat()})
