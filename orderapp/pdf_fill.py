@@ -51,12 +51,24 @@ def _set_check(idx, ref, on=True):
     ws = _get(idx, ref, True)
     for w in ws:
         w.field_value = w.on_state() if on else "Off"
-        if on:   # solid blue box with a white check - easy to spot
-            w.fill_color = FILL_BLUE
-            w.border_color = FILL_BLUE
-            w.text_color = (1, 1, 1)
         w.update()
+        if on:
+            # A solid blue box with a white check is printed into the page itself, and the clickable box is
+            # hidden, so it looks the same in every PDF viewer (Edge, Chrome and Acrobat each redraw
+            # checkboxes their own way and some ignore a box's colors). The box still holds its value,
+            # so the app can read the form back.
+            _solid_check(w.parent, w.rect)
+            w.parent.parent.xref_set_key(w.xref, "F", "2")      # hidden
     return bool(ws)
+
+
+def _solid_check(page, rect):
+    r = fitz.Rect(rect)
+    page.draw_rect(r, color=FILL_BLUE, fill=FILL_BLUE, width=0.5, overlay=True)
+    size = r.height * 0.95
+    tw = fitz.get_text_length("4", fontname="zadb", fontsize=size)
+    page.insert_text((r.x0 + (r.width - tw) / 2, r.y1 - r.height * 0.18), "4", fontsize=size,
+                     fontname="zadb", color=(1, 1, 1))
 
 
 def _wrap(text, chars):
@@ -92,8 +104,7 @@ def _overlay_text(page, spec, value):
 
 def _overlay_mark(page, xy):
     x, y = xy
-    page.draw_rect(fitz.Rect(x - 1, y - 8.5, x + 8.5, y + 1), color=FILL_BLUE, fill=FILL_BLUE)
-    page.insert_text((x + 0.3, y - 0.5), "4", fontsize=8, fontname="zadb", color=(1, 1, 1))
+    _solid_check(page, fitz.Rect(x - 1, y - 8.5, x + 8.5, y + 1))
 
 
 def _reset(page):
