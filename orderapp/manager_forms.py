@@ -307,7 +307,7 @@ def tile_ruler(pg, x, y, w):
 
 
 def door_slab(pg, r, hinge_left=True, glass=None, blinds=False, deadbolt=False, peep=False, photo=None,
-              casing=True, knob=True):
+              casing=True, knob=True, hinge_count=3):
     """Front of a door (seen from the side the hinges show on). Returns dict of key points."""
     r = fitz.Rect(r)
     if casing:
@@ -320,7 +320,8 @@ def door_slab(pg, r, hinge_left=True, glass=None, blinds=False, deadbolt=False, 
     h = r.height
     hx = r.x0 if hinge_left else r.x1 - 3
     hinges = []
-    for f in (0.10, 0.48, 0.84):
+    spots = (0.10, 0.48, 0.84) if hinge_count == 3 else (0.10, 0.355, 0.61, 0.84)
+    for i, f in enumerate(spots):
         hy = r.y0 + h * f
         pg.rect((hx, hy, hx + 3, hy + h * 0.06), color=(0.2, 0.2, 0.2), fill=(0.55, 0.55, 0.55), width=0.4)
         hinges.append(hy)
@@ -926,7 +927,7 @@ EXTERIOR_STYLES = [("6 Panel steel", "steel6"), ("Flat steel", "hc-primecoat"),
 def door_measure(pg, k, x, top, exterior=False):
     """Big door with measuring arrows. Hinge side on the left. Returns bottom y."""
     r = fitz.Rect(x + 128, top + 14, x + 226, top + 232)
-    d = door_slab(pg, r, deadbolt=exterior, peep=exterior)
+    d = door_slab(pg, r, deadbolt=exterior, peep=exterior, hinge_count=4)
     # width under the door
     pg.arrow((r.x0, r.y1 + 8), (r.x1, r.y1 + 8))
     pg.inches(f"{k} Width", r.x0 + r.width / 2 + 20, r.y1 + 26)
@@ -958,9 +959,12 @@ def door_measure(pg, k, x, top, exterior=False):
         bx = x + 38
         by = hy + (10 if i == 0 else 0)
         pg.line((bx + 36, by), (ax, hy), color=GREEN, width=0.4)
-        pg.inches(f"{k} Hinge {i + 1}", bx, by, f"TOP TO HINGE {i + 1}", GREEN)
-    pg.text(x + 4, r.y0 + 2, "Measure from the TOP of the", 6.5, color=DARK)
-    pg.text(x + 4, r.y0 + 10, "door to the TOP of each hinge", 6.5, color=DARK)
+        tag = f"TOP TO HINGE {i + 1}" + ("  (if any)" if i == 3 else "")
+        pg.inches(f"{k} Hinge {i + 1}", bx, by, tag, GREEN)
+    ty = r.y0 + r.height * 0.84 + 20
+    pg.text(x + 4, ty, "Measure from the TOP of the door to", 6.5, color=DARK)
+    pg.text(x + 4, ty + 8, "the TOP of each hinge, top one first.", 6.5, color=DARK)
+    pg.text(x + 4, ty + 17, "Only 3 hinges? Leave #4 blank.", 6.5, bold=True, color=DARK)
     return r.y1 + 38
 
 
