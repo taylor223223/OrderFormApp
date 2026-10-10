@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Email order #{{ o.id }}{% endblock %}
 {% block body %}
 <div class="small"><a href="{{ url_for('orders.view', oid=o.id) }}">← Order #{{ o.id }}</a></div>
+{% set hold = hold_for(o.customer_id) if o.customer_id else None %}{% if hold %}{% include '_hold_banner.html' %}{% endif %}
 <h1>Email {{ o.title }}</h1>
 <div class="muted">{% if has_form %}Attachment: {{ o.pdf_path.split('\\')[-1].split('/')[-1] }} · <a href="{{ url_for('orders.pdf', oid=o.id) }}" target="_blank">preview</a>{% endif %}
 {% if photos %}{{ ' + ' if has_form }}{{ photos|length }} photo(s){% endif %}</div>

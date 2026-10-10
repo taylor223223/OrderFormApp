@@ -244,3 +244,31 @@ def test_rolling_week_and_trip_log():
     assert "Sunrise Villas" in log and "10.0" in log and "1 of 2" in log
     csv = c.get(f"/routes/log?month={yday[:7]}&csv=1")
     assert csv.status_code == 200 and b"Sunrise Villas" in csv.data and b"10.0" in csv.data
+
+
+def test_account_holds(client):
+    c = client      # logged in by test_crm_and_routes; "Test Apts 0..4" exist
+    cid = int(re.search(r"/customers/(\d+)", c.get("/customers?q=Test+Apts+1").get_data(as_text=True)).group(1))
+    report = ("Customer Balance Total Rep Terms\n"
+              "Test Apts 1 1,206.05 TA ACCOUNT HOLD\n"
+              "Sample Gardens\t2,055.21\tTA\tACCOUNT HOLD\n")
+    r = post(c, "/holds/import", {"report": report}, page="/holds")
+    assert r.status_code == 302
+    html = c.get("/holds").get_data(as_text=True)
+    assert "Sample Gardens" in html and "$3,261.26" in html and "Open Test Apts 1" in html
+    # warnings everywhere the account shows up
+    assert "ACCOUNT HOLD" in c.get(f"/customers/{cid}").get_data(as_text=True)
+    assert "ON HOLD" in c.get("/customers").get_data(as_text=True)
+    assert "2 accounts on hold" in c.get("/").get_data(as_text=True)
+    j = c.get(f"/api/customer/{cid}").get_json()
+    assert j["hold"]["balance"] == "1,206.05"
+    ed = c.get(f"/orders/editor?form=window_screen&customer={cid}").get_data(as_text=True)
+    assert 'id="holdBanner" >' in ed or 'id="holdBanner">' in ed
+    # re-import with a new balance updates, and 'clear missing' takes paid accounts off hold
+    post(c, "/holds/import", {"report": "Test Apts 1 500.00 TA ACCOUNT HOLD", "clear_missing": "1"}, page="/holds")
+    html = c.get("/holds").get_data(as_text=True)
+    assert "$500.00" in html and "Not on the latest report" in html
+    hid = int(re.search(r"/holds/(\d+)/clear", html).group(1))
+    post(c, f"/holds/{hid}/clear", {}, page="/holds")
+    assert "ACCOUNT HOLD" not in c.get(f"/customers/{cid}").get_data(as_text=True)
+    assert c.get("/holds?csv=1").status_code == 200

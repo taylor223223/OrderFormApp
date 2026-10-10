@@ -146,6 +146,10 @@ def save():
                    "Add them", "info")
     if action in ("pdf", "send"):
         path, warns = _make_pdf(oid)
+        from ..holds import hold_for, hold_message
+        h = hold_for(cid)
+        if h:
+            flash(hold_message(h), "error")
         for w in warns:
             flash(w, "info")
         if action == "send":
@@ -434,7 +438,10 @@ def api_customer(cid):
     c = q("SELECT * FROM customers WHERE id=?", (cid,), one=True)
     if not c:
         return jsonify({"ok": False})
-    return jsonify({"ok": True, "header": customer_header(c)})
+    from ..holds import hold_for
+    h = hold_for(cid)
+    return jsonify({"ok": True, "header": customer_header(c),
+                    "hold": {"name": h["name"], "balance": f"{h['balance'] or 0:,.2f}"} if h else None})
 
 
 @bp.route("/orders/<int:oid>/learn", methods=["POST"])

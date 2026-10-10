@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Order #{{ o.id }}{% endblock %}
 {% block body %}
+{% set hold = hold_for(o.customer_id) if o.customer_id else None %}{% if hold %}{% include '_hold_banner.html' %}{% endif %}
 <div class="pagehead">
   <div><div class="small"><a href="{{ url_for('orders.tracking') }}">← Order tracking</a></div>
   <h1>#{{ o.id }} {{ o.title }}</h1>

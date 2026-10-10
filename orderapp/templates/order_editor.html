@@ -1,5 +1,8 @@
 {% extends "base.html" %}{% block title %}{{ spec.title }}{% endblock %}
 {% block body %}
+{% set hold = hold_for(c.id) if c else None %}
+<div class="holdbanner" id="holdBanner" {% if not hold %}style="display:none"{% endif %}><b>⛔ ACCOUNT HOLD</b> — <span id="holdText">{% if hold %}{{ hold.name }} owes <b>${{ '{:,.2f}'.format(hold.balance or 0) }}</b>{% endif %}</span>. This account must be brought current before any purchase.
+<a href="{{ url_for('holds.index') }}">Account Holds</a></div>
 <div class="pagehead">
   <div><h1>{{ spec.title }}{% if order %} <span class="muted">#{{ order.id }}</span>{% endif %}</h1>
   <div class="muted small">Yellow = predicted from saved measurements / past orders. Check it, then save. Dropdowns accept any typed value.</div></div>
@@ -245,6 +248,9 @@ $('#custSel').onchange = async e => {
   if (!id) return;
   const r = await fetch(API_CUST + id).then(r => r.json());
   if (r.ok) document.querySelectorAll('[data-h]').forEach(i => { const k = i.dataset.h; if (k in r.header) i.value = r.header[k]; });
+  const hb = $('#holdBanner');
+  if (r.ok && r.hold) { $('#holdText').innerHTML = r.hold.name.replace(/[<>&]/g, '') + ' owes <b>$' + r.hold.balance + '</b>'; hb.style.display = ''; }
+  else hb.style.display = 'none';
   $('#qMsg').textContent = 'Customer changed - save and reopen to refresh unit suggestions.';
   dirty = true;
 };

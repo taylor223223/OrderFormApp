@@ -156,6 +156,12 @@ CREATE TABLE IF NOT EXISTS trip_log (
     day TEXT PRIMARY KEY, stops INTEGER, visited INTEGER, skipped INTEGER, miles REAL, drive_s REAL,
     estimated INTEGER DEFAULT 0, start_address TEXT, places TEXT, updated TEXT
 );
+CREATE TABLE IF NOT EXISTS account_holds (
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, name_key TEXT,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    balance REAL, rep TEXT, terms TEXT, status TEXT DEFAULT 'hold', notes TEXT,
+    since TEXT, updated TEXT, cleared TEXT
+);
 CREATE TABLE IF NOT EXISTS geocache (address TEXT PRIMARY KEY, lat REAL, lon REAL, provider TEXT, updated TEXT);
 CREATE INDEX IF NOT EXISTS ix_act_cust ON activities(customer_id);
 CREATE INDEX IF NOT EXISTS ix_act_when ON activities(occurred_at);

@@ -6,7 +6,7 @@
 <div class="tablewrap"><table>
 <tr><th>Name</th><th>Status</th><th>Acct #</th><th>Mgmt Co.</th><th>City</th><th>Phone</th><th class="right">Units</th><th class="right">Orders</th><th>Last order</th><th>Last contact</th></tr>
 {% for c in customers %}
-<tr><td><a href="{{ url_for('customers.view', cid=c.id) }}"><b>{{ c.name }}</b></a></td><td>{% if c.status %}<span class="tag">{{ c.status }}</span>{% endif %}</td><td>{{ c.acct or '' }}</td><td>{{ c.mgmt or '' }}</td><td>{{ c.city or '' }}</td><td class="nowrap">{{ c.phone or '' }}</td><td class="right">{{ c.n_units }}</td><td class="right">{{ c.n_orders }}</td><td class="nowrap">{{ c.last_order or '' }}</td><td class="nowrap small">{{ (c.last_touch or '')[:10] }}</td></tr>
+<tr><td><a href="{{ url_for('customers.view', cid=c.id) }}"><b>{{ c.name }}</b></a></td><td>{% if hold_for(c.id) %}<span class="tag holdtag" title="Account hold - must be brought current before any purchase">ON HOLD</span> {% endif %}{% if c.status %}<span class="tag">{{ c.status }}</span>{% endif %}</td><td>{{ c.acct or '' }}</td><td>{{ c.mgmt or '' }}</td><td>{{ c.city or '' }}</td><td class="nowrap">{{ c.phone or '' }}</td><td class="right">{{ c.n_units }}</td><td class="right">{{ c.n_orders }}</td><td class="nowrap">{{ c.last_order or '' }}</td><td class="nowrap small">{{ (c.last_touch or '')[:10] }}</td></tr>
 {% else %}<tr><td colspan="10" class="empty">No customers yet. Add one or import a CSV.</td></tr>{% endfor %}
 </table></div>
 <div class="small muted" style="margin-top:6px">{{ customers|length }} shown</div>

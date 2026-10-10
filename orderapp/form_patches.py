@@ -150,15 +150,17 @@ def _heading_box(p, y_head, y_top, y_bot, title):
 # --------------------------------------------------------------------------- forms
 DOOR_SPLIT = 275.9      # just under the company's door style rows
 DOOR_ROW = 11.5
-DOOR_STYLE_COLS = [     # same checkbox columns as the company's door types
-    (53.1, ["2 Panel", "5 Panel", "2 Panel Arch", "2 Panel Arch Plank", "HC Primecoat"]),
-    (237.0, ["1 Panel Shaker", "2 Panel Shaker", "3 Panel Shaker Equal", "3 Panel Shaker Craftsman",
-             "5 Panel Shaker"]),
+DOOR_STYLE_COLS = [     # first column lines up with the company's door types
+    (53.1, ["2 Panel", "5 Panel", "2 Panel Arch", "2 Panel Arch Plank"]),
+    (190.0, ["HC Primecoat", "1 Panel Shaker", "2 Panel Shaker", "5 Panel Shaker"]),
+    (318.0, ["3 Panel Shaker Equal", "3 Panel Shaker Craftsman"]),
 ]
+DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
+EXTRA_ROWS = 4          # material, pre-hung + hardware, hardware style, hardware type
 def door_added_height():
     """How far the company Door / Pre-Hung forms' lower half moved down (catalog overlays use it)."""
     rows_style = max(len(c[1]) for c in DOOR_STYLE_COLS)
-    return rows_style * DOOR_ROW + 2 + 3 * DOOR_ROW + 2.5
+    return rows_style * DOOR_ROW + 2 + EXTRA_ROWS * DOOR_ROW + 2.5
 
 
 PHOTO_X = 462          # photo column (door photo on top, hardware photo under it)
@@ -186,15 +188,17 @@ def patch_door(doc, prehung=False):
             p.option(door_style_name(t), x, y0 + 10 + i * DOOR_ROW, t)
     page.draw_line((37.4, y_hw), (PHOTO_X, y_hw), color=(0, 0, 0), width=0.75)
     # 3) pre-hung + door hardware
+    q.flow(40, y_hw + 9.5, [("label", "Door Material:")] +
+           [("cb", f"Material {slug(m)}.0", m) for m in DOOR_MATERIALS], PHOTO_X - 4)
     row = []
     if not prehung:
         row = [("label", "Pre-Hung:"), ("cb", "PreHung yes.0", "Yes"), ("cb", "PreHung no.0", "No"),
                ("label", "Threshold (in):"), ("field", "Threshold.0", 45), ("label", "")]
     row += [("label", "Door Hardware:"), ("cb", "Hardware yes.0", "Yes"), ("cb", "Hardware no.0", "No")]
-    q.flow(40, y_hw + 9.5, row, PHOTO_X - 4)
-    q.flow(40, y_hw + 9.5 + DOOR_ROW, [("label", "Hardware Style:")] +
+    q.flow(40, y_hw + 9.5 + DOOR_ROW, row, PHOTO_X - 4)
+    q.flow(40, y_hw + 9.5 + 2 * DOOR_ROW, [("label", "Hardware Style:")] +
            [("cb", hw_name("style", t), t) for t in HARDWARE_STYLES], PHOTO_X - 4)
-    q.flow(40, y_hw + 9.5 + 2 * DOOR_ROW, [("label", "Hardware Type:")] + [("cb", hw_name("type", t), t)
+    q.flow(40, y_hw + 9.5 + 3 * DOOR_ROW, [("label", "Hardware Type:")] + [("cb", hw_name("type", t), t)
            for t in HARDWARE_TYPES] + [("label", " Finish:")] +
            [("cb", hw_name("finish", t), t) for t in HARDWARE_FINISHES], PHOTO_X - 4)
     page.draw_line((37.4, bottom - 0.5), (561.1, bottom - 0.5), color=(0, 0, 0), width=0.75)
@@ -210,12 +214,27 @@ def patch_door(doc, prehung=False):
         w.field_flags = fitz.PDF_FIELD_IS_READ_ONLY
         q.widgets.append(w)
     # 4) the rest of the company form, moved down
+    hinge_x = _four_hinges(src[0]) if not prehung else {}
+    for w in _hinge_extras(src[0], prehung):        # hinge size "Other" + square hinges (lower half)
+        r = w.rect
+        w.rect = fitz.Rect(r.x0, r.y0 + add, r.x1, r.y1 + add)
+        q.widgets.append(w)
+        q.new_names.append(w.field_name)
     for w in list(page.widgets()):
         r = w.rect
         dy = add if y0 - 1 <= r.y0 < 600 else (COMMENTS_DROP if 676 <= r.y0 < 760 else 0)
-        if dy:
-            w.rect = fitz.Rect(r.x0, r.y0 + dy, r.x1, r.y1 + dy)
+        x0 = hinge_x.get(w.field_name, r.x0)
+        if dy or x0 != r.x0:
+            w.rect = fitz.Rect(x0, r.y0 + dy, x0 + (HINGE_W if w.field_name in hinge_x else r.width), r.y1 + dy)
             w.update()
+        if w.field_name == "Hinge1.0" and hinge_x:
+            h4 = fitz.Widget()
+            h4.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+            h4.field_name = "Hinge4.0"
+            h4.rect = fitz.Rect(hinge_x["Hinge4.0"], w.rect.y0, hinge_x["Hinge4.0"] + HINGE_W, w.rect.y1)
+            h4.text_font, h4.text_fontsize = w.text_font or "Helv", w.text_fontsize or 10
+            q.widgets.append(h4)
+            q.new_names.append("Hinge4.0")
     page.show_pdf_page(fitz.Rect(0, y0 + add, 612, 594 + add), src, 0, clip=fitz.Rect(0, y0, 612, 594))
     page.show_pdf_page(fitz.Rect(0, 676 + COMMENTS_DROP, 612, 756 + COMMENTS_DROP), src, 0,
                        clip=fitz.Rect(0, 676, 612, 756))
@@ -223,6 +242,66 @@ def patch_door(doc, prehung=False):
         page.add_widget(w)
     p.new_names += q.new_names
     p.finish(doc)
+
+
+HINGE_W = 36          # width of each "top of door to top of hinge" box on the Door form
+
+
+def _four_hinges(sp):
+    """Company Door form row 'Distance ... to top of: [ ] First Hinge [ ] Second Hinge [ ] Third Hinge'
+    becomes four boxes: [ ] Hinge 1 [ ] Hinge 2 [ ] Hinge 3 [ ] Hinge 4 (some doors have 4).
+    Edits the source page (which is then copied onto the form), returns new box x positions."""
+    words = [w for w in sp.get_text("words") if w[4] in ("First", "Second", "Third")]
+    if len(words) != 3:
+        return {}
+    wy0, wy1 = min(w[1] for w in words), max(w[3] for w in words)
+    sp.draw_rect(fitz.Rect(236, wy0 - 0.5, 560.6, wy1 + 0.08), color=None, fill=(1, 1, 1))   # keep the row line
+    base = wy1 - 2.3
+    out, x = {}, 239.0
+    for i in range(4):
+        out[f"Hinge{i + 1}.0"] = x
+        sp.insert_text((x + HINGE_W + 3, base), f"Hinge {i + 1}", fontsize=10, fontname="AISR", fontfile=ARIAL)
+        x += HINGE_W + 3 + fitz.Font(fontfile=ARIAL).text_length(f"Hinge {i + 1}", 10) + 6
+    return out
+
+
+def _hinge_extras(sp, prehung):
+    """Hinge Dimension gets '[ ] Other: ____' (custom sizes) and Hinge Radius gets '[ ] Square'.
+    The Pre-Hung form has the radius boxes but the company left their words off - add them.
+    Edits the source page (copied onto the form afterwards); returns new widgets in source coordinates."""
+    def txt(x, y, s, bold=False):
+        sp.insert_text((x, y), s, fontsize=10.02, fontname="AISB" if bold else "AISR",
+                       fontfile=ARIAL_B if bold else ARIAL)
+    words = {w[4]: w for w in sp.get_text("words") if 560 < w[1] < 595}
+    if "Dimension:" not in words:
+        return []
+    b1 = words["Dimension:"][3] - 2.3            # baselines of the two hinge lines
+    b2 = b1 + 12.5
+    if prehung and "Radius:" not in words:
+        txt(248.6, b1, "Hinge Radius:")
+        txt(353.7, b1, '1/4"')
+        txt(353.8, b2, '5/8"')
+    out = []
+
+    def cb(name, x, base):
+        w = fitz.Widget()
+        w.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+        w.field_name = name
+        w.rect = fitz.Rect(x, base - 8.2, x + 10.2, base + 0.8)
+        w.border_color, w.border_width, w.fill_color, w.field_value = (0, 0, 0), 0.8, (1, 1, 1), False
+        out.append(w)
+    cb("HingeRadSquare.0", 400.0, b1)
+    txt(413.0, b1, "Square")
+    cb("HingeDimOther.0", 40.0, b2)
+    txt(53.0, b2, "Other:")
+    sp.draw_line((84, b2 + 1.5), (150, b2 + 1.5), color=(0, 0, 0), width=0.6)
+    t = fitz.Widget()
+    t.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    t.field_name = "HingeDimOther (describe).0"
+    t.rect = fitz.Rect(84, b2 - 9, 150, b2 + 1.3)
+    t.text_font, t.text_fontsize = "Helv", 9
+    out.append(t)
+    return out
 
 
 def patch_bypass(doc):

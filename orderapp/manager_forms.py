@@ -917,7 +917,7 @@ INTERIOR_STYLES = [("6 Panel", "6-panel"), ("2 Panel", "2-panel"), ("2 Panel\nAr
                    ("1 Panel\nShaker", "1-panel-shaker"), ("Flat\n(smooth)", "hc-primecoat"),
                    ("Not sure\n/ match", None)]
 
-EXTERIOR_STYLES = [("6 Panel steel", "steel6"), ("Flat steel", "hc-primecoat"),
+EXTERIOR_STYLES = [("6 Panel", "steel6"), ("Flat (smooth)", "hc-primecoat"),
                    ('Half glass\n22" x 36"', "glass:half"), ('3/4 glass\n22" x 48"', "glass:3/4"),
                    ('Full glass\n22" x 64"', "glass:full"), ('Half + blinds\n22" x 36"', "glass:half+b"),
                    ('3/4 + blinds\n22" x 48"', "glass:3/4+b"), ('Full + blinds\n22" x 64"', "glass:full+b"),
@@ -983,15 +983,40 @@ def door_card(pg, k, n, y, item, exterior):
     if exterior:
         groups += [("DOOR OPENS:", ["In (into the unit)", "Out"], 2)]
     else:
-        groups += [("CORE (knock on it):", ["Hollow", "Solid", "Not sure"], 3),
-                   ("FINISH:", ["Primecoat (paint)", "Embossed Primecoat", "Oak", "Walnut"], 2)]
+        groups += [("FINISH:", ["Primecoat (paint)", "Embossed Primecoat", "Oak", "Walnut"], 2)]
     groups += [("NEED THE FRAME TOO (pre-hung)?", ["No - door only", "Yes - door + frame"], 2),
                ("HARDWARE:", (["None", "Entry knob", "Deadbolt", "Peephole"] if exterior
                               else ["None", "Passage (no lock)", "Privacy (lock)"]), 2),
-               ('HINGE SIZE (tall):', ['3-1/2"', '4"', "Not sure"], 3)]
+               dict(title='HINGE SIZE (how tall):', opts=['3-1/2"', '4"', "Not sure", "Other"], cols=2,
+                    other=("Other",))]
     yc = choices(pg, k, CX, yc - 4, groups)
+    # hinge corners, with a little picture of each
+    yc += RS
+    pg.text(CX, yc, "HINGE CORNERS:", 8.5, bold=True)
+    for i, (lab, rad) in enumerate((("Round", 0.35), ("Square", None), ("Not sure", "?"))):
+        hx = CX + i * 66
+        hy = yc + 6
+        if rad == "?":
+            pg.text(hx + 6, hy + 15, "?", 13, bold=True, color=DARK)
+        else:
+            pg.p.draw_rect(fitz.Rect(hx, hy, hx + 13, hy + 20), color=DARK, fill=(0.75, 0.75, 0.75), width=0.6,
+                           radius=rad)
+            for sy in (hy + 4, hy + 10, hy + 16):
+                pg.p.draw_circle((hx + 6.5, sy), 1.1, color=DARK, fill=(1, 1, 1), width=0.4)
+        pg.check(f"{k} Hinge Corners {lab}", hx + 17, hy + 14, lab, 7.8)
+    yc += 30
     ys = max(yb, yc) + 6
     pg.line((CX - 8, y), (CX - 8, ys - 4), color=GREY, width=1)
+    # what the door is made of, then core - right above the style pictures
+    pg.rect((L, ys - 2, R, ys + 1.5), color=None, fill=GREY)
+    ys += 14
+    pg.text(L + 6, ys, "DOOR MATERIAL:", 8.5, bold=True)
+    for i, m in enumerate(("Wood", "Metal (steel)", "Fiberglass")):
+        pg.check(f"{k} Material {m.split()[0]}", L + 92 + i * 70, ys, m, 8)
+    pg.text(CX - 70, ys, "CORE (knock on it):", 8.5, bold=True)
+    for i, c_ in enumerate(("Hollow", "Solid", "Not sure")):
+        pg.check(f"{k} Core {c_}", CX + 30 + i * 58, ys, c_, 8)
+    ys += 10
     # style strip
     pg.rect((L, ys - 2, R, ys + 1.5), color=None, fill=GREY)
     pg.text(L + 6, ys + 12, "DOOR STYLE (check one):", 8.5, bold=True)

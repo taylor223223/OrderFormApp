@@ -1,0 +1,3 @@
+{# usage: {% if hold %}{% include '_hold_banner.html' %}{% endif %} #}
+<div class="holdbanner" id="holdBanner"><b>⛔ ACCOUNT HOLD</b> — <span id="holdText">{{ hold.name }} owes <b>${{ '{:,.2f}'.format(hold.balance or 0) }}</b></span>. This account must be brought current before any purchase.
+<a href="{{ url_for('holds.index') }}">Account Holds</a></div>

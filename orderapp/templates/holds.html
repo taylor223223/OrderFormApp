@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% block title %}Account Holds{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Account Holds</h1>
+<div class="muted">Accounts behind on payments. They must be brought current before any purchase.</div></div>
+<div class="row">{% if rows %}<a class="btn" href="{{ url_for('holds.index', csv=1) }}">Download for Excel</a>{% endif %}</div></div>
+
+<div class="grid g4">
+  <div class="stat hold"><div class="n">{{ rows|length }}</div><div class="l">Accounts on hold</div></div>
+  <div class="stat hold"><div class="n">${{ '{:,.2f}'.format(total) }}</div><div class="l">Total past due</div></div>
+  <div class="stat"><div class="n">{% if rows %}${{ '{:,.2f}'.format(rows[0].balance) }}{% else %}—{% endif %}</div><div class="l">Largest{% if rows %} · {{ rows[0].name }}{% endif %}</div></div>
+  <div class="stat"><div class="n">{{ cleared|length }}</div><div class="l">Brought current (recent)</div></div>
+</div>
+
+<div class="tablewrap" style="margin-top:12px">
+{% if rows %}<table>
+<thead><tr><th>Account</th><th style="text-align:right">Balance</th><th>Rep</th><th>Terms</th><th>On hold since</th><th>Notes / linked property</th><th></th></tr></thead>
+<tbody>{% for r in rows %}<tr>
+<td><b>{{ r.name }}</b>{% if r.customer_id %}<br><a class="small" href="{{ url_for('customers.view', cid=r.customer_id) }}">Open {{ r.cname }}</a>{% else %}<br><span class="small muted">Not linked to a property in the app</span>{% endif %}</td>
+<td style="text-align:right;font-weight:700;color:#b91c1c">${{ '{:,.2f}'.format(r.balance or 0) }}</td>
+<td>{{ r.rep or '' }}</td>
+<td><span class="tag holdtag">{{ r.terms or 'ACCOUNT HOLD' }}</span></td>
+<td class="small">{{ r.since or '' }}</td>
+<td><details><summary class="small">{{ (r.notes or 'Edit')|truncate(40) }}</summary>
+  <form method="post" action="{{ url_for('holds.update', hid=r.id) }}" class="grid" style="gap:6px;margin-top:6px;min-width:240px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="small" style="margin:0">Balance</label><input name="balance" value="{{ '%.2f'|format(r.balance or 0) }}">
+    <label class="small" style="margin:0">Property in the app</label>
+    <select name="customer_id"><option value="">(not linked)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if c.id==r.customer_id }}>{{ c.name }}</option>{% endfor %}</select>
+    <label class="small" style="margin:0">Notes</label><textarea name="notes" rows="2" placeholder="Called AP, promised payment Friday...">{{ r.notes or '' }}</textarea>
+    <button class="btn sm">Save</button></form></details></td>
+<td><form method="post" action="{{ url_for('holds.clear', hid=r.id) }}" onsubmit="return confirm('Take {{ r.name|e }} off hold? (They paid / are current)')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm primary">Paid - take off hold</button></form></td>
+</tr>{% endfor %}</tbody>
+<tfoot><tr><th>Total</th><th style="text-align:right">${{ '{:,.2f}'.format(total) }}</th><th colspan="5"></th></tr></tfoot>
+</table>{% else %}<p class="muted">No accounts on hold. Paste the hold list from the office below.</p>{% endif %}
+</div>
+
+<div class="grid g2" style="margin-top:14px">
+<form class="card" method="post" action="{{ url_for('holds.import_report') }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h3 style="margin-top:0">Update from the office's hold list</h3>
+  <p class="muted small">Paste the rows straight from the report (Customer, Balance, Rep, Terms) or pick the CSV. Accounts already on the list get their balance updated.</p>
+  <textarea name="report" rows="7" placeholder="Customer Balance Total Rep Terms&#10;Example Apartments 1,234.56 TA ACCOUNT HOLD"></textarea>
+  <div class="row" style="margin-top:8px"><input type="file" name="file" accept=".csv,.txt" style="max-width:260px"></div>
+  <label class="row small" style="gap:6px;margin-top:8px"><input type="checkbox" name="clear_missing" value="1" style="width:auto"> Take accounts that aren't on this list off hold (they paid)</label>
+  <button class="btn primary" style="margin-top:8px">Update holds</button>
+</form>
+<form class="card" method="post" action="{{ url_for('holds.add') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h3 style="margin-top:0">Put one account on hold</h3>
+  <label>Property</label>{% set picker_id='holdcust' %}{% include '_cust_picker.html' %}
+  <label style="margin-top:6px">…or type the account name</label><input name="name" placeholder="Only if it isn't in the app">
+  <div class="grid g2" style="margin-top:6px"><div><label>Balance</label><input name="balance" placeholder="1,234.56"></div>
+  <div><label>Rep</label><input name="rep" placeholder="TA"></div></div>
+  <button class="btn" style="margin-top:8px">Put on hold</button>
+</form>
+</div>
+
+{% if cleared %}<details class="card" style="margin-top:14px"><summary><b>Brought current</b> <span class="muted small">(last {{ cleared|length }})</span></summary>
+<table style="margin-top:8px"><thead><tr><th>Account</th><th style="text-align:right">Balance when on hold</th><th>Taken off hold</th><th>Notes</th><th></th></tr></thead>
+<tbody>{% for r in cleared %}<tr><td>{{ r.name }}</td><td style="text-align:right">${{ '{:,.2f}'.format(r.balance or 0) }}</td><td class="small">{{ r.cleared }}</td>
+<td class="small" style="white-space:pre-line">{{ r.notes or '' }}</td>
+<td><form method="post" action="{{ url_for('holds.reopen', hid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm">Put back on hold</button></form></td></tr>{% endfor %}</tbody></table></details>{% endif %}
+{% endblock %}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}{{ c.name }}{% endblock %}
 {% block body %}
+{% set hold = hold_for(c.id) %}{% if hold %}{% include '_hold_banner.html' %}{% endif %}
 <div class="pagehead">
   <div><h1>{{ c.name }}{% if c.status %} <span class="tag" style="vertical-align:middle">{{ c.status }}</span>{% endif %}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{{ c.mgmt or '' }}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
   <div class="row">

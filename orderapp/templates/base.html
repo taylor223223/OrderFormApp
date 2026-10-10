@@ -26,6 +26,7 @@
     <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}" style="--c:#d97706"><span class="ic">🏢</span>Customers</a>
     <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
     <a href="{{ url_for('plan.week') }}" class="{{ 'on' if ep.startswith('plan.') }}" style="--c:#65a30d"><span class="ic">🗺️</span>Routes</a>
+    <a href="{{ url_for('holds.index') }}" class="{{ 'on' if ep.startswith('holds.') }}" style="--c:#b91c1c"><span class="ic">⛔</span>Account Holds{% if holds_count %}<span class="badge" title="Accounts on hold - no purchases until brought current">{{ holds_count }}</span>{% endif %}</a>
     <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}" style="--c:#0d9488"><span class="ic">📦</span>Order Tracking</a>
     <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email{% if email_drafts %}<span class="badge" title="Order emails turned into drafts, waiting for review">{{ email_drafts }}</span>{% endif %}</a>
     <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') }}" style="--c:#a16207"><span class="ic">📥</span>Import CSV</a>

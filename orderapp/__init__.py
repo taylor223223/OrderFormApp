@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, resource_path
 
-__version__ = "2.3.2"
+__version__ = "2.3.3"
 
 
 def _secret_key():
@@ -99,11 +99,14 @@ def create_app(db_path=None, testing=False):
                              AND notes LIKE 'Auto-drafted%'""", one=True)["n"]
             except Exception:  # noqa: BLE001
                 pc = ed = 0
+        from . import holds as _holds
         return {"csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
-                "username": session.get("username")}
+                "username": session.get("username"), "hold_for": _holds.hold_for,
+                "holds_count": _holds.count() if session.get("uid") else 0}
 
-    from .routes import auth, crm, customers, emails, imports, main, orders, photos, routes_plan, settings
-    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp):
+    from .routes import auth, crm, customers, emails, holds, imports, main, orders, photos, routes_plan, settings
+    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
+               holds.bp):
         app.register_blueprint(bp)
     if not testing:
         _start_email_watcher(app)

@@ -41,6 +41,7 @@ TRIM_PROFILES = [
     ("I", '#711 Base MDF Ultralight 311MUL 3/8" x 3-1/2"'),
     ("J", 'Victorian/Newport Base 329MUL 9/16" x 3-7/8"'),
 ]
+DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
 NEW_DOOR_TYPES = ["5 Panel", "2 Panel", "2 Panel Arch", "2 Panel Arch Plank", "5 Panel Shaker",
                   "3 Panel Shaker Equal", "3 Panel Shaker Craftsman", "2 Panel Shaker", "1 Panel Shaker",
                   "HC Primecoat"]
@@ -70,6 +71,14 @@ def _slug(s):
 
 def _t(key, label, pdf, **kw):
     d = {"key": key, "label": label, "kind": "text", "pdf": pdf}
+    d.update(kw)
+    return d
+
+
+def _x(key, label, kind="text", options=None, **kw):
+    d = {"key": key, "label": label, "kind": kind, "pdf": None, "extra": True}
+    if options is not None:
+        d["options"] = options
     d.update(kw)
     return d
 
@@ -136,6 +145,7 @@ def _door_common(prehung=False):
            [(t, f"DoorStyle {_slug(t)}.0") for t in NEW_DOOR_TYPES] +
            [("Other", "OtherDoor1.0")], other_option="Other", other_field="style_other", photos="door_style"),
         _t("style_other", "Style - Other", "OtherDoorTXT.0"),
+        _c("material", "Door Material", [(m, f"Material {_slug(m)}.0") for m in DOOR_MATERIALS]),
         _c("core", "Core Type", [("Hollow Core", "HC_Door.0"), ("Solid Core", "SC_Door.0")]),
         _c("door_location", "Door Location", [("Interior", "InteriorDoor.0"), ("Exterior", "Exterior_Door.0")]),
         _c("swing", "Door Swing", [("Left Hand", "LeftHand_Door.0"), ("Right Hand", "RightHand_Door.0")]),
@@ -153,6 +163,7 @@ def _door_common(prehung=False):
             _t("hinge1", "Top of door to top of 1st hinge (in)", "Hinge1.0", measure=True),
             _t("hinge2", "Top of door to top of 2nd hinge (in)", "Hinge2.0", measure=True),
             _t("hinge3", "Top of door to top of 3rd hinge (in)", "Hinge3.0", measure=True),
+            _t("hinge4", "Top of door to top of 4th hinge (in) - if it has one", "Hinge4.0", measure=True),
         ]
     f += [
         _t("width", "Door Width (in)", "DoorWidth.0", measure=True),
@@ -192,10 +203,13 @@ def _door_common(prehung=False):
                                            ("Other", "DoorThicknessOther.0")],
            other_option="Other", other_field="thickness_other"),
         _t("thickness_other", "Thickness - Other", None, **_ov(463, 563, 98)),
-        _c("hinge_dim", "Hinge Dimension", [('3-1/2"', "HingeDim3-1/2.0"), ('4"', "HingeDim4.0")]),
+        _c("hinge_dim", "Hinge Dimension", [('3-1/2"', "HingeDim3-1/2.0"), ('4"', "HingeDim4.0"),
+                                             ("Other", "HingeDimOther.0")],
+           other_option="Other", other_field="hinge_dim_other"),
+        _t("hinge_dim_other", "Hinge Dimension - Other (in)", "HingeDimOther (describe).0"),
+        _c("hinge_radius", "Hinge Radius / Corners", [('1/4"', "HingeRad1-4.0"), ('5/8"', "HingeRad5/8.0"),
+                                                      ("Square", "HingeRadSquare.0")]),
     ]
-    if not prehung:
-        f.append(_c("hinge_radius", "Hinge Radius", [('1/4"', "HingeRad1-4.0"), ('5/8"', "HingeRad5/8.0")]))
     return f
 
 
@@ -214,6 +228,7 @@ def _new_door_block():
                                 ("Oak Legacy", "Finish Oak Legacy"), ("Other", "Finish Other")],
            other_option="Other", other_field="finish_other"),
         _t("finish_other", "Finish - Other", "Finish Other (describe)"),
+        _x("material", "Door Material", "choice", [(m, None) for m in DOOR_MATERIALS]),
         _c("core", "Core Type", [("Solid Core", "Core Solid"), ("Hollow Core", "Core Hollow")]),
         _c("door_location", "Door Location", [("Interior", "Location Interior"), ("Exterior", "Location Exterior")]),
         _c("swing", "Door Swing", [("Left Hand", "Swing Left Hand"), ("Right Hand", "Swing Right Hand")]),
@@ -222,6 +237,7 @@ def _new_door_block():
         _t("hinge1", "Top of door to top of 1st hinge (in)", "1st Hinge (in from top of door)", measure=True),
         _t("hinge2", "Top of door to top of 2nd hinge (in)", "2nd Hinge (in from top of door)", measure=True),
         _t("hinge3", "Top of door to top of 3rd hinge (in)", "3rd Hinge (in from top of door)", measure=True),
+        _t("hinge4", "Top of door to top of 4th hinge (in) - if it has one", None, measure=True, extra=True),
         _t("peephole", "Top of door to center of peephole (in)", "Top of Door to Center of Peephole", measure=True),
         _t("one_sided_deadbolt", "Top of door to center of one-sided deadbolt (in)",
            "One-Sided Deadbolt Measurement", measure=True, auto_check="Bore One-Sided Deadbolt"),
@@ -235,8 +251,11 @@ def _new_door_block():
                                            ("Other", ("Door Thickness Other", "CheckBox"))],
            other_option="Other", other_field="thickness_other"),
         _t("thickness_other", "Thickness - Other", ("Door Thickness Other", "Text")),
-        _c("hinge_dim", "Hinge Dimension", [('3-1/2"', 'Hinge Dimension 3-1/2"'), ('4"', 'Hinge Dimension 4"')]),
-        _c("hinge_radius", "Hinge Radius", [('1/4"', 'Hinge Radius 1/4"'), ('5/8"', 'Hinge Radius 5/8"')]),
+        _c("hinge_dim", "Hinge Dimension", [('3-1/2"', 'Hinge Dimension 3-1/2"'), ('4"', 'Hinge Dimension 4"'),
+                                             ("Other", None)], other_option="Other", other_field="hinge_dim_other"),
+        _x("hinge_dim_other", "Hinge Dimension - Other (in)"),
+        _c("hinge_radius", "Hinge Radius / Corners", [('1/4"', 'Hinge Radius 1/4"'), ('5/8"', 'Hinge Radius 5/8"'),
+                                                      ("Square", None)]),
     ]
 
 
@@ -526,14 +545,6 @@ def _lwh_order(fields):
 # --------------------------------------------------------------------------
 # App-only fields (no box on the paper form -> printed in the comments)
 # --------------------------------------------------------------------------
-def _x(key, label, kind="text", options=None, **kw):
-    d = {"key": key, "label": label, "kind": kind, "pdf": None, "extra": True}
-    if options is not None:
-        d["options"] = options
-    d.update(kw)
-    return d
-
-
 def _mirror_frame_fields():
     show = ("mirror_frame", ["Yes"])
     return [
