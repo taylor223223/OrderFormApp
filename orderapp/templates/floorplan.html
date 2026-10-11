@@ -1,7 +1,8 @@
 {% extends "base.html" %}{% block title %}{{ fp.name }} - {{ c.name }}{% endblock %}
 {% block body %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('customers.view', cid=c.id, tab='layouts') }}">← {{ c.name }}</a></div><h1>Floorplan {{ fp.name }}</h1>
-<div class="muted">{{ units|length }} unit(s) use this layout</div></div></div>
+<div class="muted">{{ units|length }} unit(s) use this layout</div></div>
+<div class="row"><a class="btn primary" href="{{ url_for('customers.floor_plan', fid=fp.id) }}">📐 {{ 'Open floor plan' if fp.plan else 'Draw floor plan' }}</a></div></div>
 <h2>Measurements for this layout</h2>
 {% set rows = meas %}{% set ctx = {'customer_id': c.id, 'floorplan_id': fp.id} %}{% include "_meas_table.html" %}
 {% if others %}

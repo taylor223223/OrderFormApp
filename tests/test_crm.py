@@ -291,3 +291,31 @@ def test_order_forms_library(client):
     assert r.status_code == 302
     cid = int(re.search(r"/customers/(\d+)", c.get("/customers?q=Test+Apts+2").get_data(as_text=True)).group(1))
     assert "Measurements on file" in c.get(f"/customers/{cid}").get_data(as_text=True)
+
+
+def test_floor_plan(client):
+    c = client
+    cid = int(re.search(r"/customers/(\d+)", c.get("/customers?q=Test+Apts+3").get_data(as_text=True)).group(1))
+    r = post(c, f"/customers/{cid}/floorplans", {"name": "B2", "beds": "2", "baths": "1"}, page=f"/customers/{cid}")
+    fid = int(r.headers["Location"].rsplit("/", 1)[1])
+    assert c.get(f"/floorplans/{fid}/plan").status_code == 200
+    plan = {"rooms": [{"id": 1, "n": "Bedroom 1", "x": 0, "y": 0, "w": 12, "h": 11}],
+            "items": [{"id": 2, "room": 1, "t": "door", "wall": "N", "off": 2, "w": 32,
+                       "p": {"style": "2 Panel", "hinge": "Left", "swing": "in", "height": "80", "location": "Interior"}},
+                      {"id": 3, "room": 1, "t": "window", "wall": "S", "off": 3, "w": 71.5,
+                       "p": {"covering": "Horizontal Blind", "height": "47.625", "color": "White"}},
+                      {"id": 4, "room": 1, "t": "bypass", "wall": "E", "off": 2, "w": 72, "p": {"height": "80"}},
+                      {"id": 5, "room": 99, "t": "door", "wall": "N", "off": 0, "w": 30}]}      # bad room: dropped
+    r = c.post(f"/floorplans/{fid}/plan", json=plan, headers={"X-CSRF-Token": csrf(c, f"/floorplans/{fid}/plan")})
+    assert r.get_json() == {"ok": True, "measurements": 3}
+    with c.app.test_request_context():
+        from orderapp.db import q, loads
+        rows = {m["product"]: loads(m["data"]) for m in q("SELECT * FROM measurements WHERE floorplan_id=?", (fid,))}
+    assert rows["interior_door"]["width"] == "32" and rows["interior_door"]["swing"] == "Left Hand"
+    assert rows["horizontal_blind"]["width"] == "71 1/2" and rows["closet_door"]["closet_type"] == "Bypass (standard)"
+    # saving again replaces (no duplicates)
+    c.post(f"/floorplans/{fid}/plan", json=plan, headers={"X-CSRF-Token": csrf(c, f"/floorplans/{fid}/plan")})
+    with c.app.test_request_context():
+        from orderapp.db import q
+        assert q("SELECT COUNT(*) n FROM measurements WHERE floorplan_id=?", (fid,), one=True)["n"] == 3
+    assert "Horizontal Blind" in c.get(f"/customers/{cid}").get_data(as_text=True)

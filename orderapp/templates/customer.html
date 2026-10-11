@@ -65,7 +65,7 @@
 <p class="muted">Measure a floorplan once and every unit with that layout uses it. Units can also have their own measurements that override the floorplan.</p>
 <div class="tablewrap"><table>
 <tr><th>Floorplan</th><th>Beds/Baths</th><th class="right">Measurements</th><th class="right">Units</th><th>Notes</th></tr>
-{% for f in fps %}<tr><td><a href="{{ url_for('customers.floorplan', fid=f.id) }}"><b>{{ f.name }}</b></a></td><td>{{ f.beds or '' }}{% if f.baths %} / {{ f.baths }}{% endif %}</td><td class="right">{{ f.n_meas }}</td><td class="right">{{ f.n_units }}</td><td class="small">{{ f.notes or '' }}</td></tr>
+{% for f in fps %}<tr><td><a href="{{ url_for('customers.floorplan', fid=f.id) }}"><b>{{ f.name }}</b></a> <a class="small" href="{{ url_for('customers.floor_plan', fid=f.id) }}" title="Floor plan drawing">📐 {{ 'plan' if f.plan else 'draw' }}</a></td><td>{{ f.beds or '' }}{% if f.baths %} / {{ f.baths }}{% endif %}</td><td class="right">{{ f.n_meas }}</td><td class="right">{{ f.n_units }}</td><td class="small">{{ f.notes or '' }}</td></tr>
 {% else %}<tr><td colspan="5" class="empty">No floorplans yet.</td></tr>{% endfor %}
 </table></div>
 <form method="post" action="{{ url_for('customers.floorplan_add', cid=c.id) }}" class="card row" style="margin-top:12px">

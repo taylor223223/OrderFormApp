@@ -173,6 +173,7 @@ MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
                   "owner": "TEXT"},
     "route_stops": {"products": "TEXT", "done_at": "TEXT"},
+    "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
 }
 

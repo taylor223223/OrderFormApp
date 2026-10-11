@@ -232,6 +232,25 @@ def floorplan(fid):
     return render_template("floorplan.html", fp=fp, c=c, meas=_meas_rows(meas), units=units, others=others)
 
 
+@bp.route("/floorplans/<int:fid>/plan", methods=["GET", "POST"])
+@login_required
+def floor_plan(fid):
+    """2D floor plan: draw rooms, doors, windows, closets, cabinets; click any item for its details."""
+    from .. import floorplan as FP
+    from ..catalog import CABINET_STYLES, DOOR_MATERIALS, HORIZONTAL_STYLES, NEW_DOOR_TYPES
+    fp = q("SELECT * FROM floorplans WHERE id=?", (fid,), one=True) or abort(404)
+    if request.method == "POST":
+        n = FP.save_plan(fid, request.get_json(silent=True) or {})
+        return {"ok": True, "measurements": n}
+    c = _cust_or_404(fp["customer_id"])
+    units = q("SELECT unit_number FROM units WHERE floorplan_id=? ORDER BY length(unit_number), unit_number", (fid,))
+    opts = {"door_styles": ["6 Panel"] + [t for t in NEW_DOOR_TYPES if t != "HC Primecoat"] + ["Flat (HC Primecoat)"],
+            "materials": DOOR_MATERIALS, "cab_styles": CABINET_STYLES,
+            "blind_styles": ["All Vinyl", "Vinyl Plus", "All Metal", "Faux Wood"] + HORIZONTAL_STYLES}
+    return render_template("floor_plan.html", fp=fp, c=c, plan=FP.get_plan(fid), units=[u["unit_number"] for u in units],
+                           opts=opts, form_for=FP.FORM_FOR, covering={k: v[1] for k, v in FP.COVERING.items()})
+
+
 @bp.route("/floorplans/<int:fid>/delete", methods=["POST"])
 @login_required
 def floorplan_delete(fid):
