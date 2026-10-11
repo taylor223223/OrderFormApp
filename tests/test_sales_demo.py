@@ -11,7 +11,7 @@ from orderapp import create_app  # noqa: E402
 from orderapp import sales as S  # noqa: E402
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def demo_app():
     d = tempfile.mkdtemp()
     app = create_app(db_path=os.path.join(d, "demo.db"), testing=True, demo=True)

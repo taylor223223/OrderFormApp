@@ -108,6 +108,17 @@ def seed(db_path):
     init_db(db_path)
     if q("SELECT 1 FROM customers LIMIT 1", one=True):
         return False
+    from .db import get_db
+    con = get_db()
+    con.execute("PRAGMA synchronous=OFF")      # thousands of small writes: don't wait on the disk for each one
+    try:
+        _seed(r, today, db_path)
+    finally:
+        con.execute("PRAGMA synchronous=FULL")
+    return True
+
+
+def _seed(r, today, db_path):
     if not q("SELECT 1 FROM users LIMIT 1", one=True):
         create_user(DEMO_USER, DEMO_PASS)
     for k, v in {"demo": "1", "email_provider": "eml", "email_auto_minutes": "0", "sales_rep": "Demo Rep",
@@ -241,7 +252,6 @@ def seed(db_path):
                                            (today - timedelta(days=9)).isoformat(), ts))
     _seed_sales(r, cids, today)
     _seed_review(cids)
-    return True
 
 
 def _seed_sales(r, cids, today):
@@ -297,16 +307,13 @@ def _seed_review(cids):
 
 
 def reset(db_path):
-    """Wipe the demo database and fill it again (demo copy only)."""
-    from flask import g
-    d = g.pop("db", None)
-    if d is not None:
-        d.close()
-    for suffix in ("", "-wal", "-shm"):
-        try:
-            os.remove(db_path + suffix)
-        except OSError:
-            pass
-    con = connect(db_path)
-    con.close()
+    """Empty every table (Windows won't delete an open database file) and fill it again. Demo copy only."""
+    from .db import get_db
+    con = get_db()
+    con.execute("PRAGMA foreign_keys=OFF")
+    for (t,) in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall():
+        if t not in ("users",):
+            con.execute(f'DELETE FROM "{t}"')
+    con.commit()
+    con.execute("PRAGMA foreign_keys=ON")
     seed(db_path)
