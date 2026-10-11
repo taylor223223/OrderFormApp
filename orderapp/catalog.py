@@ -42,11 +42,17 @@ TRIM_PROFILES = [
     ("J", 'Victorian/Newport Base 329MUL 9/16" x 3-7/8"'),
 ]
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
-COUNTERTOP_MATERIALS = ["Laminate", "Synthetic", "Custom"]
+COUNTERTOP_MATERIALS = ["Laminate", "Synthetic", "Thinscape", "Custom"]
 PREFAB_KITCHEN_ITEMS = ["Base Cabinet", "Sink Base", "Drawer Base", "Wall Cabinet"]
 PREFAB_VANITY_ITEMS = ["Single Box", "Double Box", "Double Box with Sink", "Extended Double Box with Sink",
                        "Doors Only"]
 CLOSET_TYPES = ["Bypass (standard)", "Bypass (custom)", "Bi-Fold (standard)", "Bi-Fold (custom)"]
+WARDROBE_TYPES = ["Mirrored Bypass Door", "Mirrored Swing Door", "White Vinyl Board Door"]   # brochure: Wardrobe & Closet
+WARDROBE_FINISHES = ["White", "Satin Nickel", "Aztec Gold", "Other"]
+SHOWER_TYPES = ["Sliding (bypass) door", "Swing / pivot door", "Enclosure (door + panels)", "Fixed panel"]
+SHOWER_FRAMES = ["Framed", "Semi-Frameless", "Frameless"]
+SHOWER_FINISHES = ["Chrome", "Satin Nickel", "Matte Black", "Other"]
+SHOWER_GLASS = ["Clear", "Obscure / Rain", "Other"]
 NEW_DOOR_TYPES = ["5 Panel", "2 Panel", "2 Panel Arch", "2 Panel Arch Plank", "5 Panel Shaker",
                   "3 Panel Shaker Equal", "3 Panel Shaker Craftsman", "2 Panel Shaker", "1 Panel Shaker",
                   "HC Primecoat"]
@@ -476,7 +482,7 @@ FORMS = {
 # the app prints whichever paper version fits what was ordered.
 FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
               "roller_shade", "trim", "door_hardware", "bath_hardware", "countertop", "cabinet_prefab",
-              "cabinet_custom", "sliding_patio_door", "closet_bifold"]
+              "cabinet_custom", "sliding_patio_door", "closet_bifold", "shower_door", "mirror_frame"]
 RETIRED_FORMS = ["cabinet", "closet_shower"]   # still open old orders; no longer offered for new ones
 
 # --------------------------------------------------------------------------
@@ -517,6 +523,9 @@ PRODUCTS = {
     "cabinet": {"label": "Cabinet (kitchen / vanity)", "forms": ["cabinet_prefab", "cabinet_custom"]},
     "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet_custom", "cabinet_prefab"]},
     "countertop": {"label": "Countertop", "forms": ["countertop"]},
+    "wardrobe_door": {"label": "Mirrored / Wardrobe Door", "forms": ["closet_bifold"]},
+    "shower_door": {"label": "Shower Door / Enclosure", "forms": ["shower_door"]},
+    "mirror_frame": {"label": "Mirror Frame (Mirror Mate)", "forms": ["mirror_frame"]},
     "other": {"label": "Other", "forms": []},
 }
 
@@ -805,10 +814,13 @@ GENERATED = {
         "products": ["sliding_patio_door"],
     },
     "closet_bifold": {   # same look as the company's Door / Bi-Pass forms
-        "title": "Closet & Bi-Fold Door Order Form", "style": "door", "section": "Closet Door Information",
+        "title": "Wardrobe, Closet & Bi-Fold Door Order Form", "style": "door", "section": "Closet Door Information",
         "blocks": [[
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
-            _gc("closet_type", "Door Type", CLOSET_TYPES),
+            _gc("closet_type", "Door Type", CLOSET_TYPES + WARDROBE_TYPES, photos="closet_type"),
+            _gc("frame_finish", "Mirror Frame Finish", WARDROBE_FINISHES, other_option="Other",
+                other_field="frame_finish_other", show_if=("closet_type", WARDROBE_TYPES[:2])),
+            _g("frame_finish_other", "Mirror Frame Finish - Other", show_if=("frame_finish", ["Other"])),
             _gc("style", "Door Style", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", "Mirrored", "Other"],
                 other_option="Other", other_field="style_other"),
             _g("style_other", "Style - Other", show_if=("style", ["Other"])),
@@ -819,7 +831,39 @@ GENERATED = {
             _g("width", "Opening Width (in)", measure=True), _g("height", "Opening Height (in)", measure=True),
             _gc("track", "Track & Hardware Included", ["Yes", "No"]),
             _LINE_COMMENTS]],
-        "products": ["closet_door", "bypass_door"],
+        "products": ["closet_door", "bypass_door", "wardrobe_door"],
+    },
+    "shower_door": {   # same look as the company's Door / Bi-Pass forms
+        "title": "Shower Door & Enclosure Order Form", "style": "door", "section": "Shower Door Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("shower_location", "Goes On", ["Tub", "Shower stall"]),
+            _gc("shower_type", "Type", SHOWER_TYPES),
+            _gc("shower_frame", "Frame", SHOWER_FRAMES),
+            _gc("finish", "Hardware / Frame Finish", SHOWER_FINISHES, other_option="Other",
+                other_field="finish_other"),
+            _g("finish_other", "Finish - Other", show_if=("finish", ["Other"])),
+            _gc("glass", "Glass", SHOWER_GLASS, other_option="Other", other_field="glass_other"),
+            _g("glass_other", "Glass - Other", show_if=("glass", ["Other"])),
+            _g("width", "Opening Width (in)", measure=True), _g("height", "Opening Height (in)", measure=True),
+            _g("return_depth", "Return Panel Depth (in)", measure=True,
+               show_if=("shower_type", ["Enclosure (door + panels)"])),
+            _gc("door_hinge", "Door Opens / Hinges On", ["Left", "Right"],
+                show_if=("shower_type", ["Swing / pivot door", "Enclosure (door + panels)"])),
+            _g("shower_style", "Style / Custom Details", placeholder="Many styles and custom options - describe it"),
+            _LINE_COMMENTS]],
+        "products": ["shower_door"],
+    },
+    "mirror_frame": {   # Mirror Mate frame kits
+        "title": "Mirror Frame (Mirror Mate) Order Form", "style": "door", "section": "Mirror Frame Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _g("mirror_length", "Mirror Width (in)", measure=True),
+            _g("mirror_height", "Mirror Height (in)", measure=True),
+            _gc("mirror_mount", "Mirror Is", ["Clipped to wall", "Glued to wall", "Medicine cabinet", "Other"]),
+            _g("mirror_finish", "Frame Finish (70+ finishes)", placeholder="Finish name or number"),
+            _LINE_COMMENTS]],
+        "products": ["mirror_frame"],
     },
 }
 GENERATED_FILES = {"roller_shade": "OF-Roller Shade.pdf", "trim": "OF-Baseboard and Casing.pdf",
@@ -827,7 +871,8 @@ GENERATED_FILES = {"roller_shade": "OF-Roller Shade.pdf", "trim": "OF-Baseboard 
                    "cabinet": "OF-Cabinet and Countertop.pdf", "closet_shower": "OF-Closet and Shower Door.pdf",
                    "countertop": "OF-Countertop.pdf", "cabinet_prefab": "OF-Pre-Fab Cabinet.pdf",
                    "cabinet_custom": "OF-Custom Cabinet.pdf", "sliding_patio_door": "OF-Sliding Patio Door.pdf",
-                   "closet_bifold": "OF-Closet and Bi-Fold Door.pdf"}
+                   "closet_bifold": "OF-Closet and Bi-Fold Door.pdf", "shower_door": "OF-Shower Door.pdf",
+                   "mirror_frame": "OF-Mirror Frame.pdf"}
 
 
 def _bind(fields, n):

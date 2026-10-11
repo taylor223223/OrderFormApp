@@ -32,7 +32,7 @@
              ['finish', 'Finish'], ['notes', 'Notes']],
     cab: [['cab_room', 'Room', ['Kitchen', 'Bathroom Vanity']], ['kind', 'Cabinet', ['Base', 'Sink Base', 'Wall', 'Tall / Pantry', 'Vanity']],
           ['style', 'Door style', [''].concat(D.opts.cab_styles)], ['depth', 'Depth (in)'], ['height', 'Height (in)'],
-          ['countertop', 'Countertop', ['', 'Laminate', 'Synthetic', 'Custom']], ['notes', 'Notes']],
+          ['countertop', 'Countertop', ['', 'Laminate', 'Synthetic', 'Thinscape', 'Custom']], ['notes', 'Notes']],
   };
   FIELDS.bifold = FIELDS.bypass;
   const DEFAULTS = {door: {location: 'Interior', hinge: 'Left', swing: 'in', height: '80'}, window: {}, patio: {height: '80'},

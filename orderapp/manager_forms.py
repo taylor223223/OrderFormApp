@@ -1174,9 +1174,14 @@ class ClosetDoors(Form):
          "of the opening to the floor.", _tile_closet),
         ("2  NO TRIM / DOORS OFF?", "Same thing - measure the bare opening. Don't measure the old doors.", None),
         ('3  READ TO 1/8"', None, tile_ruler),
-        ("4  SLIDING OR FOLDING?", "Sliding doors (bypass) or folding doors (bi-fold). We'll tell you if "
-         "your size is standard or custom.", _tile_closet_types),
+        ("4  SLIDING OR FOLDING?", "Sliding doors (bypass), folding doors (bi-fold) or mirrored doors. "
+         "We'll tell you if your size is standard or custom.", _tile_closet_types),
     ]
+
+    def intro(self, pg, y):
+        return photo_strip(pg, y, "MIRRORED & WARDROBE DOORS", "closet_type",
+                           ["Mirrored Bypass", "Mirrored Swing", "White Vinyl Board"], h=50,
+                           keys=["mirrored-bypass-door", "mirrored-swing-door", "white-vinyl-board-door"])
 
     def card(self, pg, n, y):
         k = f"{self.prefix}{n}"
@@ -1201,7 +1206,9 @@ class ClosetDoors(Form):
                             [("Sliding (bypass)", bypass_icon), ("Folding (bi-fold)", bifold_icon)],
                             icon_h=40, aspect=1.2)
         yc = choices(pg, k, CX, yc - 6, [
-            ("DOOR STYLE:", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", "Mirrored", NOT_SURE], 2),
+            ("OR MIRRORED / WARDROBE:", ["Mirrored bypass", "Mirrored swing", "White vinyl board"], 2),
+            ("MIRROR FRAME COLOR:", ["White", "Satin nickel", "Aztec gold", NOT_SURE], 2),
+            ("DOOR STYLE:", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", NOT_SURE], 2),
             ("HOW MANY DOOR PANELS?", ["2", "4", "Not sure"], 3),
             ("FINISH:", ["Primecoat (paint)", "White", "Not sure"], 2),
             ("NEED THE TRACK / HARDWARE?", ["Yes", "No"], 2),
@@ -1424,7 +1431,7 @@ class Countertops(Form):
         yc = choices(pg, k, CX, top - 4, [
             ("ROOM:", ["Kitchen", "Bathroom vanity"], 2),
             ("SHAPE:", ["Straight", "L-Shape", "U-Shape", "Island"], 2),
-            ("MATERIAL:", ["Laminate", "Synthetic", "Custom", NOT_SURE], 2),
+            ("MATERIAL:", ["Laminate", "Synthetic", "Thinscape", "Custom", NOT_SURE], 2),
             ("SINK:", ["Single bowl", "Double bowl", "Vanity bowl", "No sink"], 2),
             ("BACKSPLASH (on the wall):", ["Yes", "No"], 2),
             ("END SPLASH:", ["None", "Left", "Right", "Both"], 2),
@@ -1570,16 +1577,133 @@ class CustomCabinets(Form):
             ("CABINET:", ["Base", "Sink base", "Wall", "Tall / pantry", "Vanity"], 2),
             ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
             ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
+            dict(title="REFACE EXISTING (THERMOFOIL)?", opts=["Yes", "No"], cols=2, name="Refacing"),
         ])
+        pg.text(CX, yc + 10, "Refacing: we'll bring thermofoil color samples.", 7, color=DARK)
+        yc += 14
         pg.line((CX - 8, y), (CX - 8, max(yc, yb)), color=GREY, width=1)
         y3 = notes_row(pg, k, max(yb + 10, yc + 8))
         return y3 + 2
 
 
 
+# --------------------------------------------------------------------------- shower doors
+def tub_shower(pg, r, glass=True):
+    """Front view: tiled wall, tub along the bottom, glass door above it. Returns the opening rect."""
+    r = fitz.Rect(r)
+    pg.rect(r, color=(0.5, 0.5, 0.5), fill=(0.93, 0.94, 0.95))
+    tub = fitz.Rect(r.x0 + 6, r.y1 - r.height * 0.24, r.x1 - 6, r.y1)
+    pg.rect(tub, color=DARK, fill=(1, 1, 1), width=0.8)
+    o = fitz.Rect(tub.x0, r.y0 + 10, tub.x1, tub.y0)
+    if glass:
+        pg.rect((o.x0 + 2, o.y0, o.x0 + o.width / 2 + 4, o.y1), color=(0.45, 0.5, 0.55), fill=GLASS, width=0.6)
+        pg.rect((o.x0 + o.width / 2 - 4, o.y0 + 2, o.x1 - 2, o.y1), color=(0.45, 0.5, 0.55), fill=GLASS, width=0.6)
+    return o
+
+
+def _tile_shower(pg, x, y, w):
+    o = tub_shower(pg, (x + w / 2 - 44, y, x + w / 2 + 44, y + 44))
+    pg.arrow((o.x0 + 1, o.y0 + 8), (o.x1 - 1, o.y0 + 8), width=0.9)
+
+
+def _tile_shower_h(pg, x, y, w):
+    o = tub_shower(pg, (x + w / 2 - 44, y, x + w / 2 + 44, y + 44))
+    pg.arrow((o.x0 + o.width * 0.75, o.y0 + 1), (o.x0 + o.width * 0.75, o.y1 - 1), color=BLUE, width=0.9)
+
+
+class ShowerDoors(Form):
+    subtitle, item, prefix = "Shower Doors & Enclosures", "SHOWER", "S"
+    steps = [
+        ("1  WIDTH", "Measure wall to wall where the door sits - on top of the tub or the shower curb.",
+         _tile_shower),
+        ("2  HEIGHT", "Top of the tub (or curb) up to where you want the glass to stop.", _tile_shower_h),
+        ('3  READ TO 1/8"', None, tile_ruler),
+        ("4  PICK THE TYPE", "Sliding, swing door or a full enclosure. Many styles and custom options - "
+         "add a photo if you can.", None),
+    ]
+
+    def card(self, pg, n, y):
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 8
+        o = tub_shower(pg, (L + 30, top + 4, L + 330, top + 150))
+        yy = o.y0 + 16
+        pg.arrow((o.x0 + 1, yy), (o.x1 - 1, yy))
+        pg.inches(f"{k} Width", o.x0 + o.width * 0.36, yy, "WIDTH (wall to wall)")
+        xx = o.x0 + o.width * 0.86
+        pg.arrow((xx, o.y0 + 1), (xx, o.y1 - 1), color=BLUE)
+        pg.inches(f"{k} Height", xx - 12, o.y0 + o.height * 0.62, "HEIGHT (tub up)", BLUE)
+        yv = top + 164
+        pg.text(L + 22, yv + 8, "ROOM:", 8.5, bold=True)
+        pg.field(f"{k} Room", (L + 58, yv - 2, L + 200, yv + 11), size=8.5)
+        yc = choices(pg, k, CX, top - 4, [
+            ("GOES ON:", ["Tub", "Shower stall"], 2),
+            ("TYPE:", ["Sliding (bypass)", "Swing / pivot door", "Enclosure (door + panels)", "Fixed panel",
+                       NOT_SURE], 2),
+            ("FRAME:", ["Framed", "Semi-frameless", "Frameless", "Not sure"], 2),
+            ("FINISH:", ["Chrome", "Satin nickel", "Matte black", "Not sure"], 2),
+            ("GLASS:", ["Clear", "Obscure / rain", "Not sure"], 2),
+        ])
+        pg.line((CX - 8, y), (CX - 8, max(yc, yv + 14)), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(yv + 24, yc + 6))
+        return y3 + 2
+
+
+# --------------------------------------------------------------------------- mirror frames (Mirror Mate)
+def mirror_pic(pg, r, frame=True):
+    r = fitz.Rect(r)
+    pg.rect(r, color=(0.5, 0.5, 0.5), fill=WALL)
+    m = fitz.Rect(r.x0 + r.width * 0.12, r.y0 + 8, r.x1 - r.width * 0.12, r.y1 - r.height * 0.22)
+    if frame:
+        pg.rect((m.x0 - 5, m.y0 - 5, m.x1 + 5, m.y1 + 5), color=DARK, fill=(0.45, 0.33, 0.22), width=0.6)
+    pg.rect(m, color=DARK, fill=GLASS, width=0.6)
+    pg.rect((r.x0 + 4, r.y1 - r.height * 0.14, r.x1 - 4, r.y1), color=DARK, fill=(0.97, 0.96, 0.93), width=0.6)
+    return m
+
+
+def _tile_mirror(pg, x, y, w):
+    m = mirror_pic(pg, (x + w / 2 - 40, y, x + w / 2 + 40, y + 44), frame=False)
+    pg.arrow((m.x0 + 1, m.y0 + m.height / 2), (m.x1 - 1, m.y0 + m.height / 2), width=0.9)
+
+
+def _tile_mirror_frame(pg, x, y, w):
+    mirror_pic(pg, (x + w / 2 - 40, y, x + w / 2 + 40, y + 44), frame=True)
+
+
+class MirrorFrames(Form):
+    subtitle, item, prefix = "Mirror Frames", "MIRROR", "Y"
+    steps = [
+        ("1  MEASURE THE GLASS", "Measure the mirror itself, edge to edge - not the wall.", _tile_mirror),
+        ("2  WIDTH + HEIGHT", "One width (side to side) and one height (top to bottom).", None),
+        ('3  READ TO 1/8"', None, tile_ruler),
+        ("4  ADD A FRAME", "Mirror Mate frame kits go right over your mirror - no tools, 70+ finishes. "
+         "We'll bring samples.", _tile_mirror_frame),
+    ]
+
+    def card(self, pg, n, y):
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 8
+        m = mirror_pic(pg, (L + 40, top + 4, L + 320, top + 150), frame=False)
+        yy = m.y0 + m.height * 0.3
+        pg.arrow((m.x0 + 1, yy), (m.x1 - 1, yy))
+        pg.inches(f"{k} Width", m.x0 + m.width * 0.42, yy, "WIDTH (glass edge to edge)")
+        xx = m.x0 + m.width * 0.85
+        pg.arrow((xx, m.y0 + 1), (xx, m.y1 - 1), color=BLUE)
+        pg.inches(f"{k} Height", xx - 12, m.y0 + m.height * 0.7, "HEIGHT", BLUE)
+        yc = choices(pg, k, CX, top - 4, [
+            ("ROOM:", ["Bathroom", "Other"], 2),
+            ("MIRROR IS:", ["Clipped to wall", "Glued to wall", "Medicine cabinet", "Not sure"], 2),
+            ("FRAME FINISH:", ["Show me samples", "Match another unit"], 1),
+        ])
+        pg.line((CX - 8, y), (CX - 8, max(yc, top + 152)), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(top + 166, yc + 8))
+        return y3 + 2
+
+
 FORMS = [HorizontalBlinds, VerticalBlinds, RollerShades, InteriorDoors, ExteriorDoors, ClosetDoors,
          WindowScreens, PatioScreens, SlidingPatioDoors, Trim, DoorHardware, BathHardware, Countertops,
-         PrefabCabinets, CustomCabinets]
+         PrefabCabinets, CustomCabinets, ShowerDoors, MirrorFrames]
 
 
 def main():
