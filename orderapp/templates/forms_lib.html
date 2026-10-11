@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}Order Forms{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Order Forms</h1>
+<div class="muted">Every blank form. Open it to print, download it, or check a few and email them to a customer.</div></div></div>
+<form method="post" action="{{ url_for('library.email') }}" id="emailForms">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="grid g2">
+  <div class="card"><h3 style="margin-top:0">Company Order Forms</h3>
+    <div class="muted small" style="margin-bottom:8px">What you send in to AIS. To fill one out with a customer's info, use <a href="{{ url_for('orders.new') }}">New Order</a>.</div>
+    {% for g in company|groupby('group') %}<div class="formgroup">{{ g.grouper }}</div>
+    {% for f in g.list %}{% include '_form_row.html' %}{% endfor %}{% endfor %}
+  </div>
+  <div class="card"><h3 style="margin-top:0">Customer Order Forms</h3>
+    <div class="muted small" style="margin-bottom:8px">Simple forms with measuring pictures for maintenance managers. They fill it in and email it back to you.</div>
+    {% for f in customer %}{% include '_form_row.html' %}{% endfor %}
+  </div>
+</div>
+<div class="card" style="margin-top:14px"><h3 style="margin-top:0">Email the checked forms</h3>
+  <div class="grid g3">
+    <div><label>Property (fills the email)</label>
+      <select id="custPick"><option value="">(type an address)</option>{% for c in customers %}<option value="{{ c.id }}" data-email="{{ c.email or '' }}" {{ 'selected' if pre == c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
+    <div><label>To</label><input name="to" id="toAddr" placeholder="manager@property.com"></div>
+    <div><label>Subject</label><input name="subject" placeholder="Order forms - (form names)"></div>
+  </div>
+  <label style="margin-top:8px">Message <span class="muted small">(leave blank for the standard note)</span></label>
+  <textarea name="body" rows="3"></textarea>
+  <div class="row" style="margin-top:8px"><button class="btn primary">Make email draft</button>
+  <span class="muted small" id="pickCount">0 forms checked</span>
+  <span class="muted small">Opens as a draft for you to review - it's never sent automatically.</span></div>
+</div>
+</form>
+<script>
+(function(){
+  const sel = document.getElementById('custPick'), to = document.getElementById('toAddr');
+  const fill = () => { const o = sel.options[sel.selectedIndex]; if (o && o.dataset.email) to.value = o.dataset.email; };
+  sel.addEventListener('change', fill); fill();
+  const count = () => { const n = document.querySelectorAll('input[name=pick]:checked').length;
+    document.getElementById('pickCount').textContent = n + ' form' + (n == 1 ? '' : 's') + ' checked'; };
+  document.querySelectorAll('input[name=pick]').forEach(c => c.addEventListener('change', count));
+})();
+</script>
+{% endblock %}

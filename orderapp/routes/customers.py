@@ -80,6 +80,9 @@ def view(cid):
     orders = q("SELECT * FROM orders WHERE customer_id=? ORDER BY coalesce(order_date, created) DESC LIMIT 50",
                (cid,))
     tab = request.args.get("tab", "info")
+    meas_summary = [dict(r, label=PRODUCTS.get(r["product"], {}).get("label", r["product"])) for r in q(
+        """SELECT product, COUNT(*) n, COUNT(DISTINCT unit_id) units, COUNT(DISTINCT floorplan_id) fps
+           FROM measurements WHERE customer_id=? GROUP BY product ORDER BY n DESC""", (cid,))]
     crm = {}
     if tab == "history":
         from .. import history
@@ -105,7 +108,7 @@ def view(cid):
     return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders,
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
-                           tab=tab, **crm)
+                           tab=tab, meas_summary=meas_summary, **crm)
 
 
 @bp.route("/customers/<int:cid>/edit", methods=["GET", "POST"])

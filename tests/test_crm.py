@@ -272,3 +272,22 @@ def test_account_holds(client):
     post(c, f"/holds/{hid}/clear", {}, page="/holds")
     assert "ACCOUNT HOLD" not in c.get(f"/customers/{cid}").get_data(as_text=True)
     assert c.get("/holds?csv=1").status_code == 200
+
+
+def test_order_forms_library(client):
+    c = client
+    html = c.get("/forms").get_data(as_text=True)
+    for t in ("Countertop Order Form", "Pre-Fab Cabinet Order Form", "Custom Cabinet Order Form",
+              "Sliding Patio Door Order Form", "Closet &amp; Bi-Fold Door Order Form", "Countertops",
+              "Pre-Fab Cabinets", "Custom Cabinets", "Closet &amp; Bi-Fold Doors", "Door Hardware"):
+        assert t in html, t
+    r = c.get("/forms/file/customer/Customer Order Form - Countertops.pdf")
+    assert r.status_code == 200 and r.data[:4] == b"%PDF"
+    r = c.get("/forms/file/company/OF-Countertop.pdf?dl=1")
+    assert r.status_code == 200 and "attachment" in r.headers["Content-Disposition"]
+    assert c.get("/forms/file/company/..%2F..%2Fdb.py").status_code == 404
+    r = post(c, "/forms/email", {"pick": ["customer|Customer Order Form - Countertops.pdf"], "to": "a@example.com"},
+             page="/forms")
+    assert r.status_code == 302
+    cid = int(re.search(r"/customers/(\d+)", c.get("/customers?q=Test+Apts+2").get_data(as_text=True)).group(1))
+    assert "Measurements on file" in c.get(f"/customers/{cid}").get_data(as_text=True)

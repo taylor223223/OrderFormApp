@@ -1,0 +1,3 @@
+<div class="formrow"><label class="row" style="gap:8px;margin:0;flex:1;font-weight:500"><input type="checkbox" name="pick" value="{{ f.kind }}|{{ f.name }}" style="width:auto">{{ f.title }}</label>
+<a class="btn sm" target="_blank" href="{{ url_for('library.file', kind=f.kind, name=f.name) }}" title="Opens the PDF - print it from there">Open / Print</a>
+<a class="btn sm" href="{{ url_for('library.file', kind=f.kind, name=f.name, dl=1) }}">Download</a></div>

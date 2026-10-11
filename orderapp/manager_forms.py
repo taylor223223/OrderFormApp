@@ -1,4 +1,4 @@
-"""Manager Order Forms: simple fillable PDFs a property's maintenance manager fills out.
+"""Customer Order Forms: simple fillable PDFs a property's maintenance manager fills out.
 
 Not the internal rep forms. Each item is a picture of what to measure with the fill-in
 boxes sitting right on the arrows, plus simple check-one choices (with pictures where it
@@ -32,7 +32,7 @@ CX = L + 378                      # left edge of the choices column
 RS = 12.5                         # row spacing of the check-one lists
 FRACTIONS = [" ", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8"]
 REP_EMAIL = "Taylor@ApartmentInterior.net"
-EMAIL_JS = ('this.mailDoc({bUI: true, cTo: "%s", cSubject: "Manager Order - " + this.documentFileName, '
+EMAIL_JS = ('this.mailDoc({bUI: true, cTo: "%s", cSubject: "Customer Order - " + this.documentFileName, '
             'cMsg: "Measurements attached."});' % REP_EMAIL)
 
 ROOMS = ["Bedroom", "Kitchen", "Living Room", "Other"]
@@ -158,7 +158,7 @@ class Page:
 def header(pg, subtitle):
     pg.rect((L, 8, R, 760), color=(0, 0, 0), width=1.5)
     pg.rect((352, 8, R, 52), color=None, fill=(0, 0, 0))
-    pg.text(473, 26, "MANAGER ORDER FORM", 14, bold=True, color=(1, 1, 1), center=True)
+    pg.text(473, 26, "CUSTOMER ORDER FORM", 14, bold=True, color=(1, 1, 1), center=True)
     pg.text(473, 44, subtitle.upper(), pg.fit(subtitle.upper(), R - 362, 12.5, True), bold=True,
             color=(1, 1, 1), center=True)
     y = 66
@@ -173,7 +173,7 @@ def header(pg, subtitle):
 def continued(pg, subtitle):
     pg.rect((L, 8, R, 760), color=(0, 0, 0), width=1.5)
     pg.rect((L, 8, R, 30), color=None, fill=(0, 0, 0))
-    pg.text(L + 8, 23, f"MANAGER ORDER FORM - {subtitle.upper()}  (continued)", 11, bold=True, color=(1, 1, 1))
+    pg.text(L + 8, 23, f"CUSTOMER ORDER FORM - {subtitle.upper()}  (continued)", 11, bold=True, color=(1, 1, 1))
     pg.text(R - 128, 23, "Need more? Use another form.", 7, color=(1, 1, 1))
 
 
@@ -228,7 +228,8 @@ def card_bar(pg, y, label, k):
 
 
 def choices(pg, k, x, y, groups, width=R - CX - 4):
-    """Check-one lists. group = (title, options, cols) or dict(title, opts, cols, other, icons)."""
+    """Check-one lists. group = (title, options, cols) or dict(title, opts, cols, other, name).
+    Long options (and "Not sure - match what's there") get a row of their own."""
     for g in groups:
         if isinstance(g, tuple):
             g = dict(zip(("title", "opts", "cols"), g))
@@ -237,17 +238,24 @@ def choices(pg, k, x, y, groups, width=R - CX - 4):
         y += RS
         pg.text(x, y, g["title"], 8.5, bold=True)
         name = g.get("name", g["title"].split("(")[0].strip(" :").title())
-        for i, o in enumerate(g["opts"]):
-            ox = x + (i % cols) * cw
-            oy = y + RS + (i // cols) * RS
-            span = cw if (i % cols) < cols - 1 else width - (i % cols) * cw
-            if o == NOT_SURE or len(o) > 26:            # long ones get a whole row
-                ox, span = x, width
+        row, col = 0, 0
+        for o in g["opts"]:
+            wide = o == NOT_SURE or len(o) > 26
+            if wide and col:
+                row, col = row + 1, 0
+            ox = x + col * cw
+            oy = y + RS + row * RS
+            span = width if wide else (cw if col < cols - 1 else width - col * cw)
             lw = pg.check(f"{k} {name} {o}", ox, oy, o, 7.8, maxw=span - 2)
             if o in g.get("other", ()):                  # "Other ____"
                 pg.field(f"{k} {name} {o} (describe)", (ox + 16 + lw, oy - 9, ox + span - 4, oy + 2), size=8)
-        y += math.ceil(len(g["opts"]) / cols) * RS + (RS if any(
-            (o == NOT_SURE or len(o) > 26) and (i % cols) for i, o in enumerate(g["opts"])) else 0) + 3
+            if wide:
+                row, col = row + 1, 0
+            else:
+                col += 1
+                if col == cols:
+                    row, col = row + 1, 0
+        y += (row + (1 if col else 0)) * RS + 3
     return y
 
 
@@ -389,6 +397,10 @@ class Form:
     def card(self, pg, n, y):
         raise NotImplementedError
 
+    def intro(self, pg, y):
+        """Optional band under the how-to (e.g. a strip of product photos shared by every item)."""
+        return y
+
     def build(self, out_path):
         src = fitz.open(COMPANY)
         doc = fitz.open()
@@ -402,6 +414,7 @@ class Form:
         pg = Page(doc.new_page(width=612, height=792))
         header(pg, self.subtitle)
         y = how_to(pg, 132, self.steps)
+        y = self.intro(pg, y)
         pages.append(pg)
         n = 0
         while True:
@@ -421,7 +434,7 @@ class Form:
             if i == 0:
                 logo(pg, src)
             pg.finish()
-        doc.set_metadata({"title": f"Manager Order Form - {self.subtitle}", "creator": "Apartment Interior Supply"})
+        doc.set_metadata({"title": f"Customer Order Form - {self.subtitle}", "creator": "Apartment Interior Supply"})
         doc.save(out_path, garbage=3, deflate=True)
         doc.close()
         src.close()
@@ -1063,15 +1076,494 @@ class ExteriorDoors(Form):
         return door_card(pg, f"{self.prefix}{n}", n, y, self.item, exterior=True)
 
 
-FORMS = [HorizontalBlinds, VerticalBlinds, RollerShades, InteriorDoors, ExteriorDoors, WindowScreens,
-         PatioScreens, SlidingPatioDoors]
+# --------------------------------------------------------------------------- shared bits for the newer forms
+def photo_strip(pg, y, title, group, labels, note=None, h=58, keys=None):
+    """A band of product photos with the letter / name under each - picked by name in each item below."""
+    pg.bar(y, title)
+    y += 18
+    n = len(labels)
+    cw = (R - L - 8) / n
+    for i, lab in enumerate(labels):
+        x = L + 4 + i * cw
+        slug_ = (keys[i] if keys else lab).lower().replace(" ", "-").replace(":", "")
+        path = os.path.join(PHOTOS, group, slug_ + ".jpg")
+        iw = min(cw - 6, h * 1.3)
+        pg.photo((x + (cw - iw) / 2, y, x + (cw + iw) / 2, y + h), path)
+        pg.text(x + cw / 2, y + h + 9, lab, pg.fit(lab, cw - 2, 7.2, True), bold=True, center=True)
+    y += h + 12
+    if note:
+        pg.text(L + 6, y + 2, note, 6.8, color=DARK)
+        y += 6
+    return y + 4
+
+
+def wall_opening(pg, r, inset=10):
+    """Wall with a plain opening down to the floor (closet / door opening). Returns the opening rect."""
+    r = fitz.Rect(r)
+    pg.rect(r, color=(0.5, 0.5, 0.5), fill=WALL)
+    o = fitz.Rect(r.x0 + inset, r.y0 + inset, r.x1 - inset, r.y1)
+    pg.rect((o.x0 - 4, o.y0 - 4, o.x1 + 4, o.y1), color=DARK, fill=(0.97, 0.97, 0.95), width=0.8)
+    pg.rect(o, color=DARK, fill=(1, 1, 1), width=0.8)
+    pg.line((r.x0 - 4, r.y1), (r.x1 + 4, r.y1), color=DARK, width=1.4)
+    return o
+
+
+def bypass_icon(pg, r):
+    r = fitz.Rect(r)
+    w = r.width
+    pg.rect(r, color=DARK, fill=(0.97, 0.97, 0.95), width=0.6)
+    pg.rect((r.x0 + 2, r.y0 + 3, r.x0 + w * 0.58, r.y1), color=DARK, fill=WOOD, width=0.6)
+    pg.rect((r.x0 + w * 0.42, r.y0 + 3, r.x1 - 2, r.y1), color=DARK, fill=(0.93, 0.93, 0.9), width=0.6)
+    pg.arrow((r.x0 + w * 0.2, r.y0 + r.height * 0.55), (r.x0 + w * 0.45, r.y0 + r.height * 0.55),
+             color=GREEN, width=0.7)
+
+
+def bifold_icon(pg, r):
+    r = fitz.Rect(r)
+    pg.rect(r, color=DARK, fill=(0.97, 0.97, 0.95), width=0.6)
+    n = 4
+    pw = (r.width - 4) / n
+    for i in range(n):
+        x = r.x0 + 2 + i * pw
+        pg.rect((x, r.y0 + 3, x + pw, r.y1), color=DARK, fill=WOOD if i % 2 == 0 else (0.93, 0.93, 0.9), width=0.5)
+    pg.line((r.x0 + r.width / 2 - 6, r.y0 + r.height * 0.5), (r.x0 + r.width / 2, r.y0 + r.height * 0.4),
+            color=GREEN, width=0.7)
+    pg.line((r.x0 + r.width / 2 + 6, r.y0 + r.height * 0.5), (r.x0 + r.width / 2, r.y0 + r.height * 0.4),
+            color=GREEN, width=0.7)
+
+
+# --------------------------------------------------------------------------- closet + bi-fold doors
+def _tile_closet(pg, x, y, w):
+    o = wall_opening(pg, (x + w / 2 - 40, y, x + w / 2 + 40, y + 44), inset=8)
+    pg.arrow((o.x0 + 1, o.y0 + 8), (o.x1 - 1, o.y0 + 8), width=0.9)
+    pg.arrow((o.x0 + o.width * 0.75, o.y0 + 1), (o.x0 + o.width * 0.75, o.y1 - 1), color=BLUE, width=0.9)
+
+
+def _tile_closet_types(pg, x, y, w):
+    bypass_icon(pg, (x + w / 2 - 50, y + 4, x + w / 2 - 6, y + 42))
+    bifold_icon(pg, (x + w / 2 + 6, y + 4, x + w / 2 + 50, y + 42))
+
+
+class ClosetDoors(Form):
+    subtitle, item, prefix = "Closet & Bi-Fold Doors", "CLOSET", "C"
+    steps = [
+        ("1  MEASURE THE OPENING", "Measure the closet opening inside the trim: wall to wall, and the top "
+         "of the opening to the floor.", _tile_closet),
+        ("2  NO TRIM / DOORS OFF?", "Same thing - measure the bare opening. Don't measure the old doors.", None),
+        ('3  READ TO 1/8"', None, tile_ruler),
+        ("4  SLIDING OR FOLDING?", "Sliding doors (bypass) or folding doors (bi-fold). We'll tell you if "
+         "your size is standard or custom.", _tile_closet_types),
+    ]
+
+    def card(self, pg, n, y):
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 8
+        o = wall_opening(pg, (L + 30, top + 6, L + 330, top + 170), inset=14)
+        mid = o.x0 + o.width / 2
+        pg.rect((o.x0 + 3, o.y0 + 5, mid + 8, o.y1), color=(0.6, 0.6, 0.6), fill=WOOD, width=0.5)
+        pg.rect((mid - 8, o.y0 + 5, o.x1 - 3, o.y1), color=(0.6, 0.6, 0.6), fill=(0.94, 0.94, 0.91), width=0.5)
+        yy = o.y0 + 22
+        pg.arrow((o.x0 + 1, yy), (o.x1 - 1, yy))
+        pg.inches(f"{k} Width", o.x0 + o.width * 0.38, yy, "WIDTH (wall to wall)")
+        xx = o.x0 + o.width * 0.84
+        pg.arrow((xx, o.y0 + 1), (xx, o.y1 - 1), color=BLUE)
+        pg.inches(f"{k} Height", xx - 10, o.y0 + o.height * 0.62, "HEIGHT (top to floor)", BLUE)
+        yv = top + 180
+        pg.text(L + 22, yv + 8, "ROOM:", 8.5, bold=True)
+        pg.field(f"{k} Room", (L + 58, yv - 2, L + 200, yv + 11), size=8.5)
+        yc = top - 4 + RS
+        pg.text(CX, yc, "DOOR TYPE:", 8.5, bold=True)
+        yc = visual_options(pg, k, "Type", CX + 6, yc + 6, 180,
+                            [("Sliding (bypass)", bypass_icon), ("Folding (bi-fold)", bifold_icon)],
+                            icon_h=40, aspect=1.2)
+        yc = choices(pg, k, CX, yc - 6, [
+            ("DOOR STYLE:", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", "Mirrored", NOT_SURE], 2),
+            ("HOW MANY DOOR PANELS?", ["2", "4", "Not sure"], 3),
+            ("FINISH:", ["Primecoat (paint)", "White", "Not sure"], 2),
+            ("NEED THE TRACK / HARDWARE?", ["Yes", "No"], 2),
+        ])
+        pg.line((CX - 8, y), (CX - 8, max(yc, yv + 14)), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(yv + 30, yc + 8))
+        return y3 + 2
+
+
+# --------------------------------------------------------------------------- baseboard + casing
+TRIM_LETTERS = list("ABCDEFGHIJ")
+
+
+def _tile_base(pg, x, y, w):
+    cx = x + w / 2
+    pg.rect((cx - 46, y, cx + 46, y + 40), color=(0.5, 0.5, 0.5), fill=WALL)
+    pg.rect((cx - 46, y + 33, cx + 46, y + 40), color=DARK, fill=(1, 1, 1), width=0.6)
+    pg.arrow((cx - 46, y + 28), (cx + 46, y + 28), width=0.9)
+    pg.line((cx - 52, y + 40), (cx + 52, y + 40), color=DARK, width=1.2)
+
+
+def _tile_casing(pg, x, y, w):
+    cx = x + w / 2
+    pg.rect((cx - 40, y, cx + 40, y + 44), color=(0.5, 0.5, 0.5), fill=WALL)
+    pg.rect((cx - 15, y + 6, cx + 15, y + 44), color=DARK, fill=(1, 1, 1), width=2.5)
+    pg.rect((cx - 12, y + 9, cx + 12, y + 44), color=DARK, fill=WOOD, width=0.6)
+
+
+class Trim(Form):
+    subtitle, item, prefix = "Baseboard & Casing", "UNIT / ROOM", "T"
+    steps = [
+        ("1  BASEBOARD = FEET OF WALL", "Measure along the floor, wall by wall, and add it up. Skip door "
+         "openings. Write total feet.", _tile_base),
+        ("2  CASING = DOOR OPENINGS", "Count the door openings that need trim around them, and if it's "
+         "one side or both sides.", _tile_casing),
+        ("3  ROUND UP", "Round feet up to the next whole foot - we add a little extra for cuts.", None),
+        ("4  PICK THE PROFILE", "Find the shape that matches below (A-J), or check \"Match what's there\".",
+         None),
+    ]
+
+    def intro(self, pg, y):
+        from .catalog import TRIM_PROFILES
+        names = {k: d.split(" ")[0] for k, d in TRIM_PROFILES}
+        return photo_strip(pg, y, "TRIM PROFILES  (pick the letter in each item)", "trim_profile",
+                           TRIM_LETTERS, keys=[x.lower() for x in TRIM_LETTERS], h=46)
+
+    def card(self, pg, n, y):
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        y += 16
+        pg.text(L + 8, y, "ROOM(S):", 8.5, bold=True)
+        pg.field(f"{k} Room", (L + 56, y - 10, L + 250, y + 3), size=8.5)
+        pg.text(L + 262, y, "BASEBOARD:", 8.5, bold=True)
+        pg.field(f"{k} Baseboard Feet", (L + 326, y - 10, L + 370, y + 3), align=1)
+        pg.text(L + 374, y, "feet", 8)
+        pg.text(L + 404, y, "CASING:", 8.5, bold=True)
+        pg.field(f"{k} Casing Openings", (L + 446, y - 10, L + 476, y + 3), align=1)
+        pg.text(L + 480, y, "door openings", 8)
+        y += 16
+        pg.text(L + 8, y, "CASING ON:", 8.5, bold=True)
+        pg.check(f"{k} Casing One Side", L + 70, y, "One side", 8)
+        pg.check(f"{k} Casing Both Sides", L + 140, y, "Both sides", 8)
+        pg.text(L + 262, y, "PROFILE:", 8.5, bold=True)
+        for i, ltr in enumerate(TRIM_LETTERS):
+            pg.check(f"{k} Profile {ltr}", L + 310 + i * 24, y, ltr, 8)
+        y += 14
+        pg.check(f"{k} Profile Match", L + 310, y, "Match what's there / not sure", 8)
+        y3 = notes_row(pg, k, y + 16, x1=R - 6)
+        return y3 + 2
+
+
+# --------------------------------------------------------------------------- door hardware
+def _knob_icon(kind):
+    def draw(pg, r):
+        r = fitz.Rect(r)
+        cx, cy = r.x0 + r.width / 2, r.y0 + r.height / 2
+        pg.rect((cx - 7, r.y0, cx + 7, r.y1), color=DARK, fill=WOOD, width=0.5)
+        pg.p.draw_circle((cx, cy), 6, color=DARK, fill=(0.75, 0.75, 0.75), width=0.6)
+        if kind == "privacy":
+            pg.p.draw_circle((cx, cy), 1.6, color=DARK, fill=(0.3, 0.3, 0.3), width=0.4)
+        if kind == "entry":
+            pg.p.draw_circle((cx, cy - 1), 1.3, color=DARK, fill=DARK, width=0.3)
+            pg.line((cx, cy - 1), (cx, cy + 2.5), color=DARK, width=1)
+    return draw
+
+
+def _tile_backset(pg, x, y, w):
+    cx = x + w / 2
+    pg.rect((cx - 40, y + 6, cx + 30, y + 40), color=DARK, fill=WOOD, width=0.6)
+    pg.p.draw_circle((cx + 10, y + 23), 7, color=DARK, fill=(1, 1, 1), width=0.6)
+    pg.arrow((cx + 10, y + 2), (cx + 30, y + 2), width=0.8)
+    pg.line((cx + 10, y + 2), (cx + 10, y + 23), color=GREY, width=0.4, dashes="[1.5] 0")
+
+
+class DoorHardware(Form):
+    subtitle, item, prefix = "Door Hardware", "UNIT", "H"
+    steps = [
+        ("1  COUNT BY TYPE", "Passage = no lock (closets, halls). Privacy = push-button lock (bed / "
+         "bath). Entry = key lock.", None),
+        ("2  PICK A STYLE + FINISH", "Choose a style from the pictures below and a finish.", None),
+        ("3  BACKSET", "Measure from the edge of the door to the CENTER of the knob hole.", _tile_backset),
+        ("4  NOT SURE?", "Check \"Match what's there\" and we'll match your current hardware.", None),
+    ]
+
+    def intro(self, pg, y):
+        return photo_strip(pg, y, "HARDWARE STYLES", "hardware_style",
+                           ["Marina", "Soma", "Lombard", "Sea Cliff", "Tiburon"], h=52)
+
+    def card(self, pg, n, y):
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 6
+        pg.text(L + 8, top + 10, "HOW MANY OF EACH:", 8.5, bold=True)
+        for i, (lab, kind) in enumerate((("Passage (no lock)", "passage"), ("Privacy (lock)", "privacy"),
+                                         ("Entry (key)", "entry"))):
+            x = L + 14 + i * 118
+            _knob_icon(kind)(pg, fitz.Rect(x, top + 18, x + 26, top + 52))
+            pg.text(x + 32, top + 30, lab, 8, bold=True)
+            pg.field(f"{k} Qty {kind.title()}", (x + 32, top + 34, x + 72, top + 48), align=1)
+        yc = choices(pg, k, CX, top - 4, [
+            ("STYLE:", ["Marina", "Soma", "Lombard", "Sea Cliff", "Tiburon", NOT_SURE], 2),
+            ("FINISH:", ["Satin Nickel", "Matte Black", "Not sure"], 2),
+            ('BACKSET:', ['2-3/8"', '2-3/4"', "Not sure"], 3),
+        ])
+        pg.line((CX - 8, y), (CX - 8, yc), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(top + 66, yc + 8))
+        return y3 + 2
+
+
+# --------------------------------------------------------------------------- bath hardware
+class BathHardware(Form):
+    subtitle, item, prefix = "Bath Hardware", "UNIT", "B"
+    steps = [
+        ("1  COUNT THE PIECES", "How many towel bars, towel rings and paper holders for each unit.", None),
+        ("2  TOWEL BAR SIZE", "Measure the old bar end to end (most are 18\" or 24\").", None),
+        ("3  PICK A COLLECTION", "Choose the collection from the pictures below.", None),
+        ("4  NOT SURE?", "Check \"Match what's there\" and we'll match it.", None),
+    ]
+
+    def intro(self, pg, y):
+        from .catalog import BATH_COLLECTIONS
+        return photo_strip(pg, y, "BATH HARDWARE COLLECTIONS", "bath_collection",
+                           [n for n, _ in BATH_COLLECTIONS], h=52)
+
+    def card(self, pg, n, y):
+        from .catalog import BATH_COLLECTIONS
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 6
+        pg.text(L + 8, top + 10, "HOW MANY OF EACH:", 8.5, bold=True)
+        for i, lab in enumerate(("Towel Bar", "Towel Ring", "Paper Holder")):
+            x = L + 14 + i * 118
+            pg.text(x, top + 28, lab, 8, bold=True)
+            pg.field(f"{k} Qty {lab}", (x + 62, top + 18, x + 98, top + 32), align=1)
+        pg.text(L + 14, top + 52, "TOWEL BAR SIZE:", 8, bold=True)
+        for i, sz in enumerate(('18"', '24"', "Not sure")):
+            pg.check(f"{k} Bar Size {sz}", L + 100 + i * 60, top + 52, sz, 8)
+        yc = choices(pg, k, CX, top - 4, [
+            ("COLLECTION:", [n for n, _ in BATH_COLLECTIONS] + [NOT_SURE], 2),
+        ])
+        pg.line((CX - 8, y), (CX - 8, yc), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(top + 72, yc + 8))
+        return y3 + 2
+
+
+# --------------------------------------------------------------------------- countertops
+def counter_plan(pg, r, layout, labels=True):
+    """Top view of a countertop: straight / L / U / island, back edge along the wall."""
+    r = fitz.Rect(r)
+    d = min(r.width, r.height) * 0.28
+    top = (0.86, 0.84, 0.80)
+    if labels:
+        pg.rect((r.x0, r.y0, r.x1, r.y0 + 4), color=None, fill=(0.6, 0.6, 0.6))   # wall
+    shapes = {"Straight": [(r.x0, r.y0 + 4, r.x1, r.y0 + 4 + d)],
+              "L-Shape": [(r.x0, r.y0 + 4, r.x1, r.y0 + 4 + d), (r.x0, r.y0 + 4, r.x0 + d, r.y1)],
+              "U-Shape": [(r.x0, r.y0 + 4, r.x1, r.y0 + 4 + d), (r.x0, r.y0 + 4, r.x0 + d, r.y1),
+                          (r.x1 - d, r.y0 + 4, r.x1, r.y1)],
+              "Island": [(r.x0 + r.width * 0.15, r.y0 + r.height * 0.35, r.x1 - r.width * 0.15,
+                          r.y0 + r.height * 0.35 + d)]}[layout]
+    for s_ in shapes:
+        pg.rect(s_, color=DARK, fill=top, width=0.6)
+
+
+class Countertops(Form):
+    subtitle, item, prefix = "Countertops", "COUNTERTOP", "K"
+    max_pages = 2
+    steps = [
+        ("1  PICK THE SHAPE", "Straight, L or U - the side against the wall is A, then B, then C.",
+         lambda pg, x, y, w: counter_plan(pg, fitz.Rect(x + w / 2 - 30, y, x + w / 2 + 30, y + 42), "U-Shape")),
+        ("2  MEASURE ALONG THE WALL", "Measure each run along the wall, end to end - include the corner.",
+         None),
+        ('3  READ TO 1/8"', None, tile_ruler),
+        ("4  DEPTH + SINK", "Depth = wall to front edge. Sink = left end to the CENTER of the sink.", None),
+    ]
+
+    def card(self, pg, n, y):
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 8
+        # big U drawing with a box on each run (fill the ones you have)
+        r = fitz.Rect(L + 40, top + 18, L + 330, top + 180)
+        counter_plan(pg, r, "U-Shape")
+        d = min(r.width, r.height) * 0.28
+        pg.text(r.x0 + r.width / 2, r.y0 - 4, "WALL", 6.5, bold=True, color=DARK, center=True)
+        ay = r.y0 + 4 + d / 2
+        pg.arrow((r.x0 + 1, ay), (r.x1 - 1, ay))
+        pg.inches(f"{k} Run A", r.x0 + r.width / 2, ay, "A  (back wall)")
+        bx = r.x0 + d / 2
+        pg.arrow((bx, r.y0 + 5), (bx, r.y1 - 1), color=BLUE)
+        pg.inches(f"{k} Run B", bx + 46, r.y0 + r.height * 0.70, "B  (left side)", BLUE)
+        cx_ = r.x1 - d / 2
+        pg.arrow((cx_, r.y0 + 5), (cx_, r.y1 - 1), color=GREEN)
+        pg.inches(f"{k} Run C", cx_ - 46, r.y0 + r.height * 0.70, "C  (right side)", GREEN)
+        pg.text(L + 40, r.y1 + 12, "Straight top? Fill A only.  L-shape? Fill A + B.", 7, color=DARK)
+        y2 = r.y1 + 30
+        lw = pg.text(L + 22, y2 + 3, "DEPTH:", 8.5, bold=True)
+        pg.inches(f"{k} Depth", L + 22 + lw + 40, y2)
+        pg.text(L + 150, y2 + 3, "SINK CENTER FROM LEFT END:", 8.5, bold=True)
+        pg.inches(f"{k} Sink Center", L + 318, y2)
+        yc = choices(pg, k, CX, top - 4, [
+            ("ROOM:", ["Kitchen", "Bathroom vanity"], 2),
+            ("SHAPE:", ["Straight", "L-Shape", "U-Shape", "Island"], 2),
+            ("MATERIAL:", ["Laminate", "Synthetic", "Custom", NOT_SURE], 2),
+            ("SINK:", ["Single bowl", "Double bowl", "Vanity bowl", "No sink"], 2),
+            ("BACKSPLASH (on the wall):", ["Yes", "No"], 2),
+            ("END SPLASH:", ["None", "Left", "Right", "Both"], 2),
+        ])
+        pg.text(CX, yc + 12, "Color: we'll bring samples.", 7.5, color=DARK)
+        yc += 16
+        pg.line((CX - 8, y), (CX - 8, max(yc, y2 + 12)), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(y2 + 24, yc + 8))
+        return y3 + 2
+
+
+# --------------------------------------------------------------------------- cabinets
+def cabinet_icon(kind):
+    def draw(pg, r):
+        r = fitz.Rect(r)
+        body = (0.97, 0.96, 0.93)
+        if kind in ("Wall Cabinet",):
+            r = fitz.Rect(r.x0, r.y0, r.x1, r.y0 + r.height * 0.7)
+        pg.rect(r, color=DARK, fill=body, width=0.6)
+        w, h = r.width, r.height
+        if kind == "Drawer Base":
+            for i in range(3):
+                pg.rect((r.x0 + 2, r.y0 + 2 + i * (h - 4) / 3, r.x1 - 2, r.y0 + 2 + (i + 1) * (h - 4) / 3 - 1),
+                        color=DARK, width=0.4)
+            return
+        dtop = r.y0 + 2
+        if kind in ("Base Cabinet", "Single Box", "Double Box"):
+            pg.rect((r.x0 + 2, r.y0 + 2, r.x1 - 2, r.y0 + h * 0.22), color=DARK, width=0.4)
+            dtop = r.y0 + h * 0.22 + 2
+        doors = 1 if kind in ("Single Box",) else 2
+        if kind == "Extended Double Box with Sink":
+            doors = 3
+        dw = (w - 4) / doors
+        for i in range(doors):
+            pg.rect((r.x0 + 2 + i * dw, dtop, r.x0 + 2 + (i + 1) * dw - 1, r.y1 - 2), color=DARK, width=0.4)
+        if "Sink" in kind:
+            pg.rect((r.x0 + w * 0.3, r.y0 - 3, r.x1 - w * 0.3, r.y0 + 1), color=DARK, fill=(0.8, 0.8, 0.85),
+                    width=0.4)
+    return draw
+
+
+def cabinet_measure(pg, k, x, top):
+    """Front of a cabinet + side view, with width / height / depth boxes on the arrows."""
+    f = fitz.Rect(x + 30, top + 26, x + 170, top + 150)
+    pg.rect(f, color=DARK, fill=(0.97, 0.96, 0.93), width=1)
+    pg.rect((f.x0 + 4, f.y0 + 4, f.x1 - 4, f.y0 + 26), color=DARK, width=0.5)
+    pg.rect((f.x0 + 4, f.y0 + 30, f.x0 + f.width / 2 - 1, f.y1 - 4), color=DARK, width=0.5)
+    pg.rect((f.x0 + f.width / 2 + 1, f.y0 + 30, f.x1 - 4, f.y1 - 4), color=DARK, width=0.5)
+    pg.text(f.x0 + f.width / 2, f.y1 + 10, "FRONT", 6.5, bold=True, color=DARK, center=True)
+    pg.arrow((f.x0, f.y0 - 10), (f.x1, f.y0 - 10))
+    pg.inches(f"{k} Width", f.x0 + f.width / 2, f.y0 - 10, "WIDTH")
+    pg.arrow((f.x1 + 12, f.y0), (f.x1 + 12, f.y1), color=BLUE)
+    pg.inches(f"{k} Height", f.x1 + 12, f.y0 + f.height * 0.55, "HEIGHT", BLUE)
+    sv = fitz.Rect(x + 232, top + 26, x + 300, top + 150)
+    pg.rect(sv, color=DARK, fill=(0.93, 0.92, 0.88), width=1)
+    pg.rect((sv.x0 - 6, sv.y0, sv.x0, sv.y1), color=None, fill=(0.6, 0.6, 0.6))
+    pg.text(sv.x0 + sv.width / 2, sv.y1 + 10, "SIDE", 6.5, bold=True, color=DARK, center=True)
+    pg.arrow((sv.x0, sv.y1 - 18), (sv.x1, sv.y1 - 18), color=GREEN)
+    pg.inches(f"{k} Depth", sv.x0 + sv.width / 2, sv.y1 - 38, "DEPTH (wall to front)", GREEN)
+    return top + 166
+
+
+class PrefabCabinets(Form):
+    subtitle, item, prefix = "Pre-Fab Cabinets", "CABINET", "F"
+    steps = [
+        ("1  WHAT KIND?", "Kitchen cabinet or bathroom vanity - then pick the box that matches.", None),
+        ("2  MEASURE THE OLD BOX", "Width across the front, height floor (or bottom) to top, depth "
+         "wall to front.", None),
+        ('3  READ TO 1/8"', None, tile_ruler),
+        ("4  PICK THE STYLE", "Choose a door style from the pictures below.", None),
+    ]
+
+    def intro(self, pg, y):
+        from .catalog import CABINET_STYLES
+        return photo_strip(pg, y, "CABINET DOOR STYLES", "cabinet_style", CABINET_STYLES, h=50)
+
+    def card(self, pg, n, y):
+        from .catalog import CABINET_STYLES
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 6
+        yb = cabinet_measure(pg, k, L + 6, top) + 10
+        pg.text(L + 8, yb + 6, "KITCHEN:", 8.5, bold=True)
+        kit = ["Base Cabinet", "Sink Base", "Drawer Base", "Wall Cabinet"]
+        visual_options(pg, k, "Item", L + 64, yb - 6, 300, [(t, cabinet_icon(t)) for t in kit], icon_h=26,
+                       aspect=1.3)
+        yb += 46
+        pg.text(L + 8, yb + 6, "VANITY:", 8.5, bold=True)
+        van = ["Single Box", "Double Box", "Double Box with Sink", "Extended Double Box with Sink"]
+        labels = ["Single Box", "Double Box", "Double + Sink", "Ext. Double + Sink"]
+        visual_options(pg, k, "Item", L + 64, yb - 6, 300,
+                       [(lab, cabinet_icon(t)) for lab, t in zip(labels, van)], icon_h=26, aspect=1.3)
+        yb += 46
+        yc = choices(pg, k, CX, top - 4, [
+            ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
+            ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
+            ("DRAWERS INCLUDED:", ["Yes", "No"], 2),
+            ("DOORS ONLY (keep the box)?", ["Yes", "No"], 2),
+        ])
+        pg.line((CX - 8, y), (CX - 8, max(yc, yb)), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(yb + 10, yc + 8))
+        return y3 + 2
+
+
+def _tile_wall_space(pg, x, y, w):
+    cx = x + w / 2
+    pg.rect((cx - 46, y, cx + 46, y + 42), color=(0.5, 0.5, 0.5), fill=WALL)
+    pg.rect((cx - 40, y + 22, cx + 40, y + 42), color=DARK, fill=(0.97, 0.96, 0.93), width=0.5)
+    pg.arrow((cx - 46, y + 15), (cx + 46, y + 15), width=0.8)
+
+
+class CustomCabinets(Form):
+    subtitle, item, prefix = "Custom Cabinets", "CABINET", "M"
+    steps = [
+        ("1  MEASURE THE SPACE", "Measure the wall space the cabinet fills, wall to wall (or to the next "
+         "cabinet).", _tile_wall_space),
+        ("2  HEIGHT + DEPTH", "Height floor to top (wall cabinets: top to bottom). Depth wall to front.",
+         None),
+        ('3  READ TO 1/8"', None, tile_ruler),
+        ("4  TELL US THE LAYOUT", "How many doors and drawers - or snap a photo and email it with this form.",
+         None),
+    ]
+
+    def intro(self, pg, y):
+        from .catalog import CABINET_STYLES
+        return photo_strip(pg, y, "CABINET DOOR STYLES", "cabinet_style", CABINET_STYLES, h=50)
+
+    def card(self, pg, n, y):
+        from .catalog import CABINET_STYLES
+        k = f"{self.prefix}{n}"
+        y = card_bar(pg, y, f"{self.item} {n}", k)
+        top = y + 6
+        yb = cabinet_measure(pg, k, L + 6, top)
+        pg.text(L + 8, yb + 6, "DOORS:", 8.5, bold=True)
+        pg.field(f"{k} Doors", (L + 52, yb - 4, L + 82, yb + 9), align=1)
+        pg.text(L + 98, yb + 6, "DRAWERS:", 8.5, bold=True)
+        pg.field(f"{k} Drawers", (L + 152, yb - 4, L + 182, yb + 9), align=1)
+        pg.text(L + 198, yb + 6, "FINISH / COLOR:", 8.5, bold=True)
+        pg.field(f"{k} Finish", (L + 276, yb - 4, CX - 14, yb + 9), size=8.5)
+        yb += 18
+        yc = choices(pg, k, CX, top - 4, [
+            ("ROOM:", ["Kitchen", "Bathroom vanity"], 2),
+            ("CABINET:", ["Base", "Sink base", "Wall", "Tall / pantry", "Vanity"], 2),
+            ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
+            ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
+        ])
+        pg.line((CX - 8, y), (CX - 8, max(yc, yb)), color=GREY, width=1)
+        y3 = notes_row(pg, k, max(yb + 10, yc + 8))
+        return y3 + 2
+
+
+
+FORMS = [HorizontalBlinds, VerticalBlinds, RollerShades, InteriorDoors, ExteriorDoors, ClosetDoors,
+         WindowScreens, PatioScreens, SlidingPatioDoors, Trim, DoorHardware, BathHardware, Countertops,
+         PrefabCabinets, CustomCabinets]
 
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     for cls in FORMS:
         f = cls()
-        print(f.build(os.path.join(OUT_DIR, f"Manager Order Form - {f.subtitle}.pdf")))
+        print(f.build(os.path.join(OUT_DIR, f"Customer Order Form - {f.subtitle}.pdf")))
 
 
 if __name__ == "__main__":

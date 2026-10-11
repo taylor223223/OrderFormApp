@@ -245,3 +245,10 @@ a.stat{color:inherit;text-decoration:none}
 .holdbanner a{color:#b91c1c;font-weight:600;margin-left:6px}
 .tag.holdtag{background:#dc2626;color:#fff;border-color:#dc2626;font-weight:700}
 .stat.hold .n{color:#b91c1c}
+
+/* order forms library */
+.formrow{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line)}
+.formgroup{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 0 2px}
+.measbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 14px}
+.measbox .chip{background:#fff7ed;border:1px solid #fdba74;border-radius:999px;padding:3px 10px;font-size:13px;text-decoration:none;color:inherit}
+.measbox .none{color:var(--muted);font-size:13px}

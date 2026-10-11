@@ -18,6 +18,10 @@
 <div class="miss row" style="margin-bottom:14px"><span>Missing: <b>{{ missing|join(', ') }}</b></span><span class="spacer"></span>
   <form method="post" action="{{ url_for('customers.check', cid=c.id) }}"><button class="btn sm">Look in previous orders</button></form></div>
 {% endif %}
+<div class="measbox"><b>📏 Measurements on file:</b>
+{% for m in meas_summary %}<a class="chip" href="{{ url_for('customers.view', cid=c.id, tab='layouts') }}" title="{{ m.units }} unit(s), {{ m.fps }} floorplan(s)">{{ m.label }} · {{ m.n }}</a>
+{% else %}<span class="none">None yet - add them from an order, a floorplan, or paste in company history.</span>{% endfor %}
+<a class="btn sm" style="margin-left:auto" href="{{ url_for('library.index', customer=c.id) }}">Email blank order forms</a></div>
 <div class="tabs">
   {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] %}
   <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}" style="--c:{{ col }}">{{ l }}</a>{% endfor %}

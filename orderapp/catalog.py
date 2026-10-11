@@ -42,6 +42,11 @@ TRIM_PROFILES = [
     ("J", 'Victorian/Newport Base 329MUL 9/16" x 3-7/8"'),
 ]
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
+COUNTERTOP_MATERIALS = ["Laminate", "Synthetic", "Custom"]
+PREFAB_KITCHEN_ITEMS = ["Base Cabinet", "Sink Base", "Drawer Base", "Wall Cabinet"]
+PREFAB_VANITY_ITEMS = ["Single Box", "Double Box", "Double Box with Sink", "Extended Double Box with Sink",
+                       "Doors Only"]
+CLOSET_TYPES = ["Bypass (standard)", "Bypass (custom)", "Bi-Fold (standard)", "Bi-Fold (custom)"]
 NEW_DOOR_TYPES = ["5 Panel", "2 Panel", "2 Panel Arch", "2 Panel Arch Plank", "5 Panel Shaker",
                   "3 Panel Shaker Equal", "3 Panel Shaker Craftsman", "2 Panel Shaker", "1 Panel Shaker",
                   "HC Primecoat"]
@@ -470,7 +475,9 @@ FORMS = {
 # In the app they're merged into one Door form and one Vertical Blind form (see MERGED below);
 # the app prints whichever paper version fits what was ordered.
 FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
-              "roller_shade", "trim", "door_hardware", "bath_hardware", "cabinet", "closet_shower"]
+              "roller_shade", "trim", "door_hardware", "bath_hardware", "countertop", "cabinet_prefab",
+              "cabinet_custom", "sliding_patio_door", "closet_bifold"]
+RETIRED_FORMS = ["cabinet", "closet_shower"]   # still open old orders; no longer offered for new ones
 
 # --------------------------------------------------------------------------
 # Products serviced (for saved unit / floorplan measurements)
@@ -493,8 +500,9 @@ PRODUCTS = {
     "interior_door": {"label": "Interior Door", "forms": ["door", "new_door"]},
     "entry_door": {"label": "Entry / Exterior Door", "forms": ["door", "new_door", "prehung"]},
     "prehung_door": {"label": "Pre-Hung Door", "forms": ["prehung"]},
-    "bypass_door": {"label": "Bi-Pass Closet Door", "forms": ["bypass"]},
-    "closet_door": {"label": "Closet Door (bifold / other)", "forms": ["bypass", "closet_shower", "door"]},
+    "bypass_door": {"label": "Bi-Pass Closet Door", "forms": ["bypass", "closet_bifold"]},
+    "sliding_patio_door": {"label": "Sliding Patio Door", "forms": ["sliding_patio_door"]},
+    "closet_door": {"label": "Closet / Bi-Fold Door", "forms": ["closet_bifold", "bypass"]},
     "storage_door": {"label": "Storage / Utility Door", "forms": ["door", "new_door"]},
     "garage_door": {"label": "Garage Door", "forms": []},
     "screen_door": {"label": "Screen Door", "forms": ["screen_door"]},
@@ -506,11 +514,9 @@ PRODUCTS = {
     "casing": {"label": "Casing", "forms": ["trim"]},
     "door_hardware": {"label": "Door Hardware", "forms": ["door_hardware"]},
     "bath_hardware": {"label": "Bath Hardware", "forms": ["bath_hardware"]},
-    "cabinet": {"label": "Cabinet", "forms": ["cabinet"]},
-    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet"]},
-    "countertop": {"label": "Countertop", "forms": ["cabinet"]},
-    "wardrobe_door": {"label": "Wardrobe / Mirrored Door", "forms": ["closet_shower"]},
-    "shower_door": {"label": "Shower Door / Enclosure", "forms": ["closet_shower"]},
+    "cabinet": {"label": "Cabinet (kitchen / vanity)", "forms": ["cabinet_prefab", "cabinet_custom"]},
+    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet_custom", "cabinet_prefab"]},
+    "countertop": {"label": "Countertop", "forms": ["countertop"]},
     "other": {"label": "Other", "forms": []},
 }
 
@@ -727,10 +733,101 @@ GENERATED = {
             ] + _mirror_frame_fields() + [_LINE_COMMENTS]],
         "products": ["closet_door", "wardrobe_door", "shower_door"],
     },
+    "countertop": {   # same look as the company's Door / Bi-Pass forms
+        "title": "Countertop Order Form", "style": "door", "section": "Countertop Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
+            _gc("ct_room", "Room", ["Kitchen", "Bathroom Vanity"]),
+            _gc("ct_material", "Material", COUNTERTOP_MATERIALS),
+            _gc("ct_layout", "Layout", ["Straight", "L-Shape", "U-Shape", "Island"]),
+            _g("length", "Run A Length (in)", measure=True),
+            _g("length_b", "Run B Length (in)", measure=True, show_if=("ct_layout", ["L-Shape", "U-Shape"])),
+            _g("length_c", "Run C Length (in)", measure=True, show_if=("ct_layout", ["U-Shape"])),
+            _g("depth", "Depth (in)", measure=True),
+            _gc("backsplash", "Backsplash", ["Yes", "No"]),
+            _gc("end_splash", "End Splash", ["None", "Left", "Right", "Both"]),
+            _gc("sink", "Sink Cutout", ["None", "Single Bowl", "Double Bowl", "Vanity Bowl"]),
+            _g("sink_center", "Sink Center From Left End (in)", measure=True,
+               show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
+            _g("ct_color", "Color / Edge *", placeholder="* countertop samples coming soon - type it in"),
+            _LINE_COMMENTS]],
+        "products": ["countertop"],
+    },
+    "cabinet_prefab": {   # same look as the company's Door / Bi-Pass forms
+        "title": "Pre-Fab Cabinet Order Form", "style": "door", "section": "Cabinet Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
+            _gc("cab_room", "Cabinet Type", ["Kitchen", "Bathroom Vanity"]),
+            _gc("cab_item", "Item", PREFAB_KITCHEN_ITEMS + PREFAB_VANITY_ITEMS),
+            _gc("style", "Door Style", CABINET_STYLES, photos="cabinet_style"),
+            _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
+            _g("height", "Height (in)", measure=True),
+            _gc("hinge_side", "Door Hinge Side", ["Left", "Right", "Pair"]),
+            _gc("drawers", "Drawers Included", ["Yes", "No"]),
+            _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
+            _LINE_COMMENTS]],
+        "products": ["cabinet", "cabinet_door"],
+    },
+    "cabinet_custom": {   # same look as the company's Door / Bi-Pass forms
+        "title": "Custom Cabinet Order Form", "style": "door", "section": "Cabinet Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
+            _gc("cab_room", "Cabinet Type", ["Kitchen", "Bathroom Vanity"]),
+            _gc("cab_kind", "Cabinet", ["Base", "Sink Base", "Wall", "Tall / Pantry", "Vanity"]),
+            _gc("style", "Door Style", CABINET_STYLES + ["Other"], photos="cabinet_style",
+                other_option="Other", other_field="style_other"),
+            _g("style_other", "Style - Other", show_if=("style", ["Other"])),
+            _g("cab_finish", "Finish / Color"),
+            _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
+            _g("height", "Height (in)", measure=True),
+            _g("doors_qty", "Number of Doors", w=4), _g("drawers_qty", "Number of Drawers", w=4),
+            _gc("hinge_side", "Door Hinge Side", ["Left", "Right", "Pair"]),
+            _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
+            _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
+            _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
+            _LINE_COMMENTS]],
+        "products": ["cabinet", "cabinet_door"],
+    },
+    "sliding_patio_door": {   # same look as the company's Door / Bi-Pass forms
+        "title": "Sliding Patio Door Order Form", "style": "door", "section": "Patio Door Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
+            _g("width", "Opening Width (in)", measure=True), _g("height", "Opening Height (in)", measure=True),
+            _gc("config", "Panel That Slides (from outside)", ["XO - Left Slides", "OX - Right Slides"]),
+            _gc("frame", "Frame", ["Vinyl", "Aluminum"]),
+            _gc("frame_color", "Frame Color", ["White", "Tan / Almond", "Bronze", "Other"],
+                other_option="Other", other_field="frame_color_other"),
+            _g("frame_color_other", "Frame Color - Other", show_if=("frame_color", ["Other"])),
+            _gc("glass", "Glass", ["Clear", "Low-E"]),
+            _gc("grids", "Grids", ["Yes", "No"]),
+            _gc("screen", "Screen Door Included", ["Yes", "No"]),
+            _LINE_COMMENTS]],
+        "products": ["sliding_patio_door"],
+    },
+    "closet_bifold": {   # same look as the company's Door / Bi-Pass forms
+        "title": "Closet & Bi-Fold Door Order Form", "style": "door", "section": "Closet Door Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("closet_type", "Door Type", CLOSET_TYPES),
+            _gc("style", "Door Style", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", "Mirrored", "Other"],
+                other_option="Other", other_field="style_other"),
+            _g("style_other", "Style - Other", show_if=("style", ["Other"])),
+            _gc("panels", "Number of Panels", ["2", "4"]),
+            _gc("finish", "Finish", ["Primecoat", "White", "Other"], other_option="Other",
+                other_field="finish_other"),
+            _g("finish_other", "Finish - Other", show_if=("finish", ["Other"])),
+            _g("width", "Opening Width (in)", measure=True), _g("height", "Opening Height (in)", measure=True),
+            _gc("track", "Track & Hardware Included", ["Yes", "No"]),
+            _LINE_COMMENTS]],
+        "products": ["closet_door", "bypass_door"],
+    },
 }
 GENERATED_FILES = {"roller_shade": "OF-Roller Shade.pdf", "trim": "OF-Baseboard and Casing.pdf",
                    "door_hardware": "OF-Door Hardware.pdf", "bath_hardware": "OF-Bath Hardware.pdf",
-                   "cabinet": "OF-Cabinet and Countertop.pdf", "closet_shower": "OF-Closet and Shower Door.pdf"}
+                   "cabinet": "OF-Cabinet and Countertop.pdf", "closet_shower": "OF-Closet and Shower Door.pdf",
+                   "countertop": "OF-Countertop.pdf", "cabinet_prefab": "OF-Pre-Fab Cabinet.pdf",
+                   "cabinet_custom": "OF-Custom Cabinet.pdf", "sliding_patio_door": "OF-Sliding Patio Door.pdf",
+                   "closet_bifold": "OF-Closet and Bi-Fold Door.pdf"}
 
 
 def _bind(fields, n):

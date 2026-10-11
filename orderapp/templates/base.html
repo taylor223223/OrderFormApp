@@ -22,6 +22,7 @@
     {% set ep = request.endpoint or '' %}
     <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}" style="--c:#f59e0b"><span class="ic">🏠</span>Dashboard</a>
     <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor') }}" style="--c:#ea580c"><span class="ic">📝</span>New Order</a>
+    <a href="{{ url_for('library.index') }}" class="{{ 'on' if ep.startswith('library.') }}" style="--c:#7c3aed"><span class="ic">📄</span>Order Forms</a>
     <a href="{{ url_for('photos.field_order') }}" class="{{ 'on' if ep=='photos.field_order' }}" style="--c:#e11d48"><span class="ic">📷</span>Photo Order</a>
     <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}" style="--c:#d97706"><span class="ic">🏢</span>Customers</a>
     <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
