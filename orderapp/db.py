@@ -102,6 +102,13 @@ DEFAULT_SETTINGS = {
     "commission_basis": "sales",  # sales | margin
     "monthly_goal": "",
     "demo": "",
+    # quotes
+    "quote_valid_days": "30",
+    "quote_terms": "Prices are good until the date above. Sales tax and delivery charges, if any, are added on the "
+                   "invoice. Custom-sized items are made to order. Thank you for the opportunity!",
+    # morning delivery list email
+    "delivery_subject_word": "Deliver",
+    "delivery_auto": "1",
 }
 
 STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
@@ -180,6 +187,7 @@ MIGRATIONS = {
     "route_stops": {"products": "TEXT", "done_at": "TEXT"},
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
+    "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
 }
 
 # quick picks for "what am I estimating" on a route stop
@@ -193,6 +201,12 @@ def init_db(path=None):
     con.executescript(CRM_SCHEMA)
     from .sales import SALES_SCHEMA
     con.executescript(SALES_SCHEMA)
+    from .pricing import PRICE_SCHEMA
+    con.executescript(PRICE_SCHEMA)
+    from .quotes import QUOTE_SCHEMA
+    con.executescript(QUOTE_SCHEMA)
+    from .deliveries import DELIVERY_SCHEMA
+    con.executescript(DELIVERY_SCHEMA)
     for table, cols in MIGRATIONS.items():
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

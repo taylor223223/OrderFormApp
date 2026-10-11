@@ -13,10 +13,13 @@
 
 <div class="tablewrap" style="margin-top:12px">
 {% if rows %}<table>
-<thead><tr><th>Account</th><th style="text-align:right">Balance</th><th>Rep</th><th>Terms</th><th>On hold since</th><th>Notes / linked property</th><th></th></tr></thead>
+<thead><tr><th>Account</th><th style="text-align:right">Balance</th><th>How late</th><th>Open in the app</th><th>Rep</th><th>Terms</th><th>On hold since</th><th>Notes / linked property</th><th></th></tr></thead>
 <tbody>{% for r in rows %}<tr>
 <td><b>{{ r.name }}</b>{% if r.customer_id %}<br><a class="small" href="{{ url_for('customers.view', cid=r.customer_id) }}">Open {{ r.cname }}</a>{% else %}<br><span class="small muted">Not linked to a property in the app</span>{% endif %}</td>
 <td style="text-align:right;font-weight:700;color:#b91c1c">${{ '{:,.2f}'.format(r.balance or 0) }}</td>
+<td class="small nowrap">{% if r.days_late %}<b>{{ r.days_late }}+ days</b><br>{% endif %}{% for k, v in (aging.get(r.id) or {}).items() %}{{ k }}: ${{ '{:,.0f}'.format(v) }}<br>{% endfor %}{% if r.last_payment %}<span class="muted">Last paid {{ r.last_payment }}</span>{% endif %}</td>
+<td class="small">{% set ex = exposure.get(r.id) %}{% if ex %}{% for o in ex.orders %}<a href="{{ url_for('orders.view', oid=o.id) }}" class="tag warn" title="{{ o.title }}">Order #{{ o.id }} · {{ o.status }}</a> {% endfor %}{% for qq in ex.quotes %}<a href="{{ url_for('quotes.edit', qid=qq.id) }}" class="tag">{{ qq.number }} · {{ qq.status }}</a> {% endfor %}
+{% if not ex.orders and not ex.quotes %}<span class="muted">Nothing open</span>{% endif %}{% if ex.last_order %}<div class="muted">Last order {{ ex.last_order }}</div>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
 <td>{{ r.rep or '' }}</td>
 <td><span class="tag holdtag">{{ r.terms or 'ACCOUNT HOLD' }}</span></td>
 <td class="small">{{ r.since or '' }}</td>
@@ -31,7 +34,7 @@
 <td><form method="post" action="{{ url_for('holds.clear', hid=r.id) }}" onsubmit="return confirm('Take {{ r.name|e }} off hold? (They paid / are current)')">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm primary">Paid - take off hold</button></form></td>
 </tr>{% endfor %}</tbody>
-<tfoot><tr><th>Total</th><th style="text-align:right">${{ '{:,.2f}'.format(total) }}</th><th colspan="5"></th></tr></tfoot>
+<tfoot><tr><th>Total</th><th style="text-align:right">${{ '{:,.2f}'.format(total) }}</th><th colspan="7"></th></tr></tfoot>
 </table>{% else %}<p class="muted">No accounts on hold. Paste the hold list from the office below.</p>{% endif %}
 </div>
 
@@ -39,7 +42,7 @@
 <form class="card" method="post" action="{{ url_for('holds.import_report') }}" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h3 style="margin-top:0">Update from the office's hold list</h3>
-  <p class="muted small">Paste the rows straight from the report (Customer, Balance, Rep, Terms) or pick the CSV. Accounts already on the list get their balance updated.</p>
+  <p class="muted small">Paste the rows straight from the report (Customer, Balance, Rep, Terms) or pick the CSV. A CSV with column names is read by name - aging columns (Current, 1-30, 31-60, 61-90, Over 90), Days past due and Last payment are kept too. Accounts already on the list get updated.</p>
   <textarea name="report" rows="7" placeholder="Customer Balance Total Rep Terms&#10;Example Apartments 1,234.56 TA ACCOUNT HOLD"></textarea>
   <div class="row" style="margin-top:8px"><input type="file" name="file" accept=".csv,.txt" style="max-width:260px"></div>
   <label class="row small" style="gap:6px;margin-top:8px"><input type="checkbox" name="clear_missing" value="1" style="width:auto"> Take accounts that aren't on this list off hold (they paid)</label>

@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Delivery list{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('orders.tracking') }}">← Order Tracking</a></div><h1>Morning delivery list</h1>
+<div class="muted">The email of orders going out on the truck: matched to your {{ open_n }} open order(s) by PO #, sales order # or customer name, and marked <b>Delivered</b>.</div></div>
+<form method="post"><input type="hidden" name="check_email" value="1"><button class="btn primary">Check Outlook now</button></form></div>
+<div class="card small">{% if word %}The app reads today's email with <b>"{{ word }}"</b> in the subject every time it checks email{% if auto %} and marks sure matches (PO # or sales order #) Delivered on its own{% else %}; you confirm every match{% endif %}. Change it in Settings.{% else %}Automatic reading is off - set the subject word in Settings.{% endif %}
+ Name-only matches always wait for you to tick them.</div>
+<form method="post" enctype="multipart/form-data" class="card"><h3 style="margin-top:0">Or paste / attach the list</h3>
+<textarea name="text" rows="5" placeholder="Paste the delivery email here"></textarea>
+<div class="row" style="margin-top:8px"><input type="file" name="file" accept=".pdf,.csv,.txt,.xlsx"><button class="btn">Match orders</button></div></form>
+{% for c in checks %}
+<form method="post" class="card"><input type="hidden" name="apply" value="1"><input type="hidden" name="check_id" value="{{ c.id }}">
+<div class="row" style="justify-content:space-between"><h3 style="margin:0">{{ c.subject or 'Delivery list' }} <span class="small muted">· {{ c.received or c.created[:16] }} · {{ c.source }}</span></h3>
+{% if c.results %}<button class="btn sm primary">Mark checked Delivered</button>{% endif %}</div>
+<div class="tablewrap" style="margin-top:8px"><table><tr><th></th><th>Order</th><th>Customer</th><th>PO / SO #</th><th>Matched by</th><th>Now</th><th>Line on the list</th></tr>
+{% for r in c.results %}<tr><td><input type="checkbox" name="order_id" value="{{ r.order_id }}" {{ 'checked' if r.sure and r.now != 'Delivered' }} {{ 'disabled' if r.now == 'Delivered' }}></td>
+<td><a href="{{ url_for('orders.view', oid=r.order_id) }}">#{{ r.order_id }}</a> <span class="small muted">{{ r.title or '' }}</span></td><td>{{ r.cname }}</td><td class="small">{{ r.po }}{% if r.vendor_ref %} / {{ r.vendor_ref }}{% endif %}</td>
+<td><span class="tag {{ 'ok' if r.sure else 'warn' }}">{{ r.how }}{{ '' if r.sure else ' - check' }}</span></td><td><span class="tag">{{ r.now }}</span></td><td class="small muted">{{ r.line }}</td></tr>
+{% else %}<tr><td class="empty" colspan="7">No open orders matched this list.</td></tr>{% endfor %}
+</table></div>
+{% if c.unmatched %}<details class="small" style="margin-top:6px"><summary>{{ c.unmatched|length }} line(s) on the list that didn't match an open order</summary><ul>{% for u in c.unmatched %}<li>{{ u }}</li>{% endfor %}</ul></details>{% endif %}
+</form>
+{% else %}<div class="card empty">No delivery lists read yet.</div>{% endfor %}
+{% endblock %}

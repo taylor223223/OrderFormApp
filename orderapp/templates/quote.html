@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% block title %}Quote {{ qu.number }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('quotes.index') }}">← Quotes</a>{% if qu.customer_id %} · <a href="{{ url_for('customers.view', cid=qu.customer_id) }}">{{ qu.cname }}</a> · <a href="{{ url_for('quotes.prices', cid=qu.customer_id) }}">Account prices</a>{% endif %}</div>
+<h1>Quote {{ qu.number }} <span class="tag {{ 'ok' if qu.status in ('Approved','Ordered') else ('warn' if qu.status == 'Sent' else '') }}">{{ qu.status }}</span></h1>
+<div class="muted">{{ qu.cname }}{% if qu.units and qu.floorplan_id %} · turn kit for {{ qu.units }} unit(s){% endif %}{% if qu.sent_at %} · sent {{ qu.sent_at[:10] }}{% endif %}</div></div>
+<div class="row" style="gap:6px">
+  {% for s in ['Sent','Approved','Lost'] %}{% if qu.status != s and qu.status != 'Ordered' %}<form method="post" action="{{ url_for('quotes.status', qid=qu.id) }}"><input type="hidden" name="status" value="{{ s }}"><button class="btn sm">Mark {{ s }}</button></form>{% endif %}{% endfor %}
+  {% if qu.status in ('Approved', 'Sent') %}<form method="post" action="{{ url_for('quotes.to_order', qid=qu.id) }}"><button class="btn sm primary" title="Make draft orders on the company forms from this quote">Turn into orders</button></form>{% endif %}
+</div></div>
+{% if hold %}{% include '_hold_banner.html' %}{% endif %}
+{% if order_ids %}<div class="card small">Orders made from this quote: {% for i in order_ids %}<a href="{{ url_for('orders.view', oid=i) }}">#{{ i }}</a> {% endfor %}</div>{% endif %}
+
+<div class="grid g2" style="margin-bottom:12px">
+  <form method="post" action="{{ url_for('quotes.add_from', qid=qu.id) }}" class="card"><h3 style="margin-top:0">Turn kit: add a floorplan</h3>
+    {% if fps %}<div class="row" style="gap:8px;align-items:flex-end"><div style="flex:2"><label>Floorplan</label><select name="floorplan">{% for f in fps %}<option value="{{ f.id }}">{{ f.name }} - {{ f.n }} item(s) on file{% if f.units %}, {{ f.units }} unit(s){% endif %}</option>{% endfor %}</select></div>
+    <div style="flex:1"><label>Units</label><input name="units" type="number" min="1" value="1"></div><button class="btn">Add</button></div>
+    <div class="small muted" style="margin-top:4px">Every blind, door, screen, closet, cabinet and baseboard foot saved for that floorplan, times the number of units.</div>
+    {% else %}<div class="small muted">No floorplans for this customer yet.</div>{% endif %}</form>
+  <form method="post" action="{{ url_for('quotes.add_from', qid=qu.id) }}" class="card"><h3 style="margin-top:0">Re-quote a past invoice</h3>
+    {% if invoices %}<div class="row" style="gap:8px;align-items:flex-end"><div style="flex:1"><label>Invoice</label><select name="invoice">{% for i in invoices %}<option value="{{ i.id }}">{{ i.invoice_date }} · {{ i.invoice_no }} · ${{ '{:,.2f}'.format(i.total) }}</option>{% endfor %}</select></div><button class="btn">Add at today's prices</button></div>
+    {% else %}<div class="small muted">No sales history for this customer yet.</div>{% endif %}</form>
+</div>
+
+<form method="post" id="qform">
+<div class="card grid g3">
+  <div style="grid-column:span 2"><label>What it's for</label><input name="title" value="{{ qu.title or '' }}"></div>
+  <div><label>Good until</label><input type="date" name="valid_until" value="{{ qu.valid_until or '' }}"></div>
+</div>
+<div class="tablewrap"><table id="lines"><thead><tr><th style="width:140px">Item #</th><th>Description</th><th style="width:150px">Product</th><th style="width:80px">Qty</th><th style="width:60px">Unit</th><th style="width:110px">Price ($)</th><th class="right" style="width:100px">Amount</th><th style="width:30px"></th></tr></thead>
+<tbody>
+{% for ln in lines %}<tr>
+<td><input type="hidden" name="line_id" value="{{ ln.id }}"><input name="item_no" value="{{ ln.item_no or '' }}"></td>
+<td><input name="description" value="{{ ln.description or '' }}" class="desc" autocomplete="off"><input type="hidden" name="price_source" value="{{ ln.price_source or '' }}"><div class="small muted src">{{ ln.price_source or ('no price history - type a price' if ln.unit_price is none else '') }}</div></td>
+<td><select name="category"><option value="">-</option>{% for k in categories %}<option {{ 'selected' if k == ln.category }}>{{ k }}</option>{% endfor %}</select></td>
+<td><input name="qty" value="{{ '%g' % ln.qty if ln.qty is not none else '1' }}" inputmode="decimal" class="qty"></td>
+<td><input name="unit" value="{{ ln.unit or 'ea' }}"></td>
+<td><input name="unit_price" value="{{ '%.2f' % ln.unit_price if ln.unit_price is not none else '' }}" inputmode="decimal" class="price {{ 'needs' if ln.unit_price is none }}"></td>
+<td class="right amt"></td><td><button type="button" class="btn sm rm" title="Remove line">×</button></td></tr>{% endfor %}
+</tbody>
+<tfoot><tr><td colspan="6" class="right"><b>Total</b></td><td class="right"><b id="total"></b></td><td></td></tr></tfoot></table></div>
+<div class="row" style="margin:8px 0"><button type="button" class="btn sm" id="addLine">+ Add line</button><span class="small muted">Start typing an item # or description - matches from your sales history fill in this account's price.</span></div>
+<div class="grid g2"><div><label>Notes (shown on the quote)</label><textarea name="notes" rows="3">{{ qu.notes or '' }}</textarea></div>
+<div><label>Terms (shown on the quote)</label><textarea name="terms" rows="3">{{ qu.terms or '' }}</textarea></div></div>
+<div class="sticky-actions"><button class="btn primary" name="action" value="save">Save</button><button class="btn" name="action" value="pdf">Save &amp; make PDF</button><button class="btn" name="action" value="send">Save &amp; email</button>
+<span class="spacer"></span><button type="submit" class="btn sm danger" form="delq">Delete quote</button></div>
+</form>
+<form id="delq" method="post" action="{{ url_for('quotes.delete', qid=qu.id) }}" onsubmit="return confirm('Delete this quote?')"></form>
+<datalist id="itemlist"></datalist>
+<template id="rowtpl"><tr><td><input type="hidden" name="line_id" value="new"><input name="item_no"></td>
+<td><input name="description" class="desc" autocomplete="off"><input type="hidden" name="price_source"><div class="small muted src"></div></td>
+<td><select name="category"><option value="">-</option>{% for k in categories %}<option>{{ k }}</option>{% endfor %}</select></td>
+<td><input name="qty" value="1" inputmode="decimal" class="qty"></td><td><input name="unit" value="ea"></td>
+<td><input name="unit_price" inputmode="decimal" class="price"></td><td class="right amt"></td><td><button type="button" class="btn sm rm">×</button></td></tr></template>
+<script id="qdata" type="application/json">{{ {"customer": qu.customer_id, "api": url_for('quotes.api_items')}|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='quote.js') }}"></script>{% endblock %}

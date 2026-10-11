@@ -90,7 +90,20 @@ def dashboard():
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
     return render_template("dashboard.html", today=today, route=route, crm=crm, customers=customers,
                            contacts=_contact_options(), stats=stats, by_status=by_status, recent=recent, due=due,
-                           forms=form_list(), batches=pending_batches())
+                           forms=form_list(), batches=pending_batches(), **_extras())
+
+
+def _extras():
+    out = {"hold_open_orders": 0, "delivery_maybes": 0, "quotes_out": 0}
+    try:
+        from ..deliveries import pending_maybes
+        from ..holds import open_orders_on_hold
+        out["hold_open_orders"] = open_orders_on_hold()
+        out["delivery_maybes"] = pending_maybes()
+        out["quotes_out"] = q("SELECT COUNT(*) n FROM quotes WHERE status='Sent'", one=True)["n"]
+    except Exception:  # noqa: BLE001 - never break the dashboard
+        pass
+    return out
 
 
 @bp.route("/quit", methods=["POST"])

@@ -252,6 +252,7 @@ def _seed(r, today, db_path):
                                            (today - timedelta(days=9)).isoformat(), ts))
     _seed_sales(r, cids, today)
     _seed_review(cids)
+    _seed_quotes_prices_deliveries(cids, today)
 
 
 def _seed_sales(r, cids, today):
@@ -296,6 +297,45 @@ def _seed_sales(r, cids, today):
     # a custom goal month so the goals page shows both kinds
     x("INSERT OR REPLACE INTO sales_goals(period, goal, rate) VALUES (?,?,?)",
       (f"{today.year}-06", 55000, 3.5))
+
+
+def _seed_quotes_prices_deliveries(cids, today):
+    from . import deliveries as DL
+    from . import pricing as P
+    from . import quotes as QT
+    P.set_agreed(cids[1], "VB-35-ALB", 'Vertical blind 3-1/2" smooth alabaster', "Blinds & Shades", 99.00,
+                 "2026 portfolio pricing (demo)")
+    P.set_agreed(cids[1], "D-3080-HC6", "30x80 hollow core 6 panel primecoat", "Doors", 58.50, "2026 portfolio pricing (demo)")
+    fid = q("SELECT id FROM floorplans WHERE customer_id=? AND name='B2'", (cids[0],), one=True)["id"]
+    q1 = QT.create(cids[0], "Turn kit - floorplan B2 x 4 units", "turn kit", fid, 4)
+    QT.add_floorplan(q1, cids[0], fid, 4)
+    q2 = QT.create(cids[1], "Spring blind refresh, building 2", "manual")
+    for item, desc, cat, qty in (("VB-35-ALB", 'Vertical blind 3-1/2" smooth alabaster', "Blinds & Shades", 12),
+                                 ("FW-2-WHT", '2" faux wood blind white', "Blinds & Shades", 24),
+                                 ("D-3080-HC6", "30x80 hollow core 6 panel primecoat", "Doors", 6)):
+        price, src, it = QT.priced(cids[1], desc, cat, item)
+        QT.add_line(q2, desc, qty, "ea", it, cat, price, src)
+    x("UPDATE quotes SET status='Sent', sent_at=? WHERE id=?", (now(), q2))
+    s = q("SELECT id FROM sales WHERE customer_id=? ORDER BY invoice_date DESC LIMIT 1", (cids[3],), one=True)
+    q3 = QT.create(cids[3], "Re-quote of last invoice", "invoice")
+    if s:
+        QT.add_invoice(q3, cids[3], s["id"])
+    x("UPDATE quotes SET status='Approved', decided_at=? WHERE id=?", (now(), q3))
+    # this morning's delivery list (made up): two by PO / SO number, one by name only
+    sh = q("SELECT o.*, c.name cname FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.status IN "
+           "('Shipped','Confirmed','Backordered','Sent') ORDER BY o.id", ())
+    lines = ["DELIVERIES - TRUCK 2", "Stop  Customer                     PO / Order       Items"]
+    if len(sh) >= 1:
+        lines.append(f"1     {sh[0]['cname']}       {sh[0]['po']}         3 pcs")
+    if len(sh) >= 2:
+        lines.append(f"2     {sh[1]['cname']}       SO {sh[1]['vendor_ref'].replace('SO-', '')}       1 pc")
+    lines.append("3     Rio Salado Townhomes (demo)   PO-9999          12 screens")
+    if len(sh) >= 4:
+        lines.append(f"4     {sh[3]['cname']}       (no PO)          blinds")
+    DL.record("\n".join(lines), "email", "Deliveries for today - Truck 2 (demo)", now()[:16], "demo-delivery-1",
+              auto_apply=True)
+    x("""UPDATE account_holds SET days_late=?, aging=?, last_payment=? WHERE name='Canyon Vista Apartments'""",
+      (75, dumps({"31-60": 1630.10, "61-90": 2688.45}), (today - timedelta(days=80)).isoformat()))
 
 
 def _seed_review(cids):

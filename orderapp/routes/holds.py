@@ -28,7 +28,10 @@ def index():
         w.writerow(["Total", f"{total:.2f}"])
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": "attachment; filename=Account holds.csv"})
-    return render_template("holds.html", rows=rows, cleared=cleared, total=total, customers=customers)
+    from ..db import loads
+    aging = {r["id"]: loads(r["aging"]) for r in rows if r["aging"]}
+    return render_template("holds.html", rows=rows, cleared=cleared, total=total, customers=customers,
+                           exposure=H.exposure(), aging=aging)
 
 
 @bp.route("/holds/import", methods=["POST"])

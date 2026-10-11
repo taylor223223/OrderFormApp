@@ -6,7 +6,8 @@
 <div class="row noprint">
   <div class="seg"><button type="button" id="mView" class="on">View</button><button type="button" id="mEdit">Edit</button></div>
   <button class="btn primary" id="saveBtn" type="button">Save plan</button>
-  <button class="btn" type="button" onclick="window.print()">Print / PDF</button></div></div>
+  <button class="btn" type="button" onclick="window.print()">Print / PDF</button>
+  <form method="post" action="{{ url_for('quotes.new') }}" class="row" style="gap:4px"><input type="hidden" name="floorplan" value="{{ fp.id }}"><input name="units" type="number" min="1" value="{{ units|length or 1 }}" style="width:64px" title="Units"><button class="btn" title="Quote everything on this plan x the number of units">🧾 Quote turn kit</button></form></div></div>
 <div id="savedMsg" class="muted small noprint" style="margin:-6px 0 8px"></div>
 
 <div class="fpwrap" id="fpwrap">

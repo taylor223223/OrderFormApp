@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}Quotes{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Quotes &amp; estimates</h1>
+<div class="muted">Priced from each account's own history: agreed account price first, then what they last paid, then the latest price anyone paid.</div></div></div>
+<form method="post" action="{{ url_for('quotes.new') }}" class="card row" style="gap:8px;align-items:flex-end">
+  <div style="flex:2;min-width:220px"><label>Customer</label><select name="customer_id" required><option value="">Pick a customer…</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+  <div style="flex:2;min-width:220px"><label>What it's for (optional)</label><input name="title" placeholder="e.g. 12 unit renovation, building 3"></div>
+  <button class="btn primary">+ New quote</button></form>
+<div class="row" style="gap:6px;margin-bottom:10px"><a class="btn sm {{ 'primary' if not status }}" href="{{ url_for('quotes.index') }}">All</a>
+{% for s in statuses %}<a class="btn sm {{ 'primary' if s == status }}" href="{{ url_for('quotes.index', status=s) }}">{{ s }}{% if counts.get(s) %} ({{ counts[s] }}){% endif %}</a>{% endfor %}</div>
+<div class="tablewrap"><table><tr><th>Quote #</th><th>Customer</th><th>For</th><th>Status</th><th>Valid until</th><th class="right">Total</th></tr>
+{% for r in rows %}<tr><td><a href="{{ url_for('quotes.edit', qid=r.id) }}">{{ r.number }}</a></td><td>{{ r.cname or '' }}</td><td class="small">{{ r.title or '' }}</td>
+<td><span class="tag {{ 'ok' if r.status in ('Approved','Ordered') else ('warn' if r.status == 'Sent' else '') }}">{{ r.status }}</span></td>
+<td class="small nowrap {{ 'err' if r.status in ('Draft','Sent') and r.valid_until and r.valid_until < now_date }}">{{ r.valid_until or '' }}</td><td class="right nowrap">${{ '{:,.2f}'.format(r.total or 0) }}</td></tr>
+{% else %}<tr><td class="empty">No quotes yet. Start one above, from a floorplan ("Quote this floorplan") or from a past invoice ("Re-quote").</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

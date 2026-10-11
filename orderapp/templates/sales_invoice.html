@@ -2,7 +2,8 @@
 {% block body %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.invoices') }}">← Invoices</a></div><h1>Invoice {{ s.invoice_no }}</h1>
 <div class="muted">{{ s.invoice_date }} · {% if s.customer_id %}<a href="{{ url_for('customers.view', cid=s.customer_id) }}">{{ s.cname }}</a>{% else %}{{ s.cname }}{% endif %}{% if s.po %} · PO {{ s.po }}{% endif %}{% if s.rep %} · Rep {{ s.rep }}{% endif %}</div></div>
-<form method="post" action="{{ url_for('sales.invoice_delete', sid=s.id) }}" onsubmit="return confirm('Remove this invoice from your sales history?')"><button class="btn sm danger">Remove</button></form></div>
+<div class="row" style="gap:6px">{% if s.customer_id %}<form method="post" action="{{ url_for('quotes.new') }}"><input type="hidden" name="invoice" value="{{ s.id }}"><button class="btn sm primary" title="New quote with these items at today's account prices">🧾 Re-quote / reorder</button></form>{% endif %}
+<form method="post" action="{{ url_for('sales.invoice_delete', sid=s.id) }}" onsubmit="return confirm('Remove this invoice from your sales history?')"><button class="btn sm danger">Remove</button></form></div></div>
 <div class="tablewrap"><table><tr><th>Item #</th><th>Description</th><th>Product</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Amount</th></tr>
 {% for l in lines %}<tr><td>{{ l.item_no or '' }}</td><td>{{ l.description or '' }}</td><td><span class="tag">{{ l.category }}</span></td>
 <td class="right">{{ ('%g' % l.qty) if l.qty is not none else '' }}</td><td class="right">{{ '${:,.2f}'.format(l.unit_price) if l.unit_price is not none else '' }}</td><td class="right">${{ '{:,.2f}'.format(l.amount or 0) }}</td></tr>{% endfor %}

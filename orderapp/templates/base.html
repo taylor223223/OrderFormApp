@@ -28,6 +28,7 @@
     <a href="{{ url_for('photos.field_order') }}" class="{{ 'on' if ep=='photos.field_order' }}" style="--c:#e11d48"><span class="ic">📷</span>Photo Order</a>
     <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}" style="--c:#d97706"><span class="ic">🏢</span>Customers</a>
     <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
+    <a href="{{ url_for('quotes.index') }}" class="{{ 'on' if ep.startswith('quotes.') and ep not in ('quotes.prices','quotes.deliveries') }}" style="--c:#0891b2"><span class="ic">🧾</span>Quotes</a>
     <a href="{{ url_for('sales.home') }}" class="{{ 'on' if ep.startswith('sales.') }}" style="--c:#2a78d6"><span class="ic">💲</span>Sales</a>
     <a href="{{ url_for('plan.week') }}" class="{{ 'on' if ep.startswith('plan.') }}" style="--c:#65a30d"><span class="ic">🗺️</span>Routes</a>
     <a href="{{ url_for('holds.index') }}" class="{{ 'on' if ep.startswith('holds.') }}" style="--c:#b91c1c"><span class="ic">⛔</span>Account Holds{% if holds_count %}<span class="badge" title="Accounts on hold - no purchases until brought current">{{ holds_count }}</span>{% endif %}</a>

@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}Email quote {{ qu.number }}{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('quotes.edit', qid=qu.id) }}">← Quote {{ qu.number }}</a></div>
+{% set hold = hold_for(qu.customer_id) if qu.customer_id else None %}{% if hold %}{% include '_hold_banner.html' %}{% endif %}
+<h1>Email quote {{ qu.number }}</h1>
+<div class="muted">{{ qu.cname }} · ${{ '{:,.2f}'.format(totals.subtotal) }} · the quote PDF is attached. You get a draft to look over - nothing is sent automatically.</div>
+<form method="post" class="card" style="margin-top:12px;max-width:760px">
+  <div class="field"><label>To</label><input name="to" value="{{ to }}" list="cmails"><datalist id="cmails">{% for k in contacts %}<option value="{{ k.email }}">{{ k.name }}</option>{% endfor %}</datalist></div>
+  <div class="field"><label>CC</label><input name="cc"></div>
+  <div class="field"><label>Subject</label><input name="subject" value="{{ subject }}"></div>
+  <div class="field"><label>Message</label><textarea name="body" rows="8">{{ body }}</textarea></div>
+  <button class="btn primary">Make email draft</button></form>
+{% endblock %}

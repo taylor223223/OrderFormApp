@@ -1,7 +1,7 @@
 import io
 import os
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from flask import (Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request,
                    send_file, url_for)
@@ -331,6 +331,31 @@ def send_page(oid):
                                         if has_form else []) +
                                        [{"url": url_for("photos.show", pid=p["id"]), "name": os.path.basename(p["path"])}
                                         for p in photos])
+
+
+@bp.route("/orders/<int:oid>/reorder", methods=["POST"])
+@login_required
+def reorder(oid):
+    """One click: a new draft with the same items, today's date and a blank PO."""
+    o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
+    if o["form_key"] not in FORMS:
+        flash("That order has no order form to copy.", "error")
+        return redirect(url_for("orders.view", oid=oid))
+    data = loads(o["data"]) or {}
+    h = data.setdefault("header", {})
+    h["po"] = ""
+    h["date"] = today()
+    nid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, notes, created,
+               updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?,?)""",
+            (o["customer_id"], o["form_key"], o["title"], "", date.today().isoformat(), dumps(data), "reorder",
+             f"Reorder of #{oid}", now(), now()))
+    add_status(nid, "Draft", f"Reorder of #{oid}")
+    from ..holds import hold_for, hold_message
+    hd = hold_for(o["customer_id"])
+    if hd:
+        flash(hold_message(hd), "error")
+    flash(f"Reorder ready as draft #{nid} - same items as #{oid}. Add the PO, check quantities, then send.", "ok")
+    return redirect(url_for("orders.editor", order=nid))
 
 
 @bp.route("/orders/<int:oid>/status", methods=["POST"])

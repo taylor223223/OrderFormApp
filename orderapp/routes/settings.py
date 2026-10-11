@@ -19,7 +19,7 @@ EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", 
             "subject_template", "body_template", "output_dir", "date_format", "session_minutes",
             "report_to", "report_cc", "ors_api_key", "route_start_address", "route_start_time",
             "route_visit_minutes", "route_return_to_start", "email_order_word", "email_auto_minutes",
-            "email_lookback_days"]
+            "email_lookback_days", "delivery_subject_word", "quote_valid_days", "quote_terms"]
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -35,11 +35,16 @@ def index():
                 set_setting(k, v)
         if "email_order_word" in request.form and not request.form.get("email_order_word", "").strip():
             set_setting("email_order_word", "Order")
+        if "delivery_subject_word" in request.form:
+            set_setting("delivery_auto", "1" if request.form.get("delivery_auto") else "0")
+        if "quote_valid_days" in request.form and not request.form.get("quote_valid_days", "").strip().isdigit():
+            set_setting("quote_valid_days", "30")
         if "route_start_address" in request.form:
             set_setting("route_return_to_start", "1" if request.form.get("route_return_to_start") else "0")
         flash("Settings saved.", "ok")
         return redirect(url_for("settings.index"))
     vals = {k: setting(k) for k in EDITABLE}
+    vals["delivery_auto"] = setting("delivery_auto")
     od_ok, od_why = OutlookDesktop.available()
     g = GraphMail(vals["graph_client_id"], vals["graph_tenant"])
     graph_user = None

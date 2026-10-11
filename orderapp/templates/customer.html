@@ -6,6 +6,8 @@
   <div class="row">
     <a class="btn primary" href="{{ url_for('orders.new', customer=c.id) }}">+ New order</a>
     <a class="btn" href="{{ url_for('customers.view', cid=c.id, tab='crm') }}#quicklog">Log call/visit</a>
+    <a class="btn" href="{{ url_for('quotes.new', customer=c.id) }}">+ Quote</a>
+    <a class="btn" href="{{ url_for('quotes.prices', cid=c.id) }}">Account prices</a>
     <a class="btn" href="{{ url_for('customers.edit', cid=c.id) }}">Edit</a>
     <a class="btn" href="{{ url_for('imports.upload', customer=c.id) }}">Import CSV</a>
   </div>
@@ -98,7 +100,7 @@
 <div class="tablewrap"><table>
 <tr><th>#</th><th>Form</th><th>PO</th><th>Date</th><th>Status</th><th>Source</th><th></th></tr>
 {% for o in orders %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.title }}</td><td>{{ o.po or '' }}</td><td>{{ o.order_date or '' }}</td><td><span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span></td><td class="small muted">{{ o.source }}</td>
-<td class="right">{% if o.form_key %}<a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=c.id, copy=o.id) }}">Reorder</a>{% endif %}</td></tr>
+<td class="right">{% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}" style="display:inline"><button class="btn sm" title="One click: same items, new draft">↻ Reorder</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7" class="empty">No orders yet.</td></tr>{% endfor %}
 </table></div>
 {% elif tab == 'history' %}

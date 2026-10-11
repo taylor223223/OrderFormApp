@@ -38,6 +38,18 @@
       <div class="small muted">Only while the app is open. Each new order email becomes a <b>draft</b> order for you to review. Nothing is sent automatically.</div></div>
     <div><label>Look back (days)</label><input name="email_lookback_days" value="{{ v.email_lookback_days }}" inputmode="numeric"></div>
   </div>
+  <h3>Morning delivery list</h3>
+  <div class="grid g2">
+    <div><label>Delivery email has this word in the subject</label><input name="delivery_subject_word" value="{{ v.delivery_subject_word or '' }}" placeholder="Deliver">
+      <div class="small muted">Today's email with this in the subject is read each time email is checked (and from Order Tracking → Delivery list). Blank = off.</div></div>
+    <div><label class="row" style="gap:6px;margin-top:20px"><input type="checkbox" name="delivery_auto" value="1" style="width:auto" {{ 'checked' if v.delivery_auto == '1' }}> Mark sure matches (PO # or sales order #) Delivered automatically</label>
+      <div class="small muted">Matches by customer name only always wait for you to confirm.</div></div>
+  </div>
+  <h3>Quotes</h3>
+  <div class="grid g2">
+    <div><label>Quotes are good for (days)</label><input name="quote_valid_days" value="{{ v.quote_valid_days }}" inputmode="numeric"></div>
+    <div><label>Terms printed on every quote</label><textarea name="quote_terms" rows="3">{{ v.quote_terms }}</textarea></div>
+  </div>
   <h3 id="routes">CRM weekly report</h3>
   <div class="grid g2">
     <div><label>Send weekly report to (manager)</label><input name="report_to" value="{{ v.report_to }}" placeholder="manager@company.com"></div>

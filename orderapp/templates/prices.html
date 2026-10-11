@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Account prices - {{ c.name }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('customers.view', cid=c.id) }}">← {{ c.name }}</a></div><h1>Account pricing · {{ c.name }}</h1>
+<div class="muted">What this account pays. Quotes use the <b>agreed price</b> if you set one, otherwise the <b>last price they paid</b>, otherwise the latest price anyone paid.</div></div>
+<a class="btn primary" href="{{ url_for('quotes.new', customer=c.id) }}">+ New quote</a></div>
+<form method="post">
+<div class="tablewrap"><table><tr><th>Product</th><th>Item #</th><th>Description</th><th class="right">Last paid</th><th>When</th><th class="right">Times</th><th class="right">Their low-high</th><th class="right">Latest (any account)</th><th>Agreed price ($)</th></tr>
+{% for r in book %}<tr><td class="small">{{ r.category }}</td><td class="small">{{ r.item_no or '' }}</td><td>{{ r.description or '' }}</td>
+<td class="right">{{ '${:,.2f}'.format(r.last_price) if r.last_price is not none else '' }}</td><td class="small nowrap">{{ r.last }}</td><td class="right">{{ r.times }}</td>
+<td class="right small nowrap">${{ '{:,.2f}'.format(r.low) }}{% if r.high != r.low %} - ${{ '{:,.2f}'.format(r.high) }}{% endif %}</td>
+<td class="right small {{ 'up' if r.latest_any and r.last_price and r.latest_any > r.last_price }}">{{ '${:,.2f}'.format(r.latest_any) if r.latest_any is not none else '' }}</td>
+<td><input type="hidden" name="item_no" value="{{ r.item_no or '' }}"><input type="hidden" name="description" value="{{ r.description or '' }}"><input type="hidden" name="category" value="{{ r.category or '' }}">
+<input name="agreed" value="{{ '%.2f' % r.agreed if r.agreed is not none else '' }}" placeholder="none" inputmode="decimal" style="max-width:110px"></td></tr>
+{% else %}<tr><td class="empty" colspan="9">No sales history for this account yet - import your sales CSV (Sales tab), or add agreed prices below.</td></tr>{% endfor %}
+{% for r in extra %}<tr><td class="small">{{ r.category or '' }}</td><td class="small">{{ r.item_no or '' }}</td><td>{{ r.description or '' }} <span class="tag">agreed only</span></td><td colspan="5" class="small muted">{{ r.notes or '' }}</td>
+<td><input type="hidden" name="item_no" value="{{ r.item_no or '' }}"><input type="hidden" name="description" value="{{ r.description or '' }}"><input type="hidden" name="category" value="{{ r.category or '' }}">
+<input name="agreed" value="{{ '%.2f' % r.price }}" inputmode="decimal" style="max-width:110px"></td></tr>{% endfor %}
+</table></div>
+<div class="card" style="margin-top:12px"><h3 style="margin-top:0">Add an agreed price</h3>
+<div class="grid g4"><div><label>Item #</label><input name="new_item_no"></div><div style="grid-column:span 2"><label>Description</label><input name="new_description" placeholder="e.g. 2in faux wood blind white"></div>
+<div><label>Price ($)</label><input name="new_price" inputmode="decimal"></div>
+<div><label>Product</label><select name="new_category"><option value="">-</option>{% for k in categories %}<option>{{ k }}</option>{% endfor %}</select></div><div style="grid-column:span 3"><label>Note</label><input name="new_notes" placeholder="e.g. 2026 contract pricing"></div></div></div>
+<div class="sticky-actions"><button class="btn primary">Save prices</button><span class="small muted">Clear a box to remove that agreed price.</span></div></form>
+{% endblock %}

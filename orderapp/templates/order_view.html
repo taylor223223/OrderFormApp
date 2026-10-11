@@ -28,7 +28,7 @@
     {% if data.comments %}<p><span class="muted">Comments:</span> {{ data.comments }}</p>{% endif %}
     <div class="row" style="margin-top:10px">
       <form method="post" action="{{ url_for('orders.learn', oid=o.id) }}"><button class="btn sm" title="Save these sizes to the units/floorplans for next time">Save sizes to units</button></form>
-      {% if o.form_key %}<a class="btn sm" href="{{ url_for('orders.editor', form=o.form_key, customer=o.customer_id or '', copy=o.id) }}">Reorder (copy)</a>{% endif %}
+      {% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}"><button class="btn sm primary" title="Make a new draft with the same items, today's date and a blank PO">↻ Reorder</button></form>{% endif %}
       {% if pdf_exists and not cloud %}<form method="post" action="{{ url_for('orders.open_folder', oid=o.id) }}"><button class="btn sm">Open PDF folder</button></form>{% endif %}
     </div>
     {% if o.pdf_path and not cloud %}<div class="small muted" style="margin-top:6px">PDF: {{ o.pdf_path }}</div>{% endif %}
