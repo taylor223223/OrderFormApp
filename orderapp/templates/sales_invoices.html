@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block title %}Sales invoices{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home') }}">← Sales</a></div><h1>Invoices</h1>
+<div class="muted">{{ rows|length }} invoice(s){% if rows %} · ${{ '{:,.2f}'.format(total) }}{% endif %}</div></div></div>
+<form class="row" method="get" style="gap:8px;margin-bottom:12px">
+  <input name="q" value="{{ search }}" placeholder="Invoice #, customer, PO, item or description" style="min-width:280px">
+  <select name="year"><option value="">All years</option>{% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}</select>
+  <select name="category"><option value="">All products</option>{% for c in categories %}<option {{ 'selected' if c == cat }}>{{ c }}</option>{% endfor %}</select>
+  {% if cid %}<input type="hidden" name="customer" value="{{ cid }}">{% endif %}
+  <button class="btn">Search</button></form>
+<div class="tablewrap"><table><tr><th>Date</th><th>Invoice #</th><th>Customer</th><th>PO</th><th>Products</th><th class="right">Total</th></tr>
+{% for r in rows %}<tr><td class="nowrap">{{ r.invoice_date }}</td><td><a href="{{ url_for('sales.invoice', sid=r.id) }}">{{ r.invoice_no }}</a></td>
+<td>{{ r.cname }}{% if not r.customer_id %} <span class="tag">not linked</span>{% endif %}</td><td>{{ r.po or '' }}</td><td class="small">{{ (r.cats or '').replace(',', ', ') }}</td><td class="right nowrap">${{ '{:,.2f}'.format(r.total or 0) }}</td></tr>
+{% else %}<tr><td class="empty">No invoices found.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

@@ -97,6 +97,11 @@ DEFAULT_SETTINGS = {
     "route_start_time": "08:00",
     "route_visit_minutes": "20",
     "route_return_to_start": "1",
+    # sales reports
+    "commission_rate": "",        # % of sales (or of margin)
+    "commission_basis": "sales",  # sales | margin
+    "monthly_goal": "",
+    "demo": "",
 }
 
 STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
@@ -186,6 +191,8 @@ def init_db(path=None):
     con = connect(path)
     con.executescript(SCHEMA)
     con.executescript(CRM_SCHEMA)
+    from .sales import SALES_SCHEMA
+    con.executescript(SALES_SCHEMA)
     for table, cols in MIGRATIONS.items():
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

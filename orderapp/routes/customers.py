@@ -108,7 +108,15 @@ def view(cid):
     return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders,
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
-                           tab=tab, meas_summary=meas_summary, **crm)
+                           tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid), **crm)
+
+
+def _sales_summary(cid):
+    from ..sales import customer_summary
+    try:
+        return customer_summary(cid)
+    except Exception:  # noqa: BLE001 - never break the customer page over reports
+        return None
 
 
 @bp.route("/customers/<int:cid>/edit", methods=["GET", "POST"])

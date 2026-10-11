@@ -271,3 +271,22 @@ a.stat{color:inherit;text-decoration:none}
 .btn.off{opacity:.45}
 @media print{header,nav,.noprint,.flash{display:none!important}.fpwrap,.fpwrap.editing{grid-template-columns:1fr}.fpwrap #tools{display:none!important}
   #props{display:none}.card{border:0;box-shadow:none}}
+/* sales reports */
+.chart{position:relative;--s1:#2a78d6;--s2:#eb6834}
+.chart svg{width:100%;height:auto;display:block}
+.chart .grid{stroke:#eef0f3;stroke-width:1}.chart .base{stroke:#98a2b3;stroke-width:1}
+.chart .ax{font-size:11px;fill:#667085}
+.chart .b1{fill:var(--s1)}.chart .b2{fill:var(--s2)}
+.chart .goal{stroke:#1d2330;stroke-width:2;stroke-dasharray:4 3}
+.chart .hit{fill:transparent}.chart .hit:hover{fill:rgba(16,24,40,.04)}
+.ctip{position:absolute;display:none;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(16,24,40,.12);min-width:150px;z-index:3}
+.ctip i,.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.ctip .k1{background:#2a78d6}.ctip .k2{background:#eb6834}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);--s1:#2a78d6;--s2:#eb6834}
+.legend .goalkey{background:none;border-top:2px dashed #1d2330;height:0;border-radius:0;vertical-align:3px}
+.meter{height:6px;background:#eef0f3;border-radius:3px;margin:6px 0 3px;overflow:hidden}.meter span{display:block;height:100%;background:#2a78d6;border-radius:3px}
+.hbar{height:8px;background:#f2f4f7;border-radius:4px;overflow:hidden}.hbar span{display:block;height:100%;background:#2a78d6;border-radius:0 4px 4px 0}
+.up{color:#067647;font-weight:600}.down{color:#b42318;font-weight:600}
+.stats .stat .small{margin-top:2px}
+.demo-banner{background:repeating-linear-gradient(45deg,#fef3c7,#fef3c7 12px,#fde68a 12px,#fde68a 24px);color:#78350f;text-align:center;font-weight:700;padding:5px 10px;font-size:13px}
+.filters select{width:auto;max-width:260px}

@@ -10,10 +10,10 @@ import urllib.request
 import webbrowser
 
 from orderapp import __version__, create_app
-from orderapp.paths import data_dir
+from orderapp.paths import data_dir, is_demo
 
 HOST = "127.0.0.1"
-PORT = int(os.environ.get("ORDERAPP_PORT", "8765"))
+PORT = int(os.environ.get("ORDERAPP_PORT", "8766" if is_demo() else "8765"))   # demo runs beside the real app
 URL = f"http://{HOST}:{PORT}/"
 
 

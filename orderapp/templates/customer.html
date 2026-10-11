@@ -22,6 +22,11 @@
 {% for m in meas_summary %}<a class="chip" href="{{ url_for('customers.view', cid=c.id, tab='layouts') }}" title="{{ m.units }} unit(s), {{ m.fps }} floorplan(s)">{{ m.label }} · {{ m.n }}</a>
 {% else %}<span class="none">None yet - add them from an order, a floorplan, or paste in company history.</span>{% endfor %}
 <a class="btn sm" style="margin-left:auto" href="{{ url_for('library.index', customer=c.id) }}">Email blank order forms</a></div>
+{% if sales %}<div class="measbox salesbox"><b>💲 Sales:</b>
+<span class="chip">This year ${{ '{:,.0f}'.format(sales.ytd) }}{% if sales.change is not none %} <span class="{{ 'up' if sales.change >= 0 else 'down' }}">{{ '▲' if sales.change >= 0 else '▼' }} {{ sales.change|abs }}%</span>{% endif %}</span>
+<span class="chip">Last year ${{ '{:,.0f}'.format(sales.last_year) }}</span><span class="chip">Last order {{ sales.last }}</span>
+{% for k in sales.cats[:4] %}<span class="chip muted">{{ k.category }}</span>{% endfor %}
+<a class="btn sm" style="margin-left:auto" href="{{ url_for('sales.home', customer=c.id) }}">Sales report</a></div>{% endif %}
 <div class="tabs">
   {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] %}
   <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}" style="--c:{{ col }}">{{ l }}</a>{% endfor %}

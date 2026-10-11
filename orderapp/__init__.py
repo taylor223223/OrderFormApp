@@ -5,9 +5,9 @@ from datetime import timedelta
 from flask import Flask, abort, request, session
 
 from . import db
-from .paths import data_dir, is_cloud, resource_path
+from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.6.0"
+__version__ = "2.7.0"
 
 
 def _secret_key():
@@ -19,7 +19,7 @@ def _secret_key():
         return fh.read().strip()
 
 
-def create_app(db_path=None, testing=False):
+def create_app(db_path=None, testing=False, demo=None):
     app = Flask(__name__, template_folder=resource_path("templates"), static_folder=resource_path("static"))
     app.config.update(
         SECRET_KEY=_secret_key(),
@@ -29,6 +29,7 @@ def create_app(db_path=None, testing=False):
         MAX_CONTENT_LENGTH=60 * 1024 * 1024,
         TESTING=testing,
         CLOUD=is_cloud(),
+        DEMO=is_demo() if demo is None else demo,
     )
     if app.config["CLOUD"]:
         from werkzeug.middleware.proxy_fix import ProxyFix
@@ -36,6 +37,10 @@ def create_app(db_path=None, testing=False):
         app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE="Lax")
     db.init_db(app.config["DB_PATH"])
     app.teardown_appcontext(db.close_db)
+    if app.config["DEMO"]:
+        from . import demo as _demo
+        with app.app_context():
+            _demo.seed(app.config["DB_PATH"])
 
     from .security import csrf_token, parse_flash, verify_csrf
     app.jinja_env.filters["flashparse"] = parse_flash
@@ -60,6 +65,10 @@ def create_app(db_path=None, testing=False):
         if app.config["CLOUD"] and allowed and host not in allowed:
             abort(403)
         verify_csrf()
+        if app.config["DEMO"] and not session.get("uid") and request.endpoint not in ("static", "app_alive"):
+            u = db.q("SELECT id, username FROM users ORDER BY id LIMIT 1", one=True)
+            if u:                                   # demo copy: no login needed
+                session["uid"], session["username"] = u["id"], u["username"]
         mins = int(db.setting("session_minutes") or 240)
         app.permanent_session_lifetime = timedelta(minutes=mins)
         session.permanent = True
@@ -74,6 +83,17 @@ def create_app(db_path=None, testing=False):
         if request.endpoint not in ("static", "pwa_sw", "pwa_manifest"):
             resp.headers.setdefault("Cache-Control", "no-store")
         return resp
+
+    @app.route("/demo/reset", methods=["POST"])
+    def demo_reset():
+        from flask import flash, redirect, url_for
+        if not app.config["DEMO"]:
+            abort(404)
+        from . import demo as _demo
+        _demo.reset(app.config["DB_PATH"])
+        session.clear()
+        flash("Demo data reset - everything is back to the starting sample data.", "ok")
+        return redirect(url_for("main.dashboard"))
 
     @app.route("/sw.js")
     def pwa_sw():
@@ -100,16 +120,16 @@ def create_app(db_path=None, testing=False):
             except Exception:  # noqa: BLE001
                 pc = ed = 0
         from . import holds as _holds
-        return {"csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
+        return {"demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username"), "hold_for": _holds.hold_for,
                 "holds_count": _holds.count() if session.get("uid") else 0}
 
     from .routes import (auth, crm, customers, emails, forms_lib, holds, imports, main, orders, photos, routes_plan,
-                         settings)
+                         sales, settings)
     for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
-               holds.bp, forms_lib.bp):
+               holds.bp, forms_lib.bp, sales.bp):
         app.register_blueprint(bp)
-    if not testing:
+    if not testing and not app.config["DEMO"]:
         _start_email_watcher(app)
     return app
 

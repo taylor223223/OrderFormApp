@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Import sales{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home') }}">← Sales</a></div><h1>Import sales history</h1>
+<div class="muted">One row per line item (invoice #, date, customer, item, amount...). Importing the same invoices again updates them - no duplicates.</div></div></div>
+{% if step == 'upload' %}
+<div class="card"><form method="post" enctype="multipart/form-data" class="row" style="gap:10px">
+<input type="file" name="file" accept=".csv,text/csv" required><button class="btn primary">Next: match columns</button></form>
+<p class="small muted">From Excel: File &gt; Save As &gt; CSV. Not sure what columns to export? <a href="{{ url_for('sales.template') }}">Download a sample CSV</a>.
+Products are sorted into categories (blinds, doors, screens...) from a Category column if you have one, otherwise from the item description.</p></div>
+{% else %}
+<form method="post"><input type="hidden" name="token" value="{{ token }}">
+<div class="card"><h3 style="margin-top:0">Match your columns{% if filename %} - {{ filename }}{% endif %} ({{ n }} rows)</h3>
+<div class="grid g3">{% for k, lab in labels.items() %}<div><label>{{ lab }}{% if k in ('invoice_date','amount') %} *{% endif %}</label>
+<select name="map_{{ k }}"><option value="">- not in my file -</option>{% for h in headers %}<option {{ 'selected' if mapping.get(k) == h }}>{{ h }}</option>{% endfor %}</select></div>{% endfor %}</div>
+<p class="small muted">* Date and Line total are required (or Qty + Unit price instead of Line total).</p></div>
+<h3>First rows of your file</h3>
+<div class="tablewrap"><table><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr>
+{% for r in rows %}<tr>{% for h in headers %}<td class="small">{{ r[h] }}</td>{% endfor %}</tr>{% endfor %}</table></div>
+<div class="sticky-actions"><button class="btn primary">Import</button><a class="btn" href="{{ url_for('sales.import_page') }}">Cancel</a></div></form>
+{% endif %}
+{% endblock %}

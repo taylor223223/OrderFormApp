@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% block title %}Goals & commission{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home', year=year) }}">← Sales</a></div><h1>Goals &amp; commission {{ year }}</h1>
+<div class="muted">Set a default monthly goal and commission rate, then change any month that's different.</div></div>
+<form method="get"><select name="year" onchange="this.form.submit()">{% for y in years %}<option {{ 'selected' if y|int == year }}>{{ y }}</option>{% endfor %}</select></form></div>
+<form method="post"><input type="hidden" name="year" value="{{ year }}">
+<div class="card grid g3">
+  <div><label>Default monthly goal ($)</label><input name="monthly_goal" value="{{ goal }}" inputmode="decimal" placeholder="e.g. 40000"></div>
+  <div><label>Default commission rate (%)</label><input name="commission_rate" value="{{ rate }}" inputmode="decimal" placeholder="e.g. 3"></div>
+  <div><label>Commission is paid on</label><select name="commission_basis"><option value="sales">Sales $</option><option value="margin" {{ 'selected' if basis == 'margin' }}>Gross margin $ (needs a Cost column)</option></select></div>
+</div>
+<div class="tablewrap"><table><tr><th>Month</th><th>Goal ($) <span class="small muted">blank = default</span></th><th>Rate (%)</th><th class="right">Sales</th><th class="right">% of goal</th><th class="right">Commission</th></tr>
+{% for g in goals %}<tr><td>{{ months[loop.index0] }}</td>
+<td><input name="goal_{{ g.month }}" value="{{ '%g' % g.goal if g.custom and g.goal is not none else '' }}" placeholder="{{ goal or '' }}" inputmode="decimal" style="max-width:130px"></td>
+<td><input name="rate_{{ g.month }}" value="{{ '%g' % g.rate if g.custom and g.rate is not none else '' }}" placeholder="{{ rate or '' }}" inputmode="decimal" style="max-width:90px"></td>
+<td class="right">${{ '{:,.0f}'.format(g.sales) }}</td><td class="right">{% if g.pct is not none %}{{ g.pct }}%{% endif %}</td><td class="right">${{ '{:,.2f}'.format(g.commission) }}</td></tr>{% endfor %}
+<tr><td><b>Year</b></td><td class="small muted">${{ '{:,.0f}'.format(goals|sum(attribute='goal')) }}</td><td></td><td class="right"><b>${{ '{:,.0f}'.format(goals|sum(attribute='sales')) }}</b></td><td></td><td class="right"><b>${{ '{:,.2f}'.format(goals|sum(attribute='commission')) }}</b></td></tr>
+</table></div>
+<div class="sticky-actions"><button class="btn primary">Save</button></div></form>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% block title %}Sales{% endblock %}
+{% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
+{% macro pct(v) %}{% if v is none %}<span class="muted">-</span>{% elif v >= 0 %}<span class="up">▲ {{ v }}%</span>{% else %}<span class="down">▼ {{ -v }}%</span>{% endif %}{% endmacro %}
+{% block body %}
+<div class="pagehead"><div><h1>Sales{% if cname %} · {{ cname }}{% endif %}{% if cat %} · {{ cat }}{% endif %}</h1>
+<div class="muted">Your sales history from the company system: by month, customer and product, plus goals and commission.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('sales.invoices', year=year, customer=cid, category=cat) }}">Invoices</a>
+<a class="btn" href="{{ url_for('sales.goals', year=year) }}">Goals &amp; commission</a>
+<a class="btn" href="{{ url_for('sales.export', year=year) }}">Export CSV</a>
+<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import sales CSV</a></div></div>
+
+{% if not has %}
+<div class="card empty"><h3 style="margin-top:0">No sales history yet</h3>
+<p>Export your invoices / sales by line item from the company system as a CSV and import it. Any column names work - you match them up on the next screen.</p>
+<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import sales CSV</a> <a class="btn" href="{{ url_for('sales.template') }}">Download a sample CSV</a></div>
+{% else %}
+<form class="row filters" method="get" style="gap:8px;margin-bottom:12px">
+  <select name="year" onchange="this.form.submit()">{% for y in years %}<option {{ 'selected' if y|int == year }}>{{ y }}</option>{% endfor %}</select>
+  <select name="category" onchange="this.form.submit()"><option value="">All products</option>{% for c in categories %}<option {{ 'selected' if c == cat }}>{{ c }}</option>{% endfor %}</select>
+  <select name="customer" onchange="this.form.submit()"><option value="">All customers</option>{% for c in all_customers %}<option value="{{ c.id }}" {{ 'selected' if c.id == cid }}>{{ c.name }}</option>{% endfor %}</select>
+  {% if cat or cid %}<a class="btn sm" href="{{ url_for('sales.home', year=year) }}">Clear filters</a>{% endif %}
+</form>
+
+<div class="grid g4 stats">
+  <div class="stat"><div class="l">{{ year }} to date</div><div class="n">{{ money(ytd) }}</div><div class="small">{{ pct(change) }} vs {{ money(lytd) }} same time last year</div></div>
+  <div class="stat"><div class="l">{{ month_name }} {{ year }}</div><div class="n">{{ money(cur.sales) }}</div>
+    {% if cur.goal %}<div class="meter" title="{{ cur.pct }}% of goal"><span style="width:{{ [cur.pct or 0, 100]|min }}%"></span></div><div class="small muted">{{ cur.pct }}% of {{ money(cur.goal) }} goal</div>{% else %}<div class="small muted"><a href="{{ url_for('sales.goals', year=year) }}">Set a monthly goal</a></div>{% endif %}</div>
+  <div class="stat"><div class="l">Commission {{ year }} to date</div><div class="n">{{ money(comm_ytd) }}</div><div class="small muted">{% if cur.rate %}{{ cur.rate }}% this month{% else %}<a href="{{ url_for('sales.goals', year=year) }}">Set your rate</a>{% endif %}</div></div>
+  <div class="stat"><div class="l">Full year {{ year - 1 }}</div><div class="n">{{ money(last_m|sum) }}</div><div class="small muted">{{ year }} pace: {{ money(ytd / ((goals|selectattr('sales')|list|length) or 1) * 12) if ytd else '$0' }}</div></div>
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between"><h2 style="margin:0">Sales by month</h2>
+    <div class="legend"><span><i style="background:var(--s1)"></i>{{ year }}</span><span><i style="background:var(--s2)"></i>{{ year - 1 }}</span>{% if goals|selectattr('goal')|list %}<span><i class="goalkey"></i>Goal</span>{% endif %}</div></div>
+  <div id="monthChart" class="chart"></div>
+  <details class="small"><summary>Show as a table</summary>
+  <div class="tablewrap" style="margin-top:6px"><table><tr><th>Month</th><th class="right">{{ year }}</th><th class="right">{{ year - 1 }}</th><th class="right">Change</th><th class="right">Goal</th></tr>
+  {% for m in months %}<tr><td>{{ m }}</td><td class="right">{{ money(this_m[loop.index0]) }}</td><td class="right">{{ money(last_m[loop.index0]) }}</td>
+  <td class="right">{% if last_m[loop.index0] %}{{ pct(((this_m[loop.index0] - last_m[loop.index0]) / last_m[loop.index0] * 100)|round|int) }}{% endif %}</td><td class="right">{{ money(goals[loop.index0].goal) if goals[loop.index0].goal else '' }}</td></tr>{% endfor %}
+  </table></div></details>
+</div>
+
+<div class="grid g2">
+  <div class="card"><h2 style="margin-top:0">By product</h2>
+    <div class="tablewrap"><table><tr><th>Product</th><th class="right">{{ year }}</th><th></th><th class="right">Last yr same time</th></tr>
+    {% set top = (cats|map(attribute='total')|max) if cats else 1 %}
+    {% for r in cats %}<tr><td><a href="{{ url_for('sales.home', year=year, category=r.category, customer=cid) }}">{{ r.category }}</a></td><td class="right nowrap">{{ money(r.total) }}</td>
+      <td style="width:35%"><div class="hbar" title="{{ r.category }}: {{ money(r.total) }}"><span style="width:{{ (r.total / top * 100)|round(1) }}%"></span></div></td>
+      <td class="right nowrap">{{ money(r.ly) }}</td></tr>
+    {% else %}<tr><td class="empty">No sales in {{ year }}.</td></tr>{% endfor %}
+    </table></div></div>
+  <div class="card"><h2 style="margin-top:0">Top customers {{ year }}</h2>
+    <div class="tablewrap" style="max-height:420px;overflow:auto"><table><tr><th>Customer</th><th class="right">{{ year }}</th><th class="right">vs last yr</th><th>Last order</th></tr>
+    {% for r in customers[:50] %}<tr><td>{% if r.customer_id %}<a href="{{ url_for('sales.home', year=year, customer=r.customer_id, category=cat) }}">{{ r.name }}</a> <a class="small muted" href="{{ url_for('customers.view', cid=r.customer_id) }}" title="Open customer">↗</a>{% else %}{{ r.name }} <span class="tag" title="Not linked to a customer in the app">not linked</span>{% endif %}</td>
+      <td class="right nowrap">{{ money(r.total) }}</td><td class="right nowrap">{{ pct(r.change) }}</td><td class="small nowrap">{{ r.last }}</td></tr>
+    {% else %}<tr><td class="empty">No sales in {{ year }}.</td></tr>{% endfor %}
+    </table></div></div>
+</div>
+
+{% if gaps %}<div class="card"><h2 style="margin-top:0">Bought in {{ year - 1 }}, nothing yet in {{ year }}</h2>
+<div class="muted small" style="margin-bottom:6px">Win-back list - worth a call or a stop on your next route.</div>
+<div class="tablewrap"><table><tr><th>Customer</th><th class="right">{{ year - 1 }} total</th><th>Last order</th></tr>
+{% for g in gaps %}<tr><td>{% if g.customer_id %}<a href="{{ url_for('customers.view', cid=g.customer_id) }}">{{ g.name }}</a>{% else %}{{ g.name }}{% endif %}</td><td class="right">{{ money(g.ly) }}</td><td class="small">{{ g.last }}</td></tr>{% endfor %}
+</table></div></div>{% endif %}
+{% if unmatched %}<form method="post" action="{{ url_for('sales.relink') }}" class="muted small">{{ unmatched }} invoice(s) aren't linked to a customer in the app yet. <button class="btn sm">Re-link customers</button></form>{% endif %}
+{% endif %}
+<script id="chartdata" type="application/json">{{ {"this": this_m, "last": last_m, "goal": goals|map(attribute='goal')|list, "months": months, "y": year}|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='sales.js') }}"></script>{% endblock %}
