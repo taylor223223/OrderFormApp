@@ -479,6 +479,29 @@ def depth_row(pg, k, y, label="DEPTH OF OPENING:", hint="(wall surface to window
     pg.text(L + 78 + lw + 78, y + 3, hint, 7, color=(0.35, 0.35, 0.35))
 
 
+def _slat_bar(pg, x, y, h):
+    pg.rect((x, y - h / 2, x + 34, y + h / 2), color=DARK, fill=(0.97, 0.95, 0.9), width=0.6)
+
+
+def _tile_slat(pg, x, y, w):
+    cx = x + w / 2 - 40
+    for i, (lab, h) in enumerate((('1" slat', 4), ('2" slat', 9))):
+        yy = y + 12 + i * 20
+        _slat_bar(pg, cx, yy, h)
+        pg.text(cx + 42, yy + 3, lab, 7.5, bold=True, color=DARK)
+
+
+def slat_row(pg, k, y):
+    """Slat size (we sell 1" and 2") with a little picture of each."""
+    x = L + 14
+    x += pg.text(x, y + 3, "SLAT SIZE:", 8.5, bold=True) + 12
+    for lab, h in (('1"', 4), ('2"', 9)):
+        _slat_bar(pg, x, y, h)
+        x += 40
+        x += pg.check(f"{k} Slat Size {lab}", x, y + 3, lab, 8) + 30
+    pg.text(x, y + 3, "(check one)", 7, color=(0.35, 0.35, 0.35))
+
+
 class HorizontalBlinds(Form):
     subtitle, item, prefix = "Horizontal Blinds", "WINDOW", "W"
     steps = [
@@ -487,8 +510,8 @@ class HorizontalBlinds(Form):
         ("2  1 WIDTH + 1 HEIGHT", "Measure the width (wall to wall) and the height (top of the opening to "
          "the sill). One of each.", _tile_wh),
         ('3  READ TO 1/8"', None, tile_ruler),
-        ("4  DEPTH", "Measure how deep the opening is, from the wall surface back to the window frame.",
-         _tile_depth),
+        ("4  SLAT SIZE", 'Pick 1" or 2" slats. Not sure? Measure one old slat from top edge to bottom edge.',
+         _tile_slat),
     ]
     STYLES = ["All Vinyl", "Vinyl Plus", "All Metal", "Faux Wood", 'Basswood 2"', 'Basswood 2-1/2"',
               '1" Metal Plus Mini', '2" Metal Plus', NOT_SURE]
@@ -507,7 +530,7 @@ class HorizontalBlinds(Form):
         ])
         pg.line((CX - 8, y), (CX - 8, max(yc, top + 196)), color=GREY, width=1)
         y2 = top + 150 + 14
-        depth_row(pg, k, y2)
+        slat_row(pg, k, y2)
         y3 = notes_row(pg, k, y2 + 20)
         return max(y3, yc) + 2
 

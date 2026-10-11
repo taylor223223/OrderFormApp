@@ -12,11 +12,12 @@
 <div class="fpwrap" id="fpwrap">
   <div class="card noprint" id="tools">
     <h3 style="margin-top:0">1. Add a room</h3>
-    <label>Room name</label><input id="rName" value="Bedroom">
+    <div class="grid g2"><div><label>Room name</label><input id="rName" value="Bedroom"></div>
+    <div><label>Type</label><select id="rKind" onchange="if(this.value==='hall'){rName.value='Hallway';rW.value=4;rL.value=12}"><option value="room">Room</option><option value="hall">Hallway</option></select></div></div>
     <div class="grid g2"><div><label>Width (ft)</label><input id="rW" type="number" value="12" step="0.5"></div>
     <div><label>Length (ft)</label><input id="rL" type="number" value="11" step="0.5"></div></div>
     <button class="btn primary" type="button" id="addRoom" style="margin-top:8px">Add room</button>
-    <div class="muted small">Drag a room to move it. It snaps to 6" and to the walls next to it.</div>
+    <div class="muted small">Drag a room to move it. It snaps to 6" and to the walls next to it. Click a room to cut an angled corner, mark open sides or turn baseboard off.</div>
     <h3>2. Put something on a wall</h3>
     <div class="muted small" id="roomHint">Click a room first.</div>
     <label>What</label><select id="fType">

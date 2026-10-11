@@ -307,7 +307,7 @@ def test_floor_plan(client):
                       {"id": 4, "room": 1, "t": "bypass", "wall": "E", "off": 2, "w": 72, "p": {"height": "80"}},
                       {"id": 5, "room": 99, "t": "door", "wall": "N", "off": 0, "w": 30}]}      # bad room: dropped
     r = c.post(f"/floorplans/{fid}/plan", json=plan, headers={"X-CSRF-Token": csrf(c, f"/floorplans/{fid}/plan")})
-    assert r.get_json() == {"ok": True, "measurements": 3}
+    assert r.get_json() == {"ok": True, "measurements": 4}          # 3 items + baseboard
     with c.app.test_request_context():
         from orderapp.db import q, loads
         rows = {m["product"]: loads(m["data"]) for m in q("SELECT * FROM measurements WHERE floorplan_id=?", (fid,))}
@@ -317,5 +317,25 @@ def test_floor_plan(client):
     c.post(f"/floorplans/{fid}/plan", json=plan, headers={"X-CSRF-Token": csrf(c, f"/floorplans/{fid}/plan")})
     with c.app.test_request_context():
         from orderapp.db import q
-        assert q("SELECT COUNT(*) n FROM measurements WHERE floorplan_id=?", (fid,), one=True)["n"] == 3
+        assert q("SELECT COUNT(*) n FROM measurements WHERE floorplan_id=?", (fid,), one=True)["n"] == 4
     assert "Horizontal Blind" in c.get(f"/customers/{cid}").get_data(as_text=True)
+
+
+def test_floor_plan_angles_halls_baseboard():
+    from orderapp import floorplan as F
+    plan = F._clean({"rooms": [{"id": 1, "n": "Den", "x": 0, "y": 0, "w": 12, "h": 10, "cut": {"SE": 3, "XX": 2}},
+                               {"id": 2, "n": "Hallway", "x": 12, "y": 0, "w": 4, "h": 10, "kind": "hall", "open": ["S"]},
+                               {"id": 3, "n": "Bath", "x": 0, "y": 10, "w": 8, "h": 6, "bb": False}],
+                     "items": [{"id": 4, "room": 1, "t": "door", "wall": "E", "off": 2, "w": 32},
+                               {"id": 5, "room": 1, "t": "door", "wall": "SE", "off": .5, "w": 30},
+                               {"id": 6, "room": 1, "t": "window", "wall": "N", "off": 2, "w": 48,
+                                "p": {"covering": "Horizontal Blind", "slat": '2"'}}]})
+    assert plan["rooms"][0]["cut"] == {"SE": 3.0} and plan["rooms"][1]["kind"] == "hall"
+    assert plan["items"][1]["wall"] == "SE"
+    bb = F.baseboard(plan)
+    # Den: 12 + 10 + 9 + 7 + 4.24 (angled) - 2.67 - 2.5 doors ; Hallway: 4 + 10 + 10 - 2.67 (door on shared wall)
+    assert bb == {1: 37.1, 2: 21.3}
+    m = F.measurements_for(plan)
+    assert ("baseboard", "Hallway", {"trim_type": "Baseboard", "length": "21.3"}) in m
+    assert not [x for x in m if x[1] == "Bath"]
+    assert [x for x in m if x[0] == "horizontal_blind"][0][2]["slat_size"] == '2"'

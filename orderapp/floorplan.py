@@ -4,6 +4,7 @@ The plan is stored as JSON on the floorplan (floorplans.plan). Every item on it 
 a measurement for that floorplan, so it counts in "Measurements on file" and can fill order forms.
 """
 import json
+import math
 
 from .db import dumps, loads, now, q, x
 
@@ -34,14 +35,104 @@ def get_plan(fid):
     return p
 
 
+CORNERS = ("NW", "NE", "SE", "SW")
+WALLS = ("N", "E", "S", "W") + CORNERS
+OPENINGS = ("door", "patio", "bypass", "bifold")          # no baseboard across these (either side of the wall)
+
+
+def walls(r):
+    """{wall: (x1, y1, x2, y2, ox, oy, dx, dy)} in feet. Straight-wall offsets are measured from the room's
+    corner (left for top/bottom, top for left/right); angled walls from their own start."""
+    x, y, w, h = r["x"], r["y"], r["w"], r["h"]
+    c = r.get("cut") or {}
+    nw, ne, se, sw = (float(c.get(k, 0) or 0) for k in CORNERS)
+    out = {"N": (x + nw, y, x + w - ne, y, x, y, 1, 0), "S": (x + sw, y + h, x + w - se, y + h, x, y + h, 1, 0),
+           "W": (x, y + nw, x, y + h - sw, x, y, 0, 1), "E": (x + w, y + ne, x + w, y + h - se, x + w, y, 0, 1)}
+    diag = {"NW": (x, y + nw, x + nw, y, nw), "NE": (x + w - ne, y, x + w, y + ne, ne),
+            "SE": (x + w, y + h - se, x + w - se, y + h, se), "SW": (x + sw, y + h, x, y + h - sw, sw)}
+    for k, (x1, y1, x2, y2, cut) in diag.items():
+        if cut > 0:
+            L = math.hypot(x2 - x1, y2 - y1)
+            out[k] = (x1, y1, x2, y2, x1, y1, (x2 - x1) / L, (y2 - y1) / L)
+    return out
+
+
+def _overlap(seg, wall):
+    """Length of seg (x1,y1,x2,y2) lying on wall's line inside the wall."""
+    x1, y1, x2, y2 = wall[:4]
+    L = math.hypot(x2 - x1, y2 - y1)
+    if L < 1e-6:
+        return 0.0
+    ux, uy = (x2 - x1) / L, (y2 - y1) / L
+    def off_line(px, py):
+        return abs((px - x1) * uy - (py - y1) * ux)
+    if off_line(seg[0], seg[1]) > 0.15 or off_line(seg[2], seg[3]) > 0.15:
+        return 0.0
+    a = (seg[0] - x1) * ux + (seg[1] - y1) * uy
+    b = (seg[2] - x1) * ux + (seg[3] - y1) * uy
+    lo, hi = max(0.0, min(a, b)), min(L, max(a, b))
+    return max(0.0, hi - lo)
+
+
+def item_seg(rooms, it):
+    r = rooms.get(it["room"])
+    if not r:
+        return None
+    wl = walls(r).get(it["wall"])
+    if not wl:
+        return None
+    ox, oy, dx, dy = wl[4:]
+    a, b = it["off"], it["off"] + it["w"] / 12.0
+    return (ox + dx * a, oy + dy * a, ox + dx * b, oy + dy * b)
+
+
+def baseboard(plan):
+    """{room id: linear feet} - walls that aren't open, minus doors/closet openings (on either side of the wall)
+    and base cabinets (own room)."""
+    rooms = {r["id"]: r for r in plan["rooms"]}
+    segs = [(it, item_seg(rooms, it)) for it in plan["items"]]
+    out = {}
+    for r in plan["rooms"]:
+        if r.get("bb") is False:
+            continue
+        lf = 0.0
+        for k, wl in walls(r).items():
+            if k in (r.get("open") or []):
+                continue
+            L = math.hypot(wl[2] - wl[0], wl[3] - wl[1])
+            cut = 0.0
+            for it, sg in segs:
+                if not sg:
+                    continue
+                if it["t"] in OPENINGS or (it["t"] == "cab" and it["room"] == r["id"]
+                                           and (it.get("p") or {}).get("kind") != "Wall"):
+                    cut += _overlap(sg, wl)
+            lf += max(0.0, L - cut)
+        out[r["id"]] = round(lf, 1)
+    return out
+
+
 def _clean(plan):
     """Keep only what we draw; numbers as numbers, text trimmed."""
     out = empty_plan()
     for r in plan.get("rooms", [])[:200]:
         try:
-            out["rooms"].append({"id": int(r["id"]), "n": str(r.get("n", "Room"))[:60],
-                                 "x": float(r["x"]), "y": float(r["y"]), "w": max(1.0, float(r["w"])),
-                                 "h": max(1.0, float(r["h"]))})
+            room = {"id": int(r["id"]), "n": str(r.get("n", "Room"))[:60],
+                    "x": float(r["x"]), "y": float(r["y"]), "w": max(1.0, float(r["w"])),
+                    "h": max(1.0, float(r["h"]))}
+            if r.get("kind") == "hall":
+                room["kind"] = "hall"
+            lim = min(room["w"], room["h"]) / 2
+            cut = {k: min(lim, max(0.0, float(v))) for k, v in (r.get("cut") or {}).items()
+                   if k in CORNERS and v not in (None, "") and float(v) > 0}
+            if cut:
+                room["cut"] = cut
+            opn = [k for k in (r.get("open") or []) if k in WALLS]
+            if opn:
+                room["open"] = opn
+            if r.get("bb") is False:
+                room["bb"] = False
+            out["rooms"].append(room)
         except (KeyError, TypeError, ValueError):
             continue
     ids = {r["id"] for r in out["rooms"]}
@@ -49,7 +140,7 @@ def _clean(plan):
         try:
             if int(it["room"]) not in ids or it.get("t") not in ("door", "window", "patio", "bypass", "bifold", "cab"):
                 continue
-            d = {"id": int(it["id"]), "room": int(it["room"]), "t": it["t"], "wall": it.get("wall", "N")[:1],
+            d = {"id": int(it["id"]), "room": int(it["room"]), "t": it["t"], "wall": it.get("wall", "N") if it.get("wall") in WALLS else "N",
                  "off": float(it.get("off", 0)), "w": float(it.get("w", 32))}
             props = it.get("p") or {}
             d["p"] = {str(k)[:40]: str(v)[:120] for k, v in props.items() if v not in (None, "")}
@@ -90,7 +181,8 @@ def measurements_for(plan):
             cov = p.get("covering", "")
             if cov in COVERING:
                 out.append((COVERING[cov][0], room, {"width": w, "height": p.get("height", ""),
-                                                     "style": p.get("cov_style", ""), "color": p.get("color", "")}))
+                                                     "style": p.get("cov_style", ""), "color": p.get("color", ""),
+                                                     "slat_size": p.get("slat", "") if cov == "Horizontal Blind" else ""}))
             if p.get("screen") == "Yes":
                 out.append(("window_screen", room, {"width": "", "height": "", "screen_type": "Bug Screen"}))
         elif t == "patio":
@@ -112,6 +204,10 @@ def measurements_for(plan):
             if p.get("countertop"):
                 out.append(("countertop", room, {"length": w, "depth": p.get("ct_depth", "25 1/2"),
                                                  "ct_material": p.get("countertop", "")}))
+    names = {r["id"]: r["n"] for r in plan["rooms"]}
+    for rid, lf in baseboard(plan).items():
+        if lf > 0:
+            out.append(("baseboard", names[rid], {"trim_type": "Baseboard", "length": f"{lf:g}"}))
     return [(prod, room, {k: v for k, v in d.items() if v not in ("", None)}) for prod, room, d in out]
 
 

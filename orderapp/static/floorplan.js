@@ -4,7 +4,7 @@
   const S = 24, NS = 'http://www.w3.org/2000/svg';
   let plan = D.plan, mode = (plan.rooms.length ? 'view' : 'edit'), selRoom = null, selItem = null, dirty = false;
   let nid = 1 + Math.max(0, ...plan.rooms.map(r => r.id), ...plan.items.map(i => i.id));
-  const hidden = new Set();
+  const hidden = new Set(); let showBB = true;
   const svg = document.getElementById('plan');
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -23,7 +23,7 @@
            ['material', 'Material', D.opts.materials], ['core', 'Core', ['', 'Hollow', 'Solid']], ['finish', 'Color / finish'],
            ['hardware', 'Hardware'], ['notes', 'Notes']],
     window: [['height', 'Height (in)'], ['covering', 'Window covering', ['', 'Horizontal Blind', 'Vertical Blind', 'Roller Shade']],
-             ['cov_style', 'Blind / shade style', [''].concat(D.opts.blind_styles)], ['color', 'Color'], ['depth', 'Opening depth (in)'],
+             ['cov_style', 'Blind / shade style', [''].concat(D.opts.blind_styles)], ['slat', 'Slat size (horizontal)', ['', '1"', '2"']], ['color', 'Color'],
              ['screen', 'Screen', yes], ['notes', 'Notes']],
     patio: [['height', 'Height (in)'], ['config', 'Panel that slides (from outside)', ['', 'XO - Left Slides', 'OX - Right Slides']],
             ['frame', 'Frame', ['', 'Vinyl', 'Aluminum']], ['frame_color', 'Frame color'], ['covering', 'Covering', ['', 'Vertical Blind']],
@@ -38,11 +38,52 @@
   const DEFAULTS = {door: {location: 'Interior', hinge: 'Left', swing: 'in', height: '80'}, window: {}, patio: {height: '80'},
                     bypass: {height: '80', size: 'standard'}, bifold: {height: '80', size: 'standard'}, cab: {cab_room: 'Kitchen', kind: 'Base'}};
 
-  function wallPt(r, wall, off) {
-    if (wall === 'N') return {x: (r.x + off) * S, y: r.y * S, dx: 1, dy: 0, nx: 0, ny: 1};
-    if (wall === 'S') return {x: (r.x + off) * S, y: (r.y + r.h) * S, dx: 1, dy: 0, nx: 0, ny: -1};
-    if (wall === 'W') return {x: r.x * S, y: (r.y + off) * S, dx: 0, dy: 1, nx: 1, ny: 0};
-    return {x: (r.x + r.w) * S, y: (r.y + off) * S, dx: 0, dy: 1, nx: -1, ny: 0};
+  // ---------------- room geometry (feet). Straight walls: offset from the room corner; angled walls: from their start.
+  const CORN = ['NW', 'NE', 'SE', 'SW'];
+  const WALLNAME = {N: 'Top', E: 'Right', S: 'Bottom', W: 'Left', NW: 'Angled top-left', NE: 'Angled top-right', SE: 'Angled bottom-right', SW: 'Angled bottom-left'};
+  const OPENINGS = ['door', 'patio', 'bypass', 'bifold'];
+  function walls(r) {
+    const {x, y, w, h} = r, c = r.cut || {}, [nw, ne, se, sw] = CORN.map(k => +c[k] || 0);
+    const o = {N: [x + nw, y, x + w - ne, y, x, y, 1, 0], E: [x + w, y + ne, x + w, y + h - se, x + w, y, 0, 1],
+               S: [x + sw, y + h, x + w - se, y + h, x, y + h, 1, 0], W: [x, y + nw, x, y + h - sw, x, y, 0, 1]};
+    const dg = {NW: [x, y + nw, x + nw, y, nw], NE: [x + w - ne, y, x + w, y + ne, ne], SE: [x + w, y + h - se, x + w - se, y + h, se], SW: [x + sw, y + h, x, y + h - sw, sw]};
+    for (const k in dg) { const [x1, y1, x2, y2, cut] = dg[k]; if (cut > 0) { const L = Math.hypot(x2 - x1, y2 - y1); o[k] = [x1, y1, x2, y2, x1, y1, (x2 - x1) / L, (y2 - y1) / L]; } }
+    return o;
+  }
+  function poly(r) {
+    const {x, y, w, h} = r, c = r.cut || {}, [nw, ne, se, sw] = CORN.map(k => +c[k] || 0);
+    return [[x + nw, y], [x + w - ne, y], [x + w, y + ne], [x + w, y + h - se], [x + w - se, y + h], [x + sw, y + h], [x, y + h - sw], [x, y + nw]]
+      .filter((p, i, a) => i === 0 || p[0] !== a[i - 1][0] || p[1] !== a[i - 1][1]);
+  }
+  function wallPt(r, wall, off) {         // pixels: start point, direction, inward normal
+    const wl = walls(r)[wall] || walls(r).N, [ox, oy, dx, dy] = wl.slice(4);
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2, px = ox + dx * off, py = oy + dy * off;
+    let nx = -dy, ny = dx; if ((cx - px) * nx + (cy - py) * ny < 0) { nx = -nx; ny = -ny; }
+    return {x: px * S, y: py * S, dx, dy, nx, ny};
+  }
+  const segLen = wl => Math.hypot(wl[2] - wl[0], wl[3] - wl[1]);
+  function overlap(sg, wl) {
+    const L = segLen(wl); if (L < 1e-6) return 0;
+    const ux = (wl[2] - wl[0]) / L, uy = (wl[3] - wl[1]) / L, off = (px, py) => Math.abs((px - wl[0]) * uy - (py - wl[1]) * ux);
+    if (off(sg[0], sg[1]) > .15 || off(sg[2], sg[3]) > .15) return 0;
+    const a = (sg[0] - wl[0]) * ux + (sg[1] - wl[1]) * uy, b = (sg[2] - wl[0]) * ux + (sg[3] - wl[1]) * uy;
+    return Math.max(0, Math.min(L, Math.max(a, b)) - Math.max(0, Math.min(a, b)));
+  }
+  function itemSeg(it) {
+    const r = R(it.room), wl = r && walls(r)[it.wall]; if (!wl) return null;
+    const [ox, oy, dx, dy] = wl.slice(4), a = it.off, b = it.off + it.w / 12;
+    return [ox + dx * a, oy + dy * a, ox + dx * b, oy + dy * b];
+  }
+  function baseboard(r) {                 // linear feet: closed walls minus door/closet openings and base cabinets
+    if (r.bb === false) return 0;
+    const segs = plan.items.map(it => [it, itemSeg(it)]); let lf = 0;
+    for (const [k, wl] of Object.entries(walls(r))) {
+      if ((r.open || []).includes(k)) continue;
+      let cut = 0;
+      segs.forEach(([it, sg]) => { if (sg && (OPENINGS.includes(it.t) || (it.t === 'cab' && it.room === r.id && (it.p || {}).kind !== 'Wall'))) cut += overlap(sg, wl); });
+      lf += Math.max(0, segLen(wl) - cut);
+    }
+    return Math.round(lf * 10) / 10;
   }
 
   // ---------------- drawing
@@ -54,54 +95,64 @@
     const g = el('g', {stroke: '#dbe7f3', 'stroke-width': 1});
     for (let i = 0; i <= W; i++) el('line', {x1: i * S, y1: 0, x2: i * S, y2: H * S}, g);
     for (let j = 0; j <= H; j++) el('line', {x1: 0, y1: j * S, x2: W * S, y2: j * S}, g);
+    const solid = [];
     plan.rooms.forEach(r => {
-      const gr = el('g', {class: 'fproom' + (r.id === selRoom && !selItem ? ' sel' : '') + (mode === 'edit' ? ' movable' : '')});
-      el('rect', {class: 'body', x: r.x * S, y: r.y * S, width: r.w * S, height: r.h * S, fill: '#ffffffc0', stroke: '#1f2937', 'stroke-width': 5}, gr);
-      const fs = Math.min(15, r.w * 2.2);
-      const t = el('text', {x: (r.x + r.w / 2) * S, y: (r.y + r.h / 2) * S, 'text-anchor': 'middle', 'font-size': fs, 'font-weight': 700, fill: '#334155'}, gr); t.textContent = r.n;
-      const d = el('text', {x: (r.x + r.w / 2) * S, y: (r.y + r.h / 2) * S + fs + 2, 'text-anchor': 'middle', 'font-size': Math.max(9, fs - 3), fill: '#64748b'}, gr);
-      d.textContent = `${ft(r.w)} x ${ft(r.h)}`;
+      const sel = r.id === selRoom && !selItem;
+      const gr = el('g', {class: 'fproom' + (sel ? ' sel' : '') + (mode === 'edit' ? ' movable' : '')});
+      const hall = r.kind === 'hall';
+      el('polygon', {class: 'body', points: poly(r).map(p => p[0] * S + ',' + p[1] * S).join(' '), fill: hall ? '#eef2f7d0' : '#ffffffc0', stroke: 'none'}, gr);
+      for (const [k, wl] of Object.entries(walls(r))) {
+        if ((r.open || []).includes(k)) el('line', {class: 'wall', x1: wl[0] * S, y1: wl[1] * S, x2: wl[2] * S, y2: wl[3] * S, stroke: '#94a3b8', 'stroke-width': 1.5, 'stroke-dasharray': '6 5'}, gr);
+        else solid.push([wl, sel]);
+      }
+      // labels: narrow rooms (hallways) get their label turned to run along the long side
+      const tall = r.h > r.w * 1.6, lw = tall ? r.h : r.w, sw = tall ? r.w : r.h;
+      const fs = Math.min(15, Math.min(lw * 1.1, sw * 2.6)), cx = (r.x + r.w / 2) * S, cy = (r.y + r.h / 2) * S;
+      const lg = el('g', {transform: tall ? `rotate(-90 ${cx} ${cy})` : ''}, gr), y0 = cy - (showBB && r.bb !== false ? fs * .6 : 0);
+      const t = el('text', {x: cx, y: y0, 'text-anchor': 'middle', 'font-size': fs, 'font-weight': 700, fill: '#334155'}, lg); t.textContent = r.n;
+      const sub = Math.max(8, fs - 3);
+      const d = el('text', {x: cx, y: y0 + sub + 3, 'text-anchor': 'middle', 'font-size': sub, fill: '#64748b'}, lg); d.textContent = `${ft(r.w)} x ${ft(r.h)}`;
+      if (showBB && r.bb !== false) { const b = el('text', {x: cx, y: y0 + 2 * sub + 6, 'text-anchor': 'middle', 'font-size': sub, fill: '#0f766e', 'font-weight': 700}, lg);
+        b.textContent = `Baseboard ${baseboard(r)} LF`; }
       gr.addEventListener('pointerdown', e => roomDown(e, r));
     });
+    const wg = el('g', {'pointer-events': 'none'});           // solid walls on top, so an open side never hides a real wall
+    solid.sort((a, b) => a[1] - b[1]).forEach(([wl, sel]) => el('line', {x1: wl[0] * S, y1: wl[1] * S, x2: wl[2] * S, y2: wl[3] * S,
+      stroke: sel ? '#ea580c' : '#1f2937', 'stroke-width': 5, 'stroke-linecap': 'square'}, wg));
     plan.items.forEach(it => { if (!hidden.has(CAT[it.t])) drawItem(it); });
     sched();
   }
   const ft = v => { const f = Math.floor(v), i = Math.round((v - f) * 12); return i ? `${f}' ${i}"` : `${f}'`; };
 
   function drawItem(it) {
-    const r = R(it.room); if (!r) return;
+    const r = R(it.room); if (!r || !walls(r)[it.wall]) return;
     const p = wallPt(r, it.wall, it.off), L = it.w / 12 * S, P = it.p || {};
-    const g = el('g', {class: 'fpitem' + (it.id === selItem ? ' sel' : '')});
+    const ang = Math.atan2(p.dy, p.dx) * 180 / Math.PI, flip = (-Math.sin(ang * Math.PI / 180) * p.nx + Math.cos(ang * Math.PI / 180) * p.ny) < 0;
+    const g = el('g', {class: 'fpitem' + (it.id === selItem ? ' sel' : ''), transform: `translate(${p.x} ${p.y}) rotate(${ang})${flip ? ' scale(1 -1)' : ''}`});
     g.addEventListener('pointerdown', e => { e.stopPropagation(); selItem = it.id; selRoom = it.room; draw(); panel(); });
-    const x2 = p.x + p.dx * L, y2 = p.y + p.dy * L;
-    el('line', {x1: p.x, y1: p.y, x2, y2, stroke: '#f7fbff', 'stroke-width': 8}, g);
+    // local frame: x along the wall (0..L), +y into the room
+    el('line', {x1: 0, y1: 0, x2: L, y2: 0, stroke: '#f7fbff', 'stroke-width': 8}, g);
     if (it.t === 'door') {
       const s = (P.swing || 'in') === 'in' ? 1 : -1, left = (P.hinge || 'Left') === 'Left';
-      const hx = left ? p.x : x2, hy = left ? p.y : y2, fx = left ? x2 : p.x, fy = left ? y2 : p.y;
-      const ox = hx + p.nx * L * s, oy = hy + p.ny * L * s;
-      el('line', {x1: hx, y1: hy, x2: ox, y2: oy, stroke: '#92400e', 'stroke-width': 3}, g);
-      const cross = (fx - hx) * (oy - hy) - (fy - hy) * (ox - hx);
-      el('path', {d: `M ${ox} ${oy} A ${L} ${L} 0 0 ${cross > 0 ? 0 : 1} ${fx} ${fy}`, fill: 'none', stroke: '#92400e', 'stroke-dasharray': '4 3'}, g);
-      el('rect', {class: 'hit', x: Math.min(p.x, x2, ox), y: Math.min(p.y, y2, oy), width: Math.max(10, Math.abs(p.dx) * L + Math.abs(p.nx) * L),
-                  height: Math.max(10, Math.abs(p.dy) * L + Math.abs(p.ny) * L), fill: 'transparent'}, g);
+      const hx = left ? 0 : L, fx = left ? L : 0;
+      el('line', {x1: hx, y1: 0, x2: hx, y2: L * s, stroke: '#92400e', 'stroke-width': 3}, g);
+      const cross = (fx - hx) * (L * s);
+      el('path', {d: `M ${hx} ${L * s} A ${L} ${L} 0 0 ${cross > 0 ? 0 : 1} ${fx} 0`, fill: 'none', stroke: '#92400e', 'stroke-dasharray': '4 3'}, g);
+      el('rect', {class: 'hit', x: 0, y: s > 0 ? 0 : -L, width: L, height: Math.max(10, L), fill: 'transparent'}, g);
     } else if (it.t === 'window' || it.t === 'patio') {
-      el('rect', {class: 'hit', x: Math.min(p.x, x2) - (p.dx ? 0 : 5), y: Math.min(p.y, y2) - (p.dy ? 0 : 5), width: p.dx ? L : 10, height: p.dy ? L : 10,
-                  fill: '#e0f2fe', stroke: '#0369a1', 'stroke-width': 1.5}, g);
-      if (it.t === 'patio') el('line', {x1: (p.x + x2) / 2 - p.nx * 5, y1: (p.y + y2) / 2 - p.ny * 5, x2: (p.x + x2) / 2 + p.nx * 5, y2: (p.y + y2) / 2 + p.ny * 5, stroke: '#0369a1', 'stroke-width': 1.5}, g);
+      el('rect', {class: 'hit', x: 0, y: -5, width: L, height: 10, fill: '#e0f2fe', stroke: '#0369a1', 'stroke-width': 1.5}, g);
+      if (it.t === 'patio') el('line', {x1: L / 2, y1: -5, x2: L / 2, y2: 5, stroke: '#0369a1', 'stroke-width': 1.5}, g);
     } else {
-      const dep = (it.t === 'cab' ? (+P.depth || 24) / 12 : 2) * S;
-      const rx = Math.min(p.x, x2, p.x + p.nx * dep), ry = Math.min(p.y, y2, p.y + p.ny * dep);
-      const cab = it.t === 'cab', upper = cab && P.kind === 'Wall';
-      el('rect', {class: 'hit', x: rx, y: ry, width: p.dx ? L : dep, height: p.dy ? L : dep, fill: cab ? (upper ? 'transparent' : '#ede9fe') : '#fef3c7',
+      const dep = (it.t === 'cab' ? (+P.depth || 24) / 12 : 2) * S, cab = it.t === 'cab', upper = cab && P.kind === 'Wall';
+      el('rect', {class: 'hit', x: 0, y: 0, width: L, height: dep, fill: cab ? (upper ? 'transparent' : '#ede9fe') : '#fef3c7',
                   stroke: cab ? '#6d28d9' : '#92400e', 'stroke-width': 1.5, 'stroke-dasharray': upper ? '6 4' : ''}, g);
       if (it.t === 'bypass') {
-        el('line', {x1: p.x + p.nx * dep * .35, y1: p.y + p.ny * dep * .35, x2: p.x + p.nx * dep * .35 + p.dx * L * .55, y2: p.y + p.ny * dep * .35 + p.dy * L * .55, stroke: '#92400e', 'stroke-width': 3}, g);
-        el('line', {x1: p.x + p.nx * dep * .6 + p.dx * L * .45, y1: p.y + p.ny * dep * .6 + p.dy * L * .45, x2: x2 + p.nx * dep * .6, y2: y2 + p.ny * dep * .6, stroke: '#92400e', 'stroke-width': 3}, g);
+        el('line', {x1: 0, y1: dep * .35, x2: L * .55, y2: dep * .35, stroke: '#92400e', 'stroke-width': 3}, g);
+        el('line', {x1: L * .45, y1: dep * .6, x2: L, y2: dep * .6, stroke: '#92400e', 'stroke-width': 3}, g);
       }
-      if (it.t === 'bifold') for (let i = 0; i < 4; i++) { const a = i / 4, b = (i + .5) / 4, c = (i + 1) / 4;
-        el('polyline', {points: `${p.x + p.dx * L * a},${p.y + p.dy * L * a} ${p.x + p.dx * L * b + p.nx * dep * .7},${p.y + p.dy * L * b + p.ny * dep * .7} ${p.x + p.dx * L * c},${p.y + p.dy * L * c}`,
-                        fill: 'none', stroke: '#92400e', 'stroke-width': 1.5}, g); }
-      if (cab && P.kind === 'Sink Base') el('rect', {x: rx + (p.dx ? L * .3 : dep * .2), y: ry + (p.dy ? L * .3 : dep * .2), width: p.dx ? L * .4 : dep * .6, height: p.dy ? L * .4 : dep * .6, rx: 5, fill: '#fff', stroke: '#6d28d9'}, g);
+      if (it.t === 'bifold') for (let i = 0; i < 4; i++) { const a = i / 4 * L, b = (i + .5) / 4 * L, c = (i + 1) / 4 * L;
+        el('polyline', {points: `${a},0 ${b},${dep * .7} ${c},0`, fill: 'none', stroke: '#92400e', 'stroke-width': 1.5}, g); }
+      if (cab && P.kind === 'Sink Base') el('rect', {x: L * .3, y: dep * .2, width: L * .4, height: dep * .6, rx: 5, fill: '#fff', stroke: '#6d28d9'}, g);
     }
   }
 
@@ -122,7 +173,7 @@
     r.x = Math.max(0, nx); r.y = Math.max(0, ny); dirty = true; draw();
   });
   svg.addEventListener('pointerup', () => { drag = null; });
-  svg.addEventListener('pointerdown', e => { if (e.target === svg || e.target.tagName === 'line') { selRoom = null; selItem = null; draw(); panel(); } });
+  svg.addEventListener('pointerdown', e => { if (e.target === svg || (e.target.tagName === 'line' && !e.target.closest('g.fproom, g.fpitem'))) { selRoom = null; selItem = null; draw(); panel(); } });
 
   // ---------------- details panel
   function photoUrl(it) {
@@ -146,11 +197,13 @@
   }
   function panel() {
     const box = $('props'); $('roomHint').textContent = selRoom ? 'Adding to: ' + (R(selRoom) || {}).n : 'Click a room first.';
+    const fw = $('fWall'), keep = fw.value, ks = selRoom && R(selRoom) ? Object.keys(walls(R(selRoom))) : ['N', 'E', 'S', 'W'];
+    fw.innerHTML = ks.map(k => `<option value="${k}">${WALLNAME[k]}</option>`).join(''); if (ks.includes(keep)) fw.value = keep;
     if (selItem) {
       const it = plan.items.find(i => i.id === selItem); if (!it) { selItem = null; return panel(); }
       const r = R(it.room), P = it.p || {}, purl = photoUrl(it);
       if (mode === 'view') {
-        const rows = [['Where', `${r.n}, ${({N: 'top', S: 'bottom', E: 'right', W: 'left'})[it.wall]} wall`], ['Width', inch(it.w)]]
+        const rows = [['Where', `${r.n}, ${WALLNAME[it.wall].toLowerCase()} wall`], ['Width', inch(it.w)]]
           .concat(FIELDS[it.t].filter(f => P[f[0]]).map(f => [f[1], f[0] === 'height' || f[0] === 'depth' ? inch(P[f[0]]) : P[f[0]]]));
         box.innerHTML = `<div class="muted small">${CAT[it.t]}</div><h3 style="margin:2px 0 8px">${esc(NAME[it.t])}${P.location === 'Exterior' ? ' (exterior)' : ''}</h3>
           ${purl ? `<img class="fpthumb" src="${purl}" onerror="this.remove()" alt="">` : blindPic(it)}
@@ -165,7 +218,7 @@
         box.innerHTML = `<h3 style="margin-top:0">${esc(NAME[it.t])} <span class="muted small">in ${esc(r.n)}</span></h3>
           <div class="grid g2"><div><label>Width (in)</label><input data-g="w" type="number" step="0.125" value="${it.w}"></div>
           <div><label>From corner (ft)</label><input data-g="off" type="number" step="0.5" value="${it.off}"></div></div>
-          <label>Wall</label><select data-g="wall">${['N', 'E', 'S', 'W'].map(w => `<option value="${w}" ${w === it.wall ? 'selected' : ''}>${({N: 'Top', E: 'Right', S: 'Bottom', W: 'Left'})[w]}</option>`).join('')}</select>
+          <label>Wall</label><select data-g="wall">${Object.keys(walls(r)).map(w => `<option value="${w}" ${w === it.wall ? 'selected' : ''}>${WALLNAME[w]}</option>`).join('')}</select>
           ${f}${purl ? `<img class="fpthumb" style="margin-top:8px" src="${purl}" onerror="this.remove()" alt="">` : ''}
           <button class="btn sm danger" type="button" id="rmItem" style="margin-top:8px">Remove</button>`;
         box.querySelectorAll('[data-g]').forEach(i => i.onchange = () => { const k = i.dataset.g; it[k] = k === 'wall' ? i.value : +i.value; dirty = true; draw(); });
@@ -173,15 +226,31 @@
         $('rmItem').onclick = () => { plan.items = plan.items.filter(x => x !== it); selItem = null; dirty = true; draw(); panel(); };
       }
     } else if (selRoom && mode === 'edit') {
-      const r = R(selRoom);
+      const r = R(selRoom), c = r.cut || {}, open = r.open || [];
+      const cornerIn = (k, lab) => `<div><label>${lab}</label><input data-cut="${k}" type="number" min="0" step="0.5" value="${c[k] || ''}" placeholder="0"></div>`;
       box.innerHTML = `<h3 style="margin-top:0">${esc(r.n)}</h3><label>Name</label><input id="rn" value="${esc(r.n)}">
         <div class="grid g2"><div><label>Width (ft)</label><input id="rw" type="number" step="0.5" value="${r.w}"></div>
         <div><label>Length (ft)</label><input id="rh" type="number" step="0.5" value="${r.h}"></div></div>
+        <label>Type</label><select id="rk"><option value="room">Room</option><option value="hall" ${r.kind === 'hall' ? 'selected' : ''}>Hallway</option></select>
+        <h4 style="margin:10px 0 2px">Angled corners</h4><div class="muted small">How far to cut the corner (ft). Makes a 45° wall you can put a door on.</div>
+        <div class="grid g2">${cornerIn('NW', 'Top-left')}${cornerIn('NE', 'Top-right')}${cornerIn('SW', 'Bottom-left')}${cornerIn('SE', 'Bottom-right')}</div>
+        <h4 style="margin:10px 0 2px">Open sides (no wall)</h4><div class="muted small">For a hall or kitchen that opens into the next room. No baseboard there.</div>
+        <div class="row" style="gap:10px;flex-wrap:wrap">${Object.keys(walls(r)).map(k => `<label class="chk"><input type="checkbox" data-open="${k}" ${open.includes(k) ? 'checked' : ''}> ${WALLNAME[k]}</label>`).join('')}</div>
+        <label class="chk" style="margin-top:8px"><input type="checkbox" id="rbb" ${r.bb === false ? '' : 'checked'}> Baseboard in this room <b>(${baseboard(r)} LF)</b></label>
         <div class="muted small" style="margin-top:6px">${plan.items.filter(i => i.room === r.id).length} item(s) on this room's walls.</div>
         <button class="btn sm danger" type="button" id="rmRoom" style="margin-top:8px">Delete room</button>`;
-      $('rn').onchange = e => { r.n = e.target.value; dirty = true; draw(); };
-      $('rw').onchange = e => { r.w = Math.max(1, +e.target.value); dirty = true; draw(); };
-      $('rh').onchange = e => { r.h = Math.max(1, +e.target.value); dirty = true; draw(); };
+      const ch = () => { dirty = true; draw(); panel(); };
+      $('rn').onchange = e => { r.n = e.target.value; ch(); };
+      $('rw').onchange = e => { r.w = Math.max(1, +e.target.value); ch(); };
+      $('rh').onchange = e => { r.h = Math.max(1, +e.target.value); ch(); };
+      $('rk').onchange = e => { if (e.target.value === 'hall') r.kind = 'hall'; else delete r.kind; ch(); };
+      $('rbb').onchange = e => { if (e.target.checked) delete r.bb; else r.bb = false; ch(); };
+      box.querySelectorAll('[data-cut]').forEach(i => i.onchange = () => {
+        const v = Math.min(Math.min(r.w, r.h) / 2, Math.max(0, +i.value || 0)); r.cut = Object.assign({}, r.cut);
+        if (v) r.cut[i.dataset.cut] = v; else { delete r.cut[i.dataset.cut]; plan.items = plan.items.filter(t => !(t.room === r.id && t.wall === i.dataset.cut)); }
+        if (!Object.keys(r.cut).length) delete r.cut; ch(); });
+      box.querySelectorAll('[data-open]').forEach(i => i.onchange = () => {
+        const o = new Set(r.open || []); i.checked ? o.add(i.dataset.open) : o.delete(i.dataset.open); r.open = [...o]; if (!r.open.length) delete r.open; ch(); });
       $('rmRoom').onclick = () => { if (!confirm('Delete ' + r.n + ' and everything on its walls?')) return;
         plan.rooms = plan.rooms.filter(x => x !== r); plan.items = plan.items.filter(i => i.room !== r.id); selRoom = null; dirty = true; draw(); panel(); };
     } else {
@@ -198,6 +267,11 @@
       const what = NAME[it.t] + (P.style ? ' · ' + P.style : P.covering ? ' · ' + P.covering : '');
       return `<tr class="${it.id === selItem ? 'on' : ''}" data-id="${it.id}"><td>${esc(what)}</td><td>${esc(r.n)}</td><td>${size}</td></tr>`;
     }).join('') : '<tr><td class="muted">Nothing on the plan yet.</td></tr>';
+    const bb = plan.rooms.filter(r => r.bb !== false).map(r => [r, baseboard(r)]).filter(x => x[1] > 0);
+    if (bb.length) $('sched').innerHTML += '<tr><th>Baseboard</th><th>Room</th><th>LF</th></tr>' +
+      bb.map(([r, lf]) => `<tr data-room="${r.id}"><td>Baseboard</td><td>${esc(r.n)}</td><td>${lf}</td></tr>`).join('') +
+      `<tr><td><b>Baseboard total</b></td><td></td><td><b>${Math.round(bb.reduce((a, x) => a + x[1], 0) * 10) / 10}</b></td></tr>`;
+    $('sched').querySelectorAll('tr[data-room]').forEach(tr => tr.onclick = () => { selRoom = +tr.dataset.room; selItem = null; draw(); panel(); });
     $('sched').querySelectorAll('tr[data-id]').forEach(tr => tr.onclick = () => { selItem = +tr.dataset.id; selRoom = (plan.items.find(i => i.id === selItem) || {}).room; draw(); panel(); });
   }
 
@@ -206,6 +280,7 @@
     const w = +$('rW').value || 10, h = +$('rL').value || 10;
     const maxX = plan.rooms.length ? Math.max(...plan.rooms.map(r => r.x + r.w)) : 0;
     const r = {id: nid++, n: $('rName').value || 'Room', x: maxX, y: 0, w, h};
+    if ($('rKind').value === 'hall') r.kind = 'hall';
     plan.rooms.push(r); selRoom = r.id; selItem = null; dirty = true; draw(); panel();
   };
   $('fType').onchange = e => { $('fW').value = {door: 32, window: 36, patio: 72, bypass: 72, bifold: 48, cab: 96}[e.target.value]; };
@@ -213,6 +288,7 @@
     if (!selRoom) { alert('Click a room on the plan first.'); return; }
     const t = $('fType').value;
     const it = {id: nid++, room: selRoom, t, wall: $('fWall').value, off: +$('fOff').value || 0, w: +$('fW').value || 32, p: Object.assign({}, DEFAULTS[t])};
+    if (it.wall.length === 2) it.off = Math.max(0, Math.round((segLen(walls(R(selRoom))[it.wall]) - it.w / 12) / 2 * 4) / 4);   // angled: centered
     plan.items.push(it); selItem = it.id; dirty = true; draw(); panel();
   };
   function setMode(m) {
@@ -229,5 +305,7 @@
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
   ['Doors', 'Windows', 'Closets', 'Cabinets'].forEach(c => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.textContent = c;
     b.onclick = () => { hidden.has(c) ? hidden.delete(c) : hidden.add(c); b.classList.toggle('off'); draw(); }; $('filters').appendChild(b); });
+  { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.textContent = 'Baseboard';
+    b.onclick = () => { showBB = !showBB; b.classList.toggle('off'); draw(); }; $('filters').appendChild(b); }
   setMode(mode);
 })();
