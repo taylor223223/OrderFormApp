@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}{{ ac.name }}{% endblock %}
+{% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
+{% macro money2(v) %}{% if v is not none %}${{ '{:,.2f}'.format(v) }}{% endif %}{% endmacro %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('company.accounts') }}">← Accounts</a></div><h1>{{ ac.name }}</h1>
+<div class="muted">{% set addr = [ac.address, ac.city, ((ac.state or '') ~ ' ' ~ (ac.zip or ''))|trim]|select|join(', ') %}{{ addr }}
+{% if ac.reps %}{{ ' · ' if addr }}rep{{ 's' if ac.reps|length > 1 }}: {% for r in ac.reps %}{{ r.rep }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</div></div>
+<div class="row" style="gap:6px">{% if ac.customer_id %}<a class="btn" href="{{ url_for('customers.view', cid=ac.customer_id) }}">Open in my Customers</a>
+<a class="btn" href="{{ url_for('quotes.prices', cid=ac.customer_id) }}">Account prices</a>
+{% else %}<form method="post" action="{{ url_for('company.add_account', key=key) }}"><button class="btn primary">Add to my Customers</button></form>{% endif %}
+<a class="btn" href="{{ url_for('company.sales', account=ac.name) }}">All lines</a></div></div>
+{% include '_company_nav.html' %}
+{% if ac.overdue %}<div class="card" style="border-left:4px solid #e11d48"><b>Overdue for an order:</b> they usually order every ~{{ ac.typical_gap }} days, and it's been {{ ac.days_since }} days since {{ ac.last }}.</div>{% endif %}
+<div class="grid g4 stats">
+<div class="stat"><div class="l">Total spent (loaded)</div><div class="n">{{ money(ac.lifetime) }}</div><div class="small muted">{% if ac.summary_total %}report lifetime {{ money(ac.summary_total) }}{% else %}since {{ ac.first or '-' }}{% endif %}</div></div>
+<div class="stat"><div class="l">{{ ac.asof[:4] }} to date</div><div class="n">{{ money(ac.ytd) }}</div><div class="small">{% if ac.change is not none %}<span class="{{ 'up' if ac.change >= 0 else 'down' }}">{{ '▲' if ac.change >= 0 else '▼' }} {{ ac.change|abs }}%</span> vs {% endif %}{{ money(ac.lytd) }} same time last year</div></div>
+<div class="stat"><div class="l">Orders</div><div class="n">{{ ac.orders }}</div><div class="small muted">avg {{ money(ac.avg_order) }}{% if ac.typical_gap %} · every ~{{ ac.typical_gap }} days{% endif %}</div></div>
+<div class="stat"><div class="l">Last purchase</div><div class="n" style="font-size:20px">{{ ac.last or '-' }}</div><div class="small muted">{% if ac.days_since is not none %}{{ ac.days_since }} days ago (as of {{ ac.asof }}){% endif %}</div></div>
+</div>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">Last 12 months vs the 12 before</h3>
+<div class="n" style="font-size:22px;font-weight:700">{{ money(ac.t12) }} <span class="small muted">vs {{ money(ac.p12) }}</span></div>
+{% if ac.dropped %}<p class="small"><b>Stopped buying</b> (bought before, nothing in 12 months): {% for d in ac.dropped %}{{ d.category }} ({{ money(d.t) }}, last {{ d.last }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+{% if ac.never %}<p class="small"><b>Never bought:</b> {{ ac.never|join(', ') }}</p>{% endif %}</div>
+<div class="card"><h3 style="margin-top:0">What they buy</h3><div class="chart" data-chart='{{ {"type":"donut","labels":ac.cats|map(attribute="category")|list,"series":[{"name":"Sales","values":ac.cats|map(attribute="t")|list}]}|tojson }}'></div></div>
+</div>
+<div class="card"><h3 style="margin-top:0">Spend by month (last 24 months)</h3><div class="chart" data-chart='{{ {"type":"bar","labels":ac.months,"series":[{"name":"Sales","values":ac.month_vals}]}|tojson }}'></div></div>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">By year</h3><div class="tablewrap"><table><tr><th>Year</th><th class="right">Sales</th><th class="right">Invoices</th></tr>
+{% for y in ac.by_year %}<tr><td>{{ y.y }}</td><td class="right">{{ money(y.t) }}</td><td class="right">{{ y.n }}</td></tr>{% endfor %}</table></div></div>
+<div class="card"><h3 style="margin-top:0">By rep</h3><div class="tablewrap"><table><tr><th>Rep</th><th class="right">Sales</th><th>Last</th></tr>
+{% for r in ac.reps %}<tr><td>{{ r.rep }}</td><td class="right">{{ money(r.t) }}</td><td class="small">{{ r.last }}</td></tr>{% endfor %}</table></div></div>
+</div>
+<div class="card"><h3 style="margin-top:0">Items they buy <span class="small muted">(last price paid is what to quote)</span></h3>
+<div class="tablewrap" style="max-height:520px;overflow:auto"><table><tr><th>Item #</th><th>Description</th><th class="right">Units</th><th class="right">Total</th><th class="right">Last price</th><th>Last bought</th></tr>
+{% for i in ac['items'] %}<tr><td class="small">{{ i.item_no }}</td><td>{{ (i.descr or '')[:80] }}</td><td class="right">{{ '{:,.0f}'.format(i.qty or 0) }}</td><td class="right">{{ money(i.t) }}</td><td class="right">{{ money2(i.last_price) }}</td><td class="small">{{ i.last }}</td></tr>{% endfor %}</table></div></div>
+<div class="card"><h3 style="margin-top:0">Purchase history</h3>
+<div class="tablewrap" style="max-height:520px;overflow:auto"><table><tr><th>Date</th><th>Type</th><th>Num</th><th>Rep</th><th class="right">Total</th></tr>
+{% for d in ac.docs %}<tr><td>{{ d.doc_date }}</td><td class="small">{{ d.doc_type }}</td><td><a href="{{ url_for('company.doc', did=d.id) }}">{{ d.num }}</a></td><td class="small">{{ d.rep or '' }}</td><td class="right">{{ money2(d.total) }}</td></tr>{% endfor %}</table></div>
+{% if ac.docs|length >= 200 %}<p class="small muted">Latest 200 shown - <a href="{{ url_for('company.sales', account=ac.name) }}">see every line</a>.</p>{% endif %}</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='charts.js') }}"></script>{% endblock %}

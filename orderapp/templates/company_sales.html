@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Company sales lines{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>All sales lines</h1><div class="muted">Every invoice and credit line in Company Data. Filter, then export to Excel if you need it.</div></div>
+<a class="btn" href="{{ request.full_path|replace('/company/sales?', '/company/sales?format=csv&') }}">Export CSV</a></div>
+{% include '_company_nav.html' %}
+<form class="card grid g4" style="gap:8px">
+<div><label>Search</label><input name="q" value="{{ a.get('q','') }}" placeholder="memo, item, invoice #"></div>
+<div><label>Account</label><input name="account" value="{{ a.get('account','') }}"></div>
+<div><label>Item # / name</label><input name="item" value="{{ a.get('item','') }}"></div>
+<div><label>Rep</label><select name="rep"><option value="">Any</option>{% for r in reps %}<option {{ 'selected' if r == a.get('rep') }}>{{ r }}</option>{% endfor %}</select></div>
+<div><label>From</label><input type="date" name="from" value="{{ a.get('from','') }}"></div>
+<div><label>To</label><input type="date" name="to" value="{{ a.get('to','') }}"></div>
+<div><label>Type</label><select name="type"><option value="">Any</option>{% for t in ['Invoice','Credit Memo','Sales Receipt'] %}<option {{ 'selected' if t == a.get('type') }}>{{ t }}</option>{% endfor %}</select></div>
+<div style="align-self:end"><button class="btn primary">Filter</button> <a class="btn" href="{{ url_for('company.sales') }}">Clear</a></div></form>
+<div class="card small"><b>{{ '{:,}'.format(tot.n) }}</b> line(s) · <b>${{ '{:,.2f}'.format(tot.t) }}</b> · {{ '{:,.0f}'.format(tot.qty) }} units{% if tot.n > rows|length %} · showing the newest {{ rows|length }}{% endif %}</div>
+<div class="tablewrap"><table><tr><th>Date</th><th>Num</th><th>Account</th><th>Rep</th><th>Item</th><th>Memo</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Amount</th></tr>
+{% for r in rows %}<tr><td class="small">{{ r.doc_date }}</td><td class="small"><a href="{{ url_for('company.doc', did=r.did) }}">{{ r.num }}</a>{% if r.doc_type != 'Invoice' %}<div class="muted">{{ r.doc_type }}</div>{% endif %}</td>
+<td>{% if r.cust_key %}<a href="{{ url_for('company.account', key=r.cust_key) }}">{{ r.customer }}</a>{% else %}{{ r.customer }}{% endif %}</td><td class="small">{{ r.rep or '' }}</td>
+<td class="small">{{ r.item_no }}</td><td class="small">{{ (r.memo or '')[:70] }}</td><td class="right">{{ '%g' % r.qty if r.qty is not none else '' }}</td>
+<td class="right">{{ '%.2f' % r.price if r.price is not none else '' }}</td><td class="right">{{ '{:,.2f}'.format(r.amount or 0) }}</td></tr>
+{% else %}<tr><td colspan="9" class="muted">No lines match.</td></tr>{% endfor %}</table></div>
+{% endblock %}

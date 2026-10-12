@@ -1,12 +1,14 @@
 {% extends "base.html" %}{% block title %}Import company reports{% endblock %}
 {% block body %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.import_page') }}">← Import sales</a></div><h1>Check the reports</h1>
-<div class="muted">Nothing is saved until you click Import.</div></div></div>
+<div class="muted">Nothing is saved until you click Import. Everything goes into <b>Company Data</b> (all reps, all accounts); the rep choice below only decides what counts as <b>your</b> sales for goals and commission.</div></div></div>
 {% if unknown %}<div class="card small">Not recognised (skipped): {{ unknown|join(', ') }} - use "Match columns" for those.</div>{% endif %}
 <form method="post" action="{{ url_for('sales.company_import') }}"><input type="hidden" name="token" value="{{ token }}">
 <div class="tablewrap"><table><tr><th>File</th><th>Report</th><th>What's in it</th><th></th></tr>
-{% for f in files %}<tr><td class="small">{{ f.filename }}</td><td>{{ f.label }}</td><td class="small">
+{% for f in files %}<tr><td class="small">{{ f.filename }}{% if f.loaded_before %}<div class="muted">already loaded {{ f.loaded_before }} - loading again just updates it</div>{% endif %}</td><td>{{ f.label }}</td><td class="small">
 {% if f.lines is defined %}{{ '{:,}'.format(f.lines) }} line(s), {{ '{:,}'.format(f.invoices) }} invoice(s), {{ f.first }} to {{ f.last }}, ${{ '{:,.2f}'.format(f.total) }}
+{% if f.tied is defined %}<br>{% if f.untied %}<span class="tag warn">{{ f.untied|length }} subtotal(s) don't add up: {{ f.untied[:3]|join(', ') }}</span>{% elif f.tied %}<span class="muted">Every line adds up to the report's own {{ '{:,}'.format(f.tied) }} subtotal(s)</span>{% endif %}{% endif %}
+{% if f.note %}<br><span class="tag warn">{{ f.note }}</span>{% endif %}
 {% elif f.totals is defined %}{{ f.totals|length - 1 }} row(s) - used to check totals only
 {% elif f.addresses is defined %}{{ '{:,}'.format(f.addresses) }} property address(es)
 {% else %}{{ '{:,}'.format(f['items']) }} item(s){% endif %}</td>
@@ -17,7 +19,7 @@ Re-export a smaller piece - filter to one rep, or one year at a time - and impor
 {% endfor %}</table></div>
 
 {% if has_sales %}
-<div class="card"><h3 style="margin-top:0">Sales to import</h3>
+<div class="card"><h3 style="margin-top:0">My sales (goals &amp; commission)</h3>
 {% if has_rep %}
 <label class="row" style="gap:6px"><input type="checkbox" name="rep_filter" value="1" {{ 'checked' if chosen }} onchange="document.getElementById('reps').style.opacity=this.checked?1:.4"> Only these reps' sales (so goals and commission are yours, not the whole company's):</label>
 <div id="reps" class="grid g3" style="margin:6px 0 0 22px{{ '' if chosen else ';opacity:.4' }}">{% for r, v in reps.items()|sort %}

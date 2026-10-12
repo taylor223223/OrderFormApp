@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block title %}Insights{% endblock %}
+{% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
+{% macro acct(r) %}{% if r.cust_key %}<a href="{{ url_for('company.account', key=r.cust_key) }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}{% endmacro %}
+{% block body %}
+<div class="pagehead"><div><h1>Insights</h1><div class="muted">Lists to act on, worked out from Company Data{% if ins %} as of {{ ins.asof }} (last 12 months = after {{ ins.a12 }}){% endif %}.</div></div></div>
+{% include '_company_nav.html' %}
+<form class="row" style="gap:8px;margin-bottom:12px"><select name="rep" onchange="this.form.submit()"><option value="">All reps</option>{% for r in reps %}<option {{ 'selected' if r == rep }}>{{ r }}</option>{% endfor %}</select></form>
+{% if not ins %}<div class="card muted">Import the company reports first.</div>{% else %}
+{% if not ins.have_p12 %}<div class="card" style="border-left:4px solid #f59e0b">Only about one year of history is loaded, so "slipping" and "growing" (which compare to the 12 months before) can't be worked out yet. Import earlier years of Sales by Rep Detail to fill them in.</div>{% endif %}
+<div class="grid g4 stats">
+<div class="stat"><div class="l">Last 12 months</div><div class="n">{{ money(ins.t12) }}</div><div class="small muted">{% if ins.p12 %}vs {{ money(ins.p12) }} the 12 before{% endif %}</div></div>
+<div class="stat"><div class="l">Top 20% of accounts</div><div class="n">{{ ins.pareto.top20_share }}%</div><div class="small muted">of sales ({{ ins.pareto.top_n }} of {{ ins.pareto.accounts }} accounts)</div></div>
+<div class="stat"><div class="l">Top 10 accounts</div><div class="n">{{ ins.pareto.top10 }}%</div><div class="small muted">of the last 12 months</div></div>
+<div class="stat"><div class="l">Overdue accounts</div><div class="n">{{ ins.overdue|length }}</div><div class="small muted">quiet 2.5x longer than usual</div></div>
+</div>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">Overdue: call these first</h3><p class="small muted">Regular buyers who've gone much longer than their normal gap without ordering.</p>
+<div class="tablewrap"><table><tr><th>Account</th><th class="right">Usual gap</th><th class="right">Days quiet</th><th class="right">12 mo</th></tr>
+{% for r in ins.overdue %}<tr><td>{{ acct(r) }}</td><td class="right">{{ r.gap }}d</td><td class="right">{{ r.days }}d</td><td class="right">{{ money(r.t12) }}</td></tr>{% else %}<tr><td colspan="4" class="muted">None.</td></tr>{% endfor %}</table></div></div>
+<div class="card"><h3 style="margin-top:0">Product trend (12 months vs 12 before)</h3>
+<div class="chart" data-chart='{{ {"type":"bar","labels":ins.cats|map(attribute="c")|list,"series":[{"name":"Last 12 months","values":ins.cats|map(attribute="t12")|list},{"name":"12 months before","values":ins.cats|map(attribute="p12")|list}]}|tojson }}'></div></div>
+</div>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">Slipping (down 30%+)</h3><div class="tablewrap"><table><tr><th>Account</th><th class="right">12 mo</th><th class="right">12 before</th><th class="right">Change</th></tr>
+{% for r in ins.slipping %}<tr><td>{{ acct(r) }}</td><td class="right">{{ money(r.t12) }}</td><td class="right">{{ money(r.p12) }}</td><td class="right"><span class="down">▼ {{ -r.change }}%</span></td></tr>{% else %}<tr><td colspan="4" class="muted">None{% if not ins.have_p12 %} - needs earlier years loaded{% endif %}.</td></tr>{% endfor %}</table></div></div>
+<div class="card"><h3 style="margin-top:0">Growing (up 20%+)</h3><div class="tablewrap"><table><tr><th>Account</th><th class="right">12 mo</th><th class="right">12 before</th><th class="right">Change</th></tr>
+{% for r in ins.growing %}<tr><td>{{ acct(r) }}</td><td class="right">{{ money(r.t12) }}</td><td class="right">{{ money(r.p12) }}</td><td class="right"><span class="up">▲ {{ r.change }}%</span></td></tr>{% else %}<tr><td colspan="4" class="muted">None{% if not ins.have_p12 %} - needs earlier years loaded{% endif %}.</td></tr>{% endfor %}</table></div></div>
+</div>
+<div class="card"><h3 style="margin-top:0">Cross-sell: big accounts and the products they're not buying from us</h3>
+<div class="tablewrap"><table><tr><th>Account</th><th class="right">12 mo</th><th>Buys</th><th>Not buying</th></tr>
+{% for r in ins.cross %}<tr><td>{{ acct(r) }}</td><td class="right">{{ money(r.t12) }}</td><td class="small">{{ r.has|join(', ') }}</td><td class="small"><b>{{ r.missing|join(', ') }}</b></td></tr>{% endfor %}</table></div></div>
+<div class="card"><h3 style="margin-top:0">New accounts (first order in the last 12 months)</h3>
+<div class="tablewrap"><table><tr><th>Account</th><th>First order</th><th class="right">Spent so far</th></tr>
+{% for r in ins.new %}<tr><td>{{ acct(r) }}</td><td>{{ r.first }}</td><td class="right">{{ money(r.t12) }}</td></tr>{% else %}<tr><td colspan="3" class="muted">None{% if not ins.have_p12 %} - with only one year loaded every account looks new, so this list is hidden{% endif %}.</td></tr>{% endfor %}</table></div></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='charts.js') }}"></script>{% endblock %}

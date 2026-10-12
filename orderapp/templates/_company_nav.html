@@ -1,0 +1,4 @@
+<div class="row" style="gap:6px;margin-bottom:12px;flex-wrap:wrap">
+{% for ep_, label in [('company.home','Overview'),('company.accounts','Accounts'),('company.insights','Insights'),('company.explore','Explore & chart'),('company.sales','All sales lines'),('sales.items','Items & Stock')] %}
+<a class="btn sm {{ 'primary' if request.endpoint == ep_ }}" href="{{ url_for(ep_) }}">{{ label }}</a>{% endfor %}
+<span class="spacer"></span><a class="btn sm" href="{{ url_for('sales.import_page') }}">Import reports</a></div>

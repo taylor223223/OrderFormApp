@@ -162,6 +162,69 @@ def sales_records(text, kind):
     return out
 
 
+def usable_records(text, kind):
+    """Sales lines safe to load. A cut-off export ends part-way through an invoice, so its last invoice is left out
+    (the next export brings it in whole). A cut-off ITEM report only holds part of every invoice, so it isn't used
+    for invoices at all. Returns (records, note)."""
+    recs = sales_records(text, kind)
+    if not recs or _complete(_rows(text)):
+        return recs, ""
+    if kind == "sales_item":
+        return [], "not used for invoices - a cut-off item report only has some of each invoice's lines"
+    last = recs[-1]
+    if kind == "sales_customer":              # that account's history is incomplete - leave the whole account out
+        keep = [r for r in recs if r["customer_name"] != last["customer_name"]]
+        return keep, (f"it stops part-way through {last['customer_name']}, so that account is left out until a "
+                      f"fuller export")
+    key = (last["type"], last["invoice_no"], last["customer_name"])
+    keep = [r for r in recs if (r["type"], r["invoice_no"], r["customer_name"]) != key]
+    return keep, f"its last invoice ({last['invoice_no']}) was cut part-way, so it's left out until a fuller export"
+
+
+def tie_out(rows):
+    """Add up every line under each heading and compare with the report's own "Total ..." row."""
+    hdr = [c.strip() for c in rows[0]]
+    if "Amount" not in hdr:
+        return {}
+    ai = hdr.index("Amount")
+    stack, sums, ok, bad, grand = [], {}, 0, [], 0.0
+    for r in rows[1:]:
+        if not r or not any(c.strip() for c in r):
+            continue
+        first = r[0].strip()
+        if first and first.startswith("Total "):
+            g = first[6:]
+            want = _n(r[ai]) if len(r) > ai else None
+            # innermost heading with that name
+            idx = max(i for i, n in enumerate(stack) if n == g) if g in stack else None
+            if idx is not None:
+                got = round(sums.get(idx, 0.0), 2)
+                if want is not None:
+                    if abs(want - got) < 0.01:
+                        ok += 1
+                    else:
+                        bad.append(g)
+                for i in range(idx, len(stack)):
+                    sums.pop(i, None)
+                del stack[idx:]
+        elif first == "TOTAL":
+            want = _n(r[ai]) if len(r) > ai else None
+            if want is not None:
+                if abs(want - round(grand, 2)) < 0.01:
+                    ok += 1
+                else:
+                    bad.append("TOTAL")
+        elif first:
+            stack.append(first)
+            sums[len(stack) - 1] = 0.0
+        elif not first:
+            a = _n(r[ai]) if len(r) > ai else None
+            grand += a or 0
+            for i in range(len(stack)):
+                sums[i] = sums.get(i, 0.0) + (a or 0)
+    return {"tied": ok, "untied": bad}
+
+
 def describe(text, kind):
     """Preview facts for one uploaded report."""
     rows = _rows(text)
@@ -170,6 +233,8 @@ def describe(text, kind):
     if kind in SALES_KINDS:
         recs = sales_records(text, kind)
         dates = sorted(d for d in (S._date(r["date"]) for r in recs) if d)
+        info.update(tie_out(rows))
+        info["note"] = usable_records(text, kind)[1]
         info.update(lines=len(recs), first=dates[0] if dates else "", last=dates[-1] if dates else "",
                     invoices=len({(r["invoice_no"], r["customer_name"].lower()) for r in recs}),
                     total=round(sum(r["amount"] or 0 for r in recs), 2))
@@ -201,7 +266,8 @@ def import_sales(files, reps=None, add_customers=False, addresses=None):
     An invoice that shows up in several reports is taken from the first one only (no double counting).
     When a rep filter is on, invoices from reports that don't say the rep (customer / item detail) are kept
     only if a rep report in the same batch puts them under a chosen rep."""
-    recs_by_file = [(i, kind, sales_records(text, kind)) for i, (kind, text) in enumerate(files) if kind in SALES_KINDS]
+    recs_by_file = [(i, kind, usable_records(text, kind)[0]) for i, (kind, text) in enumerate(files)
+                    if kind in SALES_KINDS]
     rep_of = {}
     for _, kind, recs in recs_by_file:
         if kind == "sales_rep":
@@ -214,6 +280,8 @@ def import_sales(files, reps=None, add_customers=False, addresses=None):
             amount = r["amount"]
             if amount is None and r["qty"] is not None and r["unit_price"] is not None:
                 amount = round(r["qty"] * r["unit_price"], 2)
+            if amount is None and r["type"]:
+                amount = 0.0                             # e.g. a discount line with no amount
             if not d or amount is None:
                 skipped += 1
                 continue
@@ -299,7 +367,13 @@ def save_invoices(invoices, add_customers=False, addresses=None, batch=None):
     except Exception:
         con.rollback()
         raise
-    return {"invoices": len(invoices), "added": added, "replaced": replaced, "matched": matched,
+    saved = q("SELECT COUNT(*) n, coalesce(SUM(total), 0) t FROM sales WHERE batch=?", (batch,), one=True)
+    lines = q("SELECT COUNT(*) n FROM sales_lines WHERE sale_id IN (SELECT id FROM sales WHERE batch=?)", (batch,),
+              one=True)["n"]
+    want_total = round(sum(ln["amount"] for h in invoices for ln in h["lines"]), 2)
+    verified = (saved["n"] == len(invoices) and abs(saved["t"] - want_total) < 0.01 and
+                lines == sum(len(h["lines"]) for h in invoices))
+    return {"verified": verified, "lines": lines, "invoices": len(invoices), "added": added, "replaced": replaced, "matched": matched,
             "created": created, "unmatched": sorted(unmatched),
             "total": round(sum(ln["amount"] for h in invoices for ln in h["lines"]), 2)}
 
@@ -373,8 +447,8 @@ def _item_rows(text, kind):
         col = {k: i for i, k in enumerate(hdr)}
         for r in rows[1:]:
             g = lambda k: (r[col[k]].strip() if k in col and col[k] < len(r) else "")   # noqa: E731
-            if not g("item") or (not g("description") and not g("lastselldate")):
-                continue
+            if not g("item") or not any(g(k) for k in col if k not in ("item",)):
+                continue                                 # a heading row (item type)
             out.append({"item_no": g("item"), "description": g("description"), "qty_sold": _n(g("qtysold")),
                         "turnover_days": _n(g("turnoverdays")), "last_sold": S._date(g("lastselldate"))})
     elif kind == "item_summary":
@@ -389,7 +463,13 @@ def _item_rows(text, kind):
                 continue
             item_no, desc = split_item(r[0])
             out.append({"item_no": item_no, "description": desc, "avg_price": _n(g("avgprice")),
-                        "avg_cost": _n(g("avgcogs")), "margin_pct": _n(g("grossmargin").rstrip("%"))})
+                        "avg_cost": _n(g("avgcogs")), "margin_pct": _n(g("grossmargin").rstrip("%")),
+                        "_qty": _n(g("qty"))})
+        best = {}
+        for r in out:                                    # same item listed twice: keep the bigger seller
+            if r["item_no"] not in best or (r["_qty"] or 0) > (best[r["item_no"]]["_qty"] or 0):
+                best[r["item_no"]] = r
+        out = [{k: v for k, v in r.items() if k != "_qty"} for r in best.values()]
     return out
 
 

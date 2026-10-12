@@ -10,7 +10,10 @@
 <b>Sales by Rep Detail</b> (best - it says whose sale each invoice is), Sales by Customer Detail, Sales by Item Detail,
 Sales by Ship To Address (fills in customer addresses), Item Price List, Inventory Stock Status, Item Turnover and
 Sales by Item Summary (price list, stock and margins go to <a href="{{ url_for('sales.items') }}">Items &amp; Stock</a> and into quotes).
-The summary reports are only used to double-check the totals.</p></div>
+The summary reports are only used to double-check the totals.</p>
+<form method="post" action="{{ url_for('sales.company_folder') }}" class="row" style="gap:10px;margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+<label style="flex:3">Or load every CSV in a folder on this computer<input name="folder" value="{{ reports_dir or '' }}" placeholder="C:\Users\you\Desktop\Work Docs\Company Reports"></label>
+<button class="btn" style="align-self:flex-end">Load folder</button></form></div>
 <h3>Any other CSV: match columns</h3>
 <div class="card"><form method="post" enctype="multipart/form-data" class="row" style="gap:10px">
 <input type="file" name="file" accept=".csv,text/csv" required><button class="btn primary">Next: match columns</button></form>

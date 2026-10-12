@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.9.0"
+__version__ = "2.10.0"
 
 
 def _secret_key():
@@ -125,9 +125,9 @@ def create_app(db_path=None, testing=False, demo=None):
                 "holds_count": _holds.count() if session.get("uid") else 0}
 
     from .routes import (auth, crm, customers, emails, forms_lib, holds, imports, main, orders, photos, routes_plan,
-                         quotes, sales, settings)
+                         quotes, sales, settings, company)
     for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
-               holds.bp, forms_lib.bp, sales.bp, quotes.bp):
+               holds.bp, forms_lib.bp, sales.bp, quotes.bp, company.bp):
         app.register_blueprint(bp)
     if not testing and not app.config["DEMO"]:
         _start_email_watcher(app)

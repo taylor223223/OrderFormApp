@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% block title %}Company Data{% endblock %}
+{% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
+{% block body %}
+<div class="pagehead"><div><h1>Company Data</h1>
+<div class="muted">Every account, invoice and line item from the company system's reports - all reps. Your own goals and commission stay on the Sales page.</div></div></div>
+{% include '_company_nav.html' %}
+{% if empty %}
+<div class="card empty"><h3 style="margin-top:0">Nothing loaded yet</h3>
+<p>Import the company system's reports (Sales by Rep / Customer / Item Detail, Ship To, Customer and Rep Summary, Price List, Inventory, Turnover, Item Summary). Pick several files at once, or point the app at the folder they're saved in.</p>
+<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import reports</a></div>
+{% else %}
+<form class="row filters" style="gap:8px;margin-bottom:12px">
+<select name="year" onchange="this.form.submit()"><option value="">All years</option>{% for y in years %}<option {{ 'selected' if y == year }}>{{ y }}</option>{% endfor %}</select>
+<select name="rep" onchange="this.form.submit()"><option value="">All reps</option>{% for r in reps %}<option {{ 'selected' if r == rep }}>{{ r }}</option>{% endfor %}</select>
+</form>
+<div class="grid g4 stats">
+<div class="stat"><div class="l">Sales {{ year or 'all years' }}{% if rep %} · {{ rep }}{% endif %}</div><div class="n">{{ money(kpi_total) }}</div><div class="small muted">loaded from the reports</div></div>
+<div class="stat"><div class="l">Invoices &amp; credits</div><div class="n">{{ '{:,}'.format(kpi_docs|int) }}</div><div class="small muted">avg {{ money(kpi_total / kpi_docs if kpi_docs else 0) }}</div></div>
+<div class="stat"><div class="l">Accounts buying</div><div class="n">{{ '{:,}'.format(kpi_buyers|int) }}</div><div class="small muted">{{ '{:,}'.format(o.all_accounts) }} accounts on file</div></div>
+<div class="stat"><div class="l">Data covers</div><div class="n" style="font-size:18px">{{ o.first }}<br>to {{ o.last }}</div><div class="small muted">{{ '{:,}'.format(o.lines) }} line items</div></div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">Sales by month, year over year{% if rep %} · {{ rep }}{% endif %}</h2>
+<div class="chart" id="yoy"></div></div>
+
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">By sales rep</h3><div class="chart" data-chart='{{ {"type":"donut","labels":by_rep.labels,"series":by_rep.series}|tojson }}'></div></div>
+<div class="card"><h3 style="margin-top:0">By product</h3><div class="chart" data-chart='{{ {"type":"donut","labels":by_cat.labels,"series":by_cat.series}|tojson }}'></div></div>
+</div>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">Top accounts</h3><div class="chart" data-chart='{{ {"type":"hbar","labels":accts.labels,"series":accts.series,"links":acct_links}|tojson }}'></div>
+<a class="small" href="{{ url_for('company.accounts') }}">All accounts →</a></div>
+<div class="card"><h3 style="margin-top:0">Top items</h3>
+<div class="tablewrap"><table><tr><th>Item</th><th class="right">Units</th><th class="right">Sales</th></tr>
+{% for i in items %}<tr><td><span class="small muted">{{ i.item_no }}</span> {{ (i.descr or '')[:60] }}</td><td class="right">{{ '{:,.0f}'.format(i.qty or 0) }}</td><td class="right">{{ money(i.total) }}</td></tr>{% endfor %}</table></div></div>
+</div>
+
+<div class="card"><h3 style="margin-top:0">What's loaded, by rep and year</h3>
+<p class="small muted">"Report total" is the Sales by Rep Summary ({{ o.period or 'its date range' }}). Coverage below 100% means some of that rep's history hasn't been imported yet - export the missing years of Sales by Rep Detail and import them.</p>
+<div class="tablewrap"><table><tr><th>Rep</th>{% for y in o.years %}<th class="right">{{ y }}</th>{% endfor %}<th class="right">Loaded</th><th class="right">Report total</th><th class="right">Coverage</th></tr>
+{% for r in o.reps %}<tr><td>{{ r.rep }}</td>{% for y in o.years %}<td class="right">{{ money(r.years.get(y)) if r.years.get(y) else '' }}</td>{% endfor %}
+<td class="right">{{ money(r.loaded) }}</td><td class="right">{{ money(r.summary) if r.summary is not none else '' }}</td>
+<td class="right">{% if r.pct is not none %}<span class="tag {{ 'ok' if r.pct >= 99 else 'warn' }}">{{ r.pct }}%</span>{% endif %}</td></tr>{% endfor %}</table></div></div>
+
+<div class="card"><h3 style="margin-top:0">Import history</h3><div class="tablewrap"><table><tr><th>When</th><th>File</th><th>Report</th><th class="right">Lines</th><th>Dates</th><th></th></tr>
+{% for i in o.imports %}<tr><td class="small">{{ i.imported[:16] }}</td><td class="small">{{ i.filename }}</td><td class="small">{{ i.kind }}</td><td class="right">{{ '{:,}'.format(i.lines) if i.lines else '' }}</td><td class="small">{{ i.first or '' }}{% if i.last %} - {{ i.last }}{% endif %}</td><td>{% if not i.complete %}<span class="tag warn">cut off</span>{% endif %}</td></tr>{% endfor %}</table></div></div>
+<script id="yoydata" type="application/json">{{ {"labels": months, "series": yoy}|tojson }}</script>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='charts.js') }}"></script>
+<script>(function(){const s=document.getElementById('yoydata');if(!s)return;const d=JSON.parse(s.textContent);
+AISChart.render(document.getElementById('yoy'),{type:'line',labels:d.labels,series:Object.keys(d.series).sort().map(k=>({name:k,values:d.series[k]})),fmt:'money'});})();</script>{% endblock %}

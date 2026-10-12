@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}{{ d.doc_type }} {{ d.num }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small">{% if d.cust_key %}<a href="{{ url_for('company.account', key=d.cust_key) }}">← {{ d.customer }}</a>{% endif %}</div>
+<h1>{{ d.doc_type }} {{ d.num }}</h1><div class="muted">{{ d.doc_date }} · {{ d.customer }}{% if d.rep %} · {{ d.rep }}{% endif %} · from {{ d.report }}</div></div></div>
+<div class="tablewrap"><table><tr><th>Item #</th><th>Item</th><th>Memo</th><th>Category</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Amount</th></tr>
+{% for l in lines %}<tr><td class="small">{{ l.item_no }}</td><td class="small">{{ l.item_desc }}</td><td>{{ l.memo }}</td><td class="small">{{ l.category }}</td>
+<td class="right">{{ '%g' % l.qty if l.qty is not none else '' }}</td><td class="right">{{ '%.2f' % l.price if l.price is not none else '' }}</td><td class="right">{{ '{:,.2f}'.format(l.amount or 0) }}</td></tr>{% endfor %}
+<tr><td colspan="6" class="right"><b>Total</b></td><td class="right"><b>${{ '{:,.2f}'.format(d.total) }}</b></td></tr></table></div>
+{% endblock %}

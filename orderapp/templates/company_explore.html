@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% block title %}Explore company data{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Explore &amp; chart</h1><div class="muted">Pick what to measure, how to group it and how to show it. Filters narrow it down. Click a bar or slice for an account's profile.</div></div></div>
+{% include '_company_nav.html' %}
+<form id="ex" class="card">
+<div class="grid g4" style="gap:8px">
+<div><label>Measure</label><select name="measure">{% for k, m in measures.items() %}<option value="{{ k }}" {{ 'selected' if a.get('measure') == k }}>{{ m[0] }}</option>{% endfor %}</select></div>
+<div><label>Group by</label><select name="dim">{% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if (a.get('dim') or 'month') == k }}>{{ d[0] }}</option>{% endfor %}</select></div>
+<div><label>Split into series by</label><select name="split"><option value="">- nothing -</option>{% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if a.get('split') == k }}>{{ d[0] }}</option>{% endfor %}</select></div>
+<div><label>Chart</label><select name="chart">{% for k, l in [('auto','Best fit'),('bar','Bars'),('stacked','Stacked bars'),('line','Line'),('hbar','Ranked bars'),('pie','Pie'),('donut','Donut'),('table','Table only')] %}<option value="{{ k }}" {{ 'selected' if a.get('chart') == k }}>{{ l }}</option>{% endfor %}</select></div>
+<div><label>Year</label><select name="year"><option value="">All</option>{% for y in years %}<option {{ 'selected' if a.get('year') == y }}>{{ y }}</option>{% endfor %}</select></div>
+<div><label>Rep</label><select name="rep"><option value="">All</option>{% for r in reps %}<option {{ 'selected' if a.get('rep') == r }}>{{ r }}</option>{% endfor %}</select></div>
+<div><label>Product</label><select name="category"><option value="">All</option>{% for c in categories %}<option {{ 'selected' if a.get('category') == c }}>{{ c }}</option>{% endfor %}</select></div>
+<div><label>City</label><select name="city"><option value="">All</option>{% for c in cities %}<option {{ 'selected' if a.get('city') == c }}>{{ c }}</option>{% endfor %}</select></div>
+<div><label>Account contains</label><input name="account" value="{{ a.get('account','') }}"></div>
+<div><label>Item contains</label><input name="item" value="{{ a.get('item','') }}" placeholder="e.g. faux wood"></div>
+<div><label>From</label><input type="date" name="from" value="{{ a.get('from','') }}"></div>
+<div><label>To</label><input type="date" name="to" value="{{ a.get('to','') }}"></div>
+</div>
+<div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap"><span class="small muted">Quick views:</span>
+{% for lab, qs in [('Sales by month','dim=month'),('Year over year by month','dim=moy&split=year&chart=line'),('Reps by year','dim=year&split=rep&chart=stacked'),('Product mix','dim=category&chart=donut'),('Top accounts','dim=account&chart=hbar'),('Top items by units','dim=item&measure=qty&chart=hbar'),('Accounts buying per month','dim=month&measure=accounts&chart=line'),('Average invoice by rep','dim=rep&measure=avg&chart=hbar'),('Sales by city','dim=city&chart=hbar'),('Seasonality','dim=moy&chart=bar')] %}
+<a class="btn sm" href="?{{ qs }}">{{ lab }}</a>{% endfor %}</div></form>
+<div class="card"><div class="row" style="justify-content:space-between"><h2 id="title" style="margin:0"></h2>
+<div class="row" style="gap:6px"><span id="total" class="small muted"></span><a id="csv" class="btn sm">Download CSV</a></div></div>
+<div id="chart" class="chart" style="margin-top:8px"></div></div>
+<div class="tablewrap"><table id="tbl"></table></div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='charts.js') }}"></script>
+<script>
+(function () {
+  const form = document.getElementById('ex'), api = '{{ url_for("company.api_pivot") }}';
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+  async function run() {
+    const p = new URLSearchParams(new FormData(form)); for (const [k, v] of [...p]) if (!v) p.delete(k);
+    history.replaceState(null, '', '?' + p.toString());
+    const d = await fetch(api + '?' + p.toString()).then(r => r.json());
+    const fmt = d.fmt, F = v => fmt === 'money' ? AISChart.money(v) : (Math.round(v * 100) / 100).toLocaleString();
+    let type = p.get('chart') || 'auto';
+    if (type === 'auto') type = ['month', 'moy', 'year', 'quarter'].includes(d.dim) ? (d.split ? (d.dim === 'moy' ? 'line' : 'stacked') : 'bar') : (d.split ? 'stacked' : 'hbar');
+    if ((type === 'pie' || type === 'donut' || type === 'hbar') && d.series.length > 1) type = 'stacked';
+    document.getElementById('title').textContent = `${d.measure_label} by ${d.dim_label.toLowerCase()}${d.split ? ', split by ' + form.split.selectedOptions[0].text.toLowerCase() : ''}`;
+    document.getElementById('total').textContent = d.measure === 'avg' ? '' : 'Total ' + F(d.total);
+    document.getElementById('csv').href = api + '?' + p.toString() + '&format=csv';
+    const box = document.getElementById('chart');
+    if (type === 'table') box.innerHTML = ''; else AISChart.render(box, {type, labels: d.labels, series: d.series, fmt, links: d.links});
+    const t = document.getElementById('tbl');
+    t.innerHTML = `<tr><th>${esc(d.dim_label)}</th>${d.series.map(s => `<th class="right">${esc(s.name)}</th>`).join('')}${d.series.length > 1 ? '<th class="right">Total</th>' : ''}${d.series.length === 1 && d.measure !== 'avg' ? '<th class="right">Share</th>' : ''}</tr>` +
+      d.labels.map((l, i) => { const tot = d.series.reduce((a, s) => a + (s.values[i] || 0), 0);
+        const lab = d.links && d.links[i] ? `<a href="${d.links[i]}">${esc(l)}</a>` : esc(l);
+        return `<tr><td>${lab}</td>${d.series.map(s => `<td class="right">${F(s.values[i] || 0)}</td>`).join('')}` +
+          (d.series.length > 1 ? `<td class="right"><b>${F(tot)}</b></td>` : '') +
+          (d.series.length === 1 && d.measure !== 'avg' ? `<td class="right">${d.total ? Math.round(tot / d.total * 1000) / 10 + '%' : ''}</td>` : '') + '</tr>'; }).join('');
+  }
+  form.addEventListener('change', run); form.addEventListener('submit', e => { e.preventDefault(); run(); });
+  run();
+})();
+</script>{% endblock %}

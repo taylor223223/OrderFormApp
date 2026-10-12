@@ -8,6 +8,7 @@
     <a class="btn" href="{{ url_for('customers.view', cid=c.id, tab='crm') }}#quicklog">Log call/visit</a>
     <a class="btn" href="{{ url_for('quotes.new', customer=c.id) }}">+ Quote</a>
     <a class="btn" href="{{ url_for('quotes.prices', cid=c.id) }}">Account prices</a>
+    {% if co_key %}<a class="btn" href="{{ url_for('company.account', key=co_key) }}" title="Every purchase in the company reports, charts and insights">Company profile</a>{% endif %}
     <a class="btn" href="{{ url_for('customers.edit', cid=c.id) }}">Edit</a>
     <a class="btn" href="{{ url_for('imports.upload', customer=c.id) }}">Import CSV</a>
   </div>

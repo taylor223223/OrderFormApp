@@ -149,14 +149,39 @@ def price_for(customer_id, item_no=None, description=None, category=None):
     if lp:
         return {"price": lp["unit_price"], "source": "Last paid", "date": lp["invoice_date"],
                 "item_no": lp["item_no"], "description": lp["description"]}
+    co = _company_last_paid(customer_id, item_no)
+    if co:
+        return {"price": co["price"], "source": "Last paid (company data)", "date": co["doc_date"],
+                "item_no": item_no, "description": co["memo"]}
     it = _list_item(item_no) or (_list_item(la["item_no"]) if la and la.get("item_no") else None)
     if it and it.get("list_price"):
         return {"price": it["list_price"], "source": "List price", "date": (it.get("price_updated") or "")[:10],
                 "item_no": it["item_no"], "description": (la or {}).get("description") or it["description"]}
+    if not la and item_no:
+        from .company_db import latest_price
+        cl = latest_price(item_no)
+        if cl:
+            return {"price": cl["price"], "source": "Latest price (company data)", "date": cl["doc_date"],
+                    "item_no": item_no, "description": cl["memo"]}
     if la:
         return {"price": la["unit_price"], "source": "Latest price", "date": la["invoice_date"],
                 "item_no": la["item_no"], "description": la["description"]}
     return None
+
+
+def _company_last_paid(customer_id, item_no):
+    """This account's last price for the item in Company Data (all reps' invoices)."""
+    if not customer_id or not item_no:
+        return None
+    from .company_db import company_key
+    c = q("SELECT name FROM customers WHERE id=?", (customer_id,), one=True)
+    key = company_key(c["name"]) if c else None
+    if not key:
+        return None
+    r = q("""SELECT l.price, l.memo, d.doc_date FROM co_lines l JOIN co_docs d ON d.id=l.doc_id
+             WHERE d.cust_key=? AND l.item_no=? AND l.price IS NOT NULL AND l.price>0 AND d.doc_type='Invoice'
+             ORDER BY d.doc_date DESC LIMIT 1""", (key, str(item_no).strip()), one=True)
+    return dict(r) if r else None
 
 
 def _list_item(item_no):

@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Company accounts{% endblock %}
+{% macro money(v) %}{% if v is not none %}${{ '{:,.0f}'.format(v) }}{% endif %}{% endmacro %}
+{% block body %}
+<div class="pagehead"><div><h1>Accounts</h1><div class="muted">Every account in the company reports. Click one for its full profile.</div></div></div>
+{% include '_company_nav.html' %}
+<form class="row card" style="gap:8px">
+<input name="q" value="{{ q }}" placeholder="Name, address or zip" style="flex:2">
+<select name="rep" style="flex:1"><option value="">Any main rep</option>{% for r in reps %}<option {{ 'selected' if r == rep }}>{{ r }}</option>{% endfor %}</select>
+<select name="city" style="flex:1"><option value="">Any city</option>{% for c in cities %}<option {{ 'selected' if c == city }}>{{ c }}</option>{% endfor %}</select>
+<select name="sort" style="flex:1">{% for k, l in [('total','Biggest lifetime'),('loaded','Biggest loaded sales'),('last','Most recent purchase'),('name','Name A-Z')] %}<option value="{{ k }}" {{ 'selected' if k == sort }}>{{ l }}</option>{% endfor %}</select>
+<button class="btn">Search</button></form>
+<div class="tablewrap"><table><tr><th>Account</th><th>City</th><th>Main rep</th><th class="right">Lifetime (report)</th><th class="right">Loaded sales</th><th class="right">Invoices</th><th>Last purchase</th></tr>
+{% for r in rows %}<tr><td>{% if r.cust_key %}<a href="{{ url_for('company.account', key=r.cust_key) }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}<div class="small muted">{{ r.address or '' }}</div></td>
+<td class="small">{{ r.city or '' }}{% if r.zip %} {{ r.zip }}{% endif %}</td><td class="small">{{ r.rep or '' }}</td>
+<td class="right">{{ money(r.summary_total) }}</td><td class="right">{{ money(r.loaded) }}</td><td class="right">{{ r.docs or '' }}</td><td class="small">{{ r.last or '' }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No accounts{% if q or rep or city %} match{% endif %}.</td></tr>{% endfor %}</table></div>
+{% if rows|length >= 500 %}<p class="small muted">Showing 500 - search to narrow it down.</p>{% endif %}
+{% endblock %}

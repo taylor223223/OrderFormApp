@@ -335,6 +335,7 @@ def _seed_quotes_prices_deliveries(cids, today):
     DL.record("\n".join(lines), "email", "Deliveries for today - Truck 2 (demo)", now()[:16], "demo-delivery-1",
               auto_apply=True)
     _seed_items(today)
+    _seed_company()
     x("""UPDATE account_holds SET days_late=?, aging=?, last_payment=? WHERE name='Canyon Vista Apartments'""",
       (75, dumps({"31-60": 1630.10, "61-90": 2688.45}), (today - timedelta(days=80)).isoformat()))
 
@@ -356,6 +357,38 @@ def _seed_items(today):
            on_hand - on_so, r.choice([0, 0, 12, 24]), 4, (today + timedelta(days=r.randint(2, 20))).isoformat(),
            round(r.uniform(0.2, 6), 1), it["n"], it["last"], round(it["p"], 2), round(it["p"] * 0.6, 2), 40.0,
            now(), now(), now()))
+
+
+def _seed_company():
+    """Company Data (made up): the demo sales history plus two made-up colleagues' accounts."""
+    from .db import get_db, norm_name
+    r = random.Random(11)
+    con = get_db()
+    reps = ["Demo Rep", "Alex Sample (demo)", "Jordan Test (demo)"]
+    for c in q("SELECT * FROM customers"):
+        con.execute("""INSERT OR IGNORE INTO co_accounts(cust_key, name, address, city, state, zip, updated)
+                       VALUES (?,?,?,?,?,?,?)""", (norm_name(c["name"]), c["name"], c["address"], c["city"],
+                                                    c["state"], c["zip"], now()))
+    for s in q("SELECT * FROM sales"):
+        for k, name in enumerate([s["customer_name"], f"{s['customer_name']} West (demo)"] if r.random() < 0.6
+                                 else [s["customer_name"]]):
+            rep = "Demo Rep" if k == 0 else r.choice(reps[1:])
+            did = con.execute("""INSERT INTO co_docs(doc_type, num, doc_date, customer, cust_key, rep, total, report, batch)
+                                 VALUES (?,?,?,?,?,?,?,?,?)""",
+                              ("Invoice", f"{s['invoice_no']}{'-' + str(k) if k else ''}", s["invoice_date"], name,
+                               norm_name(name), rep, s["total"], "demo", "demo")).lastrowid
+            con.execute("INSERT OR IGNORE INTO co_accounts(cust_key, name, updated) VALUES (?,?,?)",
+                        (norm_name(name), name, now()))
+            con.executemany("""INSERT INTO co_lines(doc_id, item_no, item_desc, memo, category, qty, price, amount)
+                               VALUES (?,?,?,?,?,?,?,?)""",
+                            [(did, ln["item_no"], ln["description"], ln["description"], ln["category"], ln["qty"],
+                              ln["unit_price"], ln["amount"]) for ln in q("SELECT * FROM sales_lines WHERE sale_id=?",
+                                                                          (s["id"],))])
+    tot = {r_["rep"]: r_["t"] for r_ in q("SELECT rep, SUM(total) t FROM co_docs GROUP BY rep")}
+    for rep, t in tot.items():
+        con.execute("INSERT OR REPLACE INTO co_reps(name, summary_total, summary_period, updated) VALUES (?,?,?,?)",
+                    (rep, round(t, 2), "demo", now()))
+    con.commit()
 
 
 def _seed_review(cids):

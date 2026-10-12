@@ -22,6 +22,7 @@ REP_DETAIL = '''\
 ,"Invoice","03/10/2026","500100","2'-6"" x 6'-8"" HC Primecoat Door (LH) *12","Mesa Example Flats","100020 (2'-6"" x 6'-7-1/2"" x 1-3/8"" HC Primecoat Door)",3,80.00,240.00,240.00
 ,"Invoice","03/10/2026","500100","H/C Door Milling  Charge","Mesa Example Flats","137777 (H/C Door Milling  Charge)",3,10.50,31.50,271.50
 ,"Invoice","04/02/2026","500200","Vertical blind 96 x 84","Saguaro Ridge Apartments","218055 (36"" x 82-1/2"" White Vertical Blind (Premium Series))",1,30.00,30.00,301.50
+,"Invoice","04/02/2026","500200","5% Product Discount","Saguaro Ridge Apartments","Discount",,,,301.50
 "Total Taylor Anderson",,,,,,,7,,301.50,301.50
 "TOTAL",,,,,,,8,,354.00,354.00
 '''
@@ -66,6 +67,7 @@ TURNOVER = '''\
 "Item","Description","Category","Qty Sold","Amount","Turnover Ratio","Turnover Days","Last Sell Date"
 "Inventory",,,,,,,
 "100020","2'-6"" x 6'-7-1/2"" x 1-3/8"" HC Primecoat Door","Uncategorized",300,24000.00,12,30,"10/01/2026"
+"999901",,"Uncategorized","","","","",
 '''
 
 ITEM_SUMMARY = '''\
@@ -92,6 +94,8 @@ def app():
         set_setting("output_dir", os.path.join(d, "out"))
         set_setting("sales_rep", "Taylor M. Anderson")
         x("DELETE FROM sales")
+        for t in ("co_docs", "co_accounts", "co_reps", "co_imports"):
+            x(f"DELETE FROM {t}")
         x("DELETE FROM customers WHERE name IN ('Mesa Example Flats', 'Cactus Wren Villas')")
     return a
 
@@ -120,9 +124,11 @@ def test_detect_and_parse():
     assert CR.split_item('130015 (3\'-0" X 6\'-8" Bi-Fold Door Set (Primecoat))') == \
         ("130015", '3\'-0" X 6\'-8" Bi-Fold Door Set (Primecoat)')
     recs = CR.sales_records(REP_DETAIL, "sales_rep")
-    assert len(recs) == 6 and recs[0]["rep"] == "Pat Example" and recs[0]["item_no"] == "21335072"
+    assert len(recs) == 7 and recs[0]["rep"] == "Pat Example" and recs[0]["item_no"] == "21335072"
     assert recs[0]["description"].startswith('35" x 72"') and recs[-1]["rep"] == "Taylor Anderson"
     info = CR.describe(REP_DETAIL, "sales_rep")
+    assert info["tied"] == 3 and info["untied"] == []         # 2 rep subtotals + grand TOTAL
+    assert len(CR._item_rows(TURNOVER, "turnover")) == 2    # an item with no description still counts
     assert info["complete"] and info["reps"]["Taylor Anderson"]["total"] == 301.5
     cut = CR.describe(CUST_DETAIL, "sales_customer")       # no TOTAL line = export was cut off
     assert not cut["complete"] and cut["last"] == "2026-05-01"
@@ -146,11 +152,14 @@ def test_import_through_the_app(app):
     assert r.status_code == 200 and "Cut off" in html and "Taylor Anderson" in html and "other.csv" in html
     token = re.search(r'name="token" value="([0-9a-f]+)"', html).group(1)
     assert 'value="Taylor Anderson" checked' in html          # matches the Sales rep setting (Taylor M. Anderson)
-    c.post("/sales/company/import", data={"csrf_token": t, "token": token, "rep_filter": "1",
-                                          "rep": "Taylor Anderson", "add_customers": "1"})
+    done = c.post("/sales/company/import", data={"csrf_token": t, "token": token, "rep_filter": "1",
+                                                 "rep": "Taylor Anderson", "add_customers": "1"}, follow_redirects=True)
+    assert b"checked - every line saved" in done.data
     s = Q(app, "SELECT COUNT(*) n, SUM(total) t FROM sales", one=True)
     assert s["n"] == 2 and round(s["t"], 2) == 301.5       # only Taylor's; invoice 500100 not doubled
     assert not Q(app, "SELECT 1 FROM sales WHERE invoice_no='500300'")   # customer detail, no rep -> left out
+    assert Q(app, "SELECT COUNT(*) n FROM sales_lines l JOIN sales s ON s.id=l.sale_id WHERE invoice_no='500200'",
+             one=True)["n"] == 2                           # the $0 discount line is kept too
     assert Q(app, "SELECT COUNT(*) n FROM sales_lines l JOIN sales s ON s.id=l.sale_id WHERE invoice_no='500100'",
              one=True)["n"] == 2
     cu = Q(app, "SELECT * FROM customers WHERE name='Mesa Example Flats'", one=True)
@@ -180,3 +189,47 @@ def test_import_through_the_app(app):
     c.post("/sales/company/import", data={"csrf_token": t, "token": token})
     s = Q(app, "SELECT COUNT(*) n, SUM(total) t FROM sales", one=True)
     assert s["n"] == 4 and round(s["t"], 2) == 354.0
+
+
+def test_company_data(app, tmp_path):
+    """Everything (all reps) lands in Company Data; profile, explore, insights and exports work."""
+    c = app.test_client()
+    t = _csrf(c)
+    for name, text in (("Sales By Rep Detail.CSV", REP_DETAIL), ("Sales By Customer Detail.CSV", CUST_DETAIL),
+                       ("sales by ship to address.CSV", SHIP_TO), ("sales by rep summary.CSV", REP_SUMMARY),
+                       ("notes.txt", "not a report")):
+        (tmp_path / name).write_bytes(text.encode("cp1252"))
+    html = c.post("/sales/company/folder", data={"csrf_token": t, "folder": str(tmp_path)}).data.decode()
+    assert "stops part-way through Ocotillo Test Homes" in html           # cut-off account left out
+    token = re.search(r'name="token" value="([0-9a-f]+)"', html).group(1)
+    done = c.post("/sales/company/import", data={"csrf_token": t, "token": token, "rep_filter": "1",
+                                                 "rep": "Taylor Anderson"}, follow_redirects=True).data.decode()
+    assert "Company Data: 4 invoice(s)/credit(s)" in done and "(checked)" in done
+    d = Q(app, "SELECT COUNT(*) n, SUM(total) t FROM co_docs", one=True)
+    assert d["n"] == 4 and round(d["t"], 2) == 354.0                       # every rep, no double counting
+    assert not Q(app, "SELECT 1 FROM co_docs WHERE num='500300'")
+    assert Q(app, "SELECT rep FROM co_docs WHERE num='500100'", one=True)["rep"] == "Taylor Anderson"
+    assert Q(app, "SELECT summary_total FROM co_reps WHERE name='Pat Example'", one=True)["summary_total"] == 52.5
+    key = Q(app, "SELECT cust_key FROM co_docs WHERE num='500001'", one=True)["cust_key"]
+    page = c.get(f"/company/account/{key}").data.decode()
+    assert "Cactus Wren Villas" in page and "$52" in page and "500050" in page   # invoice minus credit
+    for url in ("/company", "/company?year=2026&rep=Pat+Example", "/company/accounts?q=mesa", "/company/insights",
+                "/company/explore", "/company/sales?item=21335072", f"/company/doc/{Q(app, 'SELECT MIN(id) i FROM co_docs', one=True)['i']}"):
+        assert c.get(url).status_code == 200, url
+    j = c.get("/company/api/pivot?dim=rep&measure=sales").get_json()
+    assert dict(zip(j["labels"], j["series"][0]["values"])) == {"Taylor Anderson": 301.5, "Pat Example": 52.5}
+    j = c.get("/company/api/pivot?dim=month&split=rep&measure=docs").get_json()
+    assert j["labels"] == ["2026-01", "2026-02", "2026-03", "2026-04"] and len(j["series"]) == 2
+    assert c.get("/company/api/pivot?dim=account&format=csv").data.decode().count("\n") == 4
+    assert b"500001" in c.get("/company/sales?format=csv").data
+    # add a company account to my customers, then my customer page links back
+    r = c.post(f"/company/account/{key}/add", data={"csrf_token": t})
+    cid = int(r.headers["Location"].rsplit("/", 1)[1])
+    assert f"/company/account/{key}".encode() in c.get(f"/customers/{cid}").data
+    # loading the same files again changes nothing
+    html = c.post("/sales/company/folder", data={"csrf_token": t, "folder": str(tmp_path)}).data.decode()
+    assert "already loaded" in html
+    token = re.search(r'name="token" value="([0-9a-f]+)"', html).group(1)
+    c.post("/sales/company/import", data={"csrf_token": t, "token": token})
+    d = Q(app, "SELECT COUNT(*) n, SUM(total) t FROM co_docs", one=True)
+    assert d["n"] == 4 and round(d["t"], 2) == 354.0

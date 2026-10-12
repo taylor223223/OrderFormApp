@@ -153,7 +153,7 @@ def import_page():
                   f"{', '.join(res['unmatched'][:5])}. They still count in every report; add the customer "
                   f"(same name or account #) and click 'Re-link customers'.", "info")
         return redirect(url_for("sales.home"))
-    return render_template("sales_import.html", step="upload", labels=S.FIELD_LABELS)
+    return render_template("sales_import.html", step="upload", labels=S.FIELD_LABELS, reports_dir=setting("reports_dir"))
 
 
 @bp.route("/sales/template.csv")
@@ -234,22 +234,51 @@ def _rep_matches(rep, me):
 @login_required
 def company_upload():
     from .. import company_reports as CR
-    files = [f for f in request.files.getlist("files") if f and f.filename]
+    files = [(f.filename, f.read()) for f in request.files.getlist("files") if f and f.filename]
     if not files:
         flash("Pick one or more report files first.", "error")
         return redirect(url_for("sales.import_page"))
+    return _preview(files)
+
+
+@bp.route("/sales/company/folder", methods=["POST"])
+@login_required
+def company_folder():
+    """Load every report CSV in a folder on this computer (default: the folder saved last time)."""
+    folder = (request.form.get("folder") or setting("reports_dir") or "").strip().strip('"')
+    if not folder or not os.path.isdir(folder):
+        flash(f"Can't find that folder: {folder or '(none)'}", "error")
+        return redirect(url_for("sales.import_page"))
+    set_setting("reports_dir", folder)
+    files = []
+    for name in sorted(os.listdir(folder)):
+        if name.lower().endswith(".csv"):
+            with open(os.path.join(folder, name), "rb") as fh:
+                files.append((name, fh.read()))
+    if not files:
+        flash("No CSV files in that folder.", "error")
+        return redirect(url_for("sales.import_page"))
+    return _preview(files)
+
+
+def _preview(files):
+    from .. import company_db as CD
+    from .. import company_reports as CR
     token = uuid.uuid4().hex
     found, unknown = [], []
-    for i, f in enumerate(files):
-        text = CR.decode(f.read())
-        kind = CR.detect(text, f.filename)
+    for i, (filename, raw) in enumerate(files):
+        text = CR.decode(raw)
+        kind = CR.detect(text, filename)
         if not kind:
-            unknown.append(f.filename)
+            unknown.append(filename)
             continue
-        with open(os.path.join(_upload_dir(), f"co_{token}_{i}.csv"), "w", encoding="utf-8", newline="") as fh:
+        with open(os.path.join(_upload_dir(), f"co_{token}_{i:03d}.csv"), "w", encoding="utf-8", newline="") as fh:
             fh.write(text)
+        with open(os.path.join(_upload_dir(), f"co_{token}_{i:03d}.name"), "w", encoding="utf-8") as fh:
+            fh.write(filename)
         info = CR.describe(text, kind)
-        info.update(idx=i, filename=f.filename)
+        prev = CD.already_loaded(text)
+        info.update(idx=i, filename=filename, loaded_before=prev["imported"][:16] if prev else "")
         found.append(info)
     if not found:
         flash("Those don't look like company reports. For any other CSV use 'Match columns' below.", "error")
@@ -281,22 +310,31 @@ def company_import():
     token = request.form.get("token", "")
     if not token.isalnum():
         abort(400)
+    from .. import company_db as CD
     files = []
     for name in sorted(os.listdir(_upload_dir())):
-        if name.startswith(f"co_{token}_"):
+        if name.startswith(f"co_{token}_") and name.endswith(".csv"):
             path = os.path.join(_upload_dir(), name)
             with open(path, encoding="utf-8") as fh:
                 text = fh.read()
-            files.append((CR.detect(text, ""), text, path))
+            fname = name
+            if os.path.exists(path[:-4] + ".name"):
+                with open(path[:-4] + ".name", encoding="utf-8") as fh:
+                    fname = fh.read()
+                os.remove(path[:-4] + ".name")
+            files.append((CR.detect(text, fname), text, path, fname))
     if not files:
         flash("That upload expired - pick the files again.", "error")
         return redirect(url_for("sales.import_page"))
     msgs = []
+    co = CD.store([(k, t, fn) for k, t, _, fn in files if k])
+    msgs.append(f"Company Data: {co['docs']:,} invoice(s)/credit(s), {co['lines']:,} line(s), ${co['total']:,.2f} for "
+                f"every rep{' (checked)' if co['verified'] else ' (WARNING: totals do not match - import again)'}")
     addrs = {}
-    for kind, text, _ in files:
+    for kind, text, _, _ in files:
         if kind == "ship_to":
             addrs.update(CR.ship_to_addresses(text))
-    sales_files = [(k, t) for k, t, _ in files if k in CR.SALES_KINDS]
+    sales_files = [(k, t) for k, t, _, _ in files if k in CR.SALES_KINDS]
     if sales_files:
         reps = None
         if request.form.get("rep_filter") == "1":
@@ -305,24 +343,26 @@ def company_import():
                 set_setting("report_rep", next(iter(reps)))
         res = CR.import_sales(sales_files, reps=reps, add_customers=request.form.get("add_customers") == "1",
                               addresses=addrs)
-        msgs.append(f"Sales: {res['invoices']:,} invoice(s), ${res['total']:,.2f} ({res['added']:,} new, "
+        msgs.append(f"My sales: {res['invoices']:,} invoice(s), {res['lines']:,} line(s), ${res['total']:,.2f} "
+                    f"{'(checked - every line saved) ' if res['verified'] else '(WARNING: saved totals do not match the reports - import again) '}"
+                    f"({res['added']:,} new, "
                     f"{res['replaced']:,} updated)" + (f", {res['created']} customer(s) added" if res["created"] else "")
                     + (f"; {res['filtered_invoices']:,} other reps' invoice(s) left out" if res["filtered_invoices"] else ""))
         if res["unmatched"]:
             flash(f"{len(res['unmatched'])} customer name(s) aren't in the app yet (e.g. "
                   f"{', '.join(res['unmatched'][:4])}). They still count in every report.", "info")
-    for kind, text, _ in files:
+    for kind, text, _, _ in files:
         if kind in ("price_list", "inventory", "turnover", "item_summary"):
             msgs.append(f"{CR.KINDS[kind]}: {CR.import_items(text, kind):,} item(s)")
     if addrs:
         msgs.append(f"Ship-to addresses: filled in for {CR.fill_addresses(addrs)} customer(s)")
-    for _, _, path in files:
+    for _, _, path, _ in files:
         try:
             os.remove(path)
         except OSError:
             pass
     flash("Imported - " + "; ".join(msgs) + "." if msgs else "Nothing to import in those files.", "ok")
-    return redirect(url_for("sales.items") if not sales_files else url_for("sales.home"))
+    return redirect(url_for("company.home"))
 
 
 @bp.route("/items")

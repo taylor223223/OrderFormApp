@@ -108,7 +108,13 @@ def view(cid):
     return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders,
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
-                           tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid), **crm)
+                           tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid),
+                           co_key=_company_key(c["name"]), **crm)
+
+
+def _company_key(name):
+    from ..company_db import company_key
+    return company_key(name)
 
 
 def _sales_summary(cid):
