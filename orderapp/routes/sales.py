@@ -222,3 +222,115 @@ def export():
     name = f"Sales history{' ' + year if year else ''}.csv"
     return Response("﻿" + out.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename={name}"})
+
+
+# ------------------------------------------------------------------ company system reports (QuickBooks exports)
+def _rep_matches(rep, me):
+    a, b = set((rep or "").lower().replace(".", "").split()), set((me or "").lower().replace(".", "").split())
+    return bool(a) and bool(b) and len(a & b) >= 2
+
+
+@bp.route("/sales/company", methods=["POST"])
+@login_required
+def company_upload():
+    from .. import company_reports as CR
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if not files:
+        flash("Pick one or more report files first.", "error")
+        return redirect(url_for("sales.import_page"))
+    token = uuid.uuid4().hex
+    found, unknown = [], []
+    for i, f in enumerate(files):
+        text = CR.decode(f.read())
+        kind = CR.detect(text, f.filename)
+        if not kind:
+            unknown.append(f.filename)
+            continue
+        with open(os.path.join(_upload_dir(), f"co_{token}_{i}.csv"), "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+        info = CR.describe(text, kind)
+        info.update(idx=i, filename=f.filename)
+        found.append(info)
+    if not found:
+        flash("Those don't look like company reports. For any other CSV use 'Match columns' below.", "error")
+        return redirect(url_for("sales.import_page"))
+    order = list(CR.KINDS)
+    found.sort(key=lambda i: order.index(i["kind"]))
+    reps = {}
+    for f in found:
+        for r, v in (f.get("reps") or {}).items():
+            t = reps.setdefault(r, {"lines": 0, "total": 0.0})
+            t["lines"] += v["lines"]
+            t["total"] += v["total"]
+    me = setting("report_rep") or setting("sales_rep") or ""
+    chosen = {r for r in reps if r == me or _rep_matches(r, me)}
+    summaries = {}
+    for f in found:
+        if f["kind"] in ("summary_rep", "summary_customer"):
+            summaries.update(f["totals"])
+    return render_template("sales_company.html", files=found, unknown=unknown, token=token, reps=reps,
+                           chosen=chosen, summaries=summaries,
+                           has_sales=any(f["kind"] in CR.SALES_KINDS for f in found),
+                           has_rep=any(f["kind"] == "sales_rep" for f in found))
+
+
+@bp.route("/sales/company/import", methods=["POST"])
+@login_required
+def company_import():
+    from .. import company_reports as CR
+    token = request.form.get("token", "")
+    if not token.isalnum():
+        abort(400)
+    files = []
+    for name in sorted(os.listdir(_upload_dir())):
+        if name.startswith(f"co_{token}_"):
+            path = os.path.join(_upload_dir(), name)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            files.append((CR.detect(text, ""), text, path))
+    if not files:
+        flash("That upload expired - pick the files again.", "error")
+        return redirect(url_for("sales.import_page"))
+    msgs = []
+    addrs = {}
+    for kind, text, _ in files:
+        if kind == "ship_to":
+            addrs.update(CR.ship_to_addresses(text))
+    sales_files = [(k, t) for k, t, _ in files if k in CR.SALES_KINDS]
+    if sales_files:
+        reps = None
+        if request.form.get("rep_filter") == "1":
+            reps = set(request.form.getlist("rep"))
+            if len(reps) == 1:
+                set_setting("report_rep", next(iter(reps)))
+        res = CR.import_sales(sales_files, reps=reps, add_customers=request.form.get("add_customers") == "1",
+                              addresses=addrs)
+        msgs.append(f"Sales: {res['invoices']:,} invoice(s), ${res['total']:,.2f} ({res['added']:,} new, "
+                    f"{res['replaced']:,} updated)" + (f", {res['created']} customer(s) added" if res["created"] else "")
+                    + (f"; {res['filtered_invoices']:,} other reps' invoice(s) left out" if res["filtered_invoices"] else ""))
+        if res["unmatched"]:
+            flash(f"{len(res['unmatched'])} customer name(s) aren't in the app yet (e.g. "
+                  f"{', '.join(res['unmatched'][:4])}). They still count in every report.", "info")
+    for kind, text, _ in files:
+        if kind in ("price_list", "inventory", "turnover", "item_summary"):
+            msgs.append(f"{CR.KINDS[kind]}: {CR.import_items(text, kind):,} item(s)")
+    if addrs:
+        msgs.append(f"Ship-to addresses: filled in for {CR.fill_addresses(addrs)} customer(s)")
+    for _, _, path in files:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    flash("Imported - " + "; ".join(msgs) + "." if msgs else "Nothing to import in those files.", "ok")
+    return redirect(url_for("sales.items") if not sales_files else url_for("sales.home"))
+
+
+@bp.route("/items")
+@login_required
+def items():
+    from .. import company_reports as CR
+    term = request.args.get("q", "").strip()
+    cat = request.args.get("category", "")
+    stock = request.args.get("stock", "")
+    return render_template("items.html", rows=CR.search(term, cat, stock), q=term, cat=cat, stock=stock,
+                           categories=S.CATEGORIES, counts=CR.counts())

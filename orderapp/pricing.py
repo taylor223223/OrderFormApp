@@ -3,7 +3,8 @@
 Price lookup order (most specific first):
   1. Agreed account price  - a price you set for this account (contract / negotiated)
   2. This account's last price paid - from the sales history
-  3. Latest price anyone paid - from the sales history ("list")
+  3. Company list price - from the Item Price List report (exact item #)
+  4. Latest price anyone paid - from the sales history
 """
 import re
 
@@ -148,24 +149,44 @@ def price_for(customer_id, item_no=None, description=None, category=None):
     if lp:
         return {"price": lp["unit_price"], "source": "Last paid", "date": lp["invoice_date"],
                 "item_no": lp["item_no"], "description": lp["description"]}
+    it = _list_item(item_no) or (_list_item(la["item_no"]) if la and la.get("item_no") else None)
+    if it and it.get("list_price"):
+        return {"price": it["list_price"], "source": "List price", "date": (it.get("price_updated") or "")[:10],
+                "item_no": it["item_no"], "description": (la or {}).get("description") or it["description"]}
     if la:
         return {"price": la["unit_price"], "source": "Latest price", "date": la["invoice_date"],
                 "item_no": la["item_no"], "description": la["description"]}
     return None
 
 
+def _list_item(item_no):
+    if not item_no:
+        return None
+    r = q("SELECT * FROM items WHERE item_no=?", (str(item_no).strip(),), one=True)
+    return dict(r) if r else None
+
+
 def search_items(term, customer_id=None, limit=15):
-    """Items from the sales history for the quote picker, with this account's price."""
+    """Items for the quote picker - sales history first, then the company price list - with this account's
+    price and stock on hand."""
+    from .company_reports import stock_text
     like = f"%{term}%"
-    rows = q("""SELECT l.item_no, l.description, l.category, MAX(s.invoice_date) last FROM sales_lines l
-                JOIN sales s ON s.id=l.sale_id WHERE l.item_no LIKE ? OR l.description LIKE ?
-                GROUP BY l.item_no, l.description ORDER BY last DESC LIMIT ?""", (like, like, limit))
+    rows = [dict(r) for r in q("""SELECT l.item_no, l.description, l.category, MAX(s.invoice_date) last
+                FROM sales_lines l JOIN sales s ON s.id=l.sale_id WHERE l.item_no LIKE ? OR l.description LIKE ?
+                GROUP BY l.item_no, l.description ORDER BY last DESC LIMIT ?""", (like, like, limit))]
+    have = {r["item_no"] for r in rows if r["item_no"]}
+    if len(rows) < limit:
+        rows += [dict(r) for r in q("""SELECT item_no, description, category FROM items
+                 WHERE (item_no LIKE ? OR description LIKE ?) AND description <> ''
+                 ORDER BY (last_sold IS NULL), last_sold DESC LIMIT ?""", (like, like, limit))
+                 if r["item_no"] not in have][:limit - len(rows)]
     out = []
     for r in rows:
         p = price_for(customer_id, r["item_no"], r["description"], r["category"])
         out.append({"item_no": r["item_no"] or "", "description": r["description"] or "",
                     "category": r["category"] or "", "price": p["price"] if p else None,
-                    "source": p["source"] if p else "", "date": p["date"] if p else ""})
+                    "source": p["source"] if p else "", "date": p["date"] if p else "",
+                    "stock": stock_text(_list_item(r["item_no"]))})
     return out
 
 

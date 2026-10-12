@@ -34,7 +34,7 @@
             const label = `${it.item_no ? it.item_no + ' - ' : ''}${it.description}`;
             picks[label] = it;
             const o = document.createElement('option'); o.value = label;
-            o.label = it.price != null ? `${money(it.price)} · ${it.source}` : 'no price'; dl.appendChild(o);
+            o.label = (it.price != null ? `${money(it.price)} · ${it.source}` : 'no price') + (it.stock ? ` · ${it.stock}` : ''); dl.appendChild(o);
           });
         }, 200);
       });
@@ -46,7 +46,7 @@
     const sel = tr.querySelector('select[name=category]'); if (it.category) sel.value = it.category;
     if (it.price != null) tr.querySelector('.price').value = it.price.toFixed(2);
     tr.querySelector('input[name=price_source]').value = it.source ? `${it.source} ${it.date || ''}`.trim() : '';
-    tr.querySelector('.src').textContent = it.source ? `${it.source} ${it.date || ''}` : 'no price history - type a price';
+    tr.querySelector('.src').textContent = (it.source ? `${it.source} ${it.date || ''}` : 'no price history - type a price') + (it.stock ? ` · ${it.stock}` : '');
     recalc();
   }
   body.querySelectorAll('tr').forEach(wire);

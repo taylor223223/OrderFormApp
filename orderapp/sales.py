@@ -32,17 +32,19 @@ CATEGORIES = ["Blinds & Shades", "Doors", "Closet & Wardrobe Doors", "Patio Door
 _KEYWORDS = [   # first match wins - more specific words first
     ("Mirror Frames", r"mirror ?mate|mirror frame"),
     ("Shower Doors", r"shower|enclosure|tub door"),
-    ("Closet & Wardrobe Doors", r"bi-?pass|bypass|bi-?fold|closet|wardrobe|mirrored"),
+    ("Closet & Wardrobe Doors", r"bi-?pass|bypass|bi-?fold|closet|wardrobe|mirrored|finger pull"),
     ("Patio Doors", r"patio door|sliding (glass|patio)|slider"),
     ("Screens", r"screen|suntex|sunscreen"),
     ("Blinds & Shades", r"blind|vertical|shade|valance|slat|headrail|faux wood|basswood|mini"),
-    ("Door Hardware", r"knob|lever|lockset|deadbolt|passage|privacy|entry set|hinge|door hardware|"
+    ("Door Hardware", r"knob|lever|lockset|deadbolt|passage|privacy|entry set|hinge|door hardware|ball catch|flush bolt|"
+                      r"door stop|sweep|q-?lon|weather ?strip|"
                       r"marina|soma lever|lombard|sea cliff|tiburon lever"),
     ("Bath Hardware", r"towel|paper holder|tissue|bath hardware|robe hook|waterfront|palo alto|santa cruz"),
-    ("Baseboard & Casing", r"baseboard|base board|casing|trim|mdf|moulding|molding|craftsman base"),
-    ("Countertops", r"counter ?top|laminate top|thinscape|backsplash"),
-    ("Cabinets", r"cabinet|vanity|drawer|thermofoil|shaker|italia|bradford|elegante"),
-    ("Doors", r"door|pre-?hung|slab|panel|primecoat|hollow core|solid core|jamb"),
+    ("Baseboard & Casing", r"baseboard|base board|base corner|casing|trim|mdf|moulding|molding|craftsman base"),
+    ("Countertops", r"counter ?top|laminate|thinscape|backsplash|peel and stick"),
+    ("Cabinets", r"cabinet|vanity|drawer|thermofoil|shaker|italia|bradford|elegante|bar pull|mounting plate|"
+                 r"scribe|toe kick|filler"),
+    ("Doors", r"door|pre-?hung|slab|panel|primecoat|hollow core|solid core|jamb|astragal|interior stop|glass insert"),
 ]
 _CAT_RE = [(c, re.compile(p, re.I)) for c, p in _KEYWORDS]
 

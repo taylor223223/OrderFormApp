@@ -39,7 +39,7 @@ def test_pricing_order(app):
         assert p["source"] == "Account price" and p["price"] == 99.0
         p = P.price_for(palo, "MP-1-WHT")
         assert p["source"] == "Last paid"
-        assert P.price_for(None, "WS-BRZ")["source"] == "Latest price"
+        assert P.price_for(None, "WS-BRZ")["source"] == "List price"      # company price list beats other accounts
         # a vertical blind is never priced like a faux wood blind
         p = P.price_for(palo, None, 'Vertical Blind 72" x 80"', "Blinds & Shades")
         assert "vertical" in p["description"].lower()

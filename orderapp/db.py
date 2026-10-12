@@ -207,6 +207,8 @@ def init_db(path=None):
     con.executescript(QUOTE_SCHEMA)
     from .deliveries import DELIVERY_SCHEMA
     con.executescript(DELIVERY_SCHEMA)
+    from .company_reports import ITEMS_SCHEMA
+    con.executescript(ITEMS_SCHEMA)
     for table, cols in MIGRATIONS.items():
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

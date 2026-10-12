@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Items & Stock{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Items &amp; Stock</h1>
+<div class="muted">{% if counts.n %}{{ '{:,}'.format(counts.n) }} item(s){% if counts.pu %} · price list from {{ counts.pu[:10] }}{% endif %}{% if counts.su %} · stock as of {{ counts.su[:10] }}{% endif %}{% else %}Import the company Item Price List, Inventory Stock Status, Item Turnover and Sales by Item Summary reports to fill this in.{% endif %}</div></div>
+<a class="btn" href="{{ url_for('sales.import_page') }}">Import reports</a></div>
+<form class="row card" style="gap:8px">
+<input name="q" value="{{ q }}" placeholder="Item #, description or vendor" style="flex:2">
+<select name="category" style="flex:1"><option value="">All products</option>{% for c in categories %}<option {{ 'selected' if c == cat }}>{{ c }}</option>{% endfor %}</select>
+<select name="stock" style="flex:1"><option value="">Any stock</option><option value="in" {{ 'selected' if stock=='in' }}>Available now</option><option value="short" {{ 'selected' if stock=='short' }}>Short / at reorder point</option><option value="po" {{ 'selected' if stock=='po' }}>On order (PO)</option></select>
+<button class="btn">Search</button></form>
+<div class="tablewrap"><table><tr><th>Item #</th><th>Description</th><th class="right">List price</th><th class="right">Avg sold</th><th class="right">Margin</th><th class="right">On hand</th><th class="right">Available</th><th class="right">On PO</th><th>Next delivery</th><th class="right">Sold / wk</th><th>Last sold</th></tr>
+{% for r in rows %}<tr><td class="small">{{ r.item_no }}</td><td>{{ r.description or '' }}<div class="small muted">{{ r.category or '' }}{% if r.vendor %} · {{ r.vendor }}{% endif %}</div></td>
+<td class="right">{{ '$%.2f' % r.list_price if r.list_price is not none else '' }}</td>
+<td class="right">{{ '$%.2f' % r.avg_price if r.avg_price is not none else '' }}</td>
+<td class="right">{{ '%g%%' % r.margin_pct if r.margin_pct is not none else '' }}</td>
+<td class="right">{{ '%g' % r.on_hand if r.on_hand is not none else '' }}</td>
+<td class="right">{% if r.available is not none %}<span class="{{ 'tag warn' if r.available < 0 or (r.reorder_pt is not none and r.available <= r.reorder_pt and r.sales_week) else '' }}">{{ '%g' % r.available }}</span>{% endif %}</td>
+<td class="right">{{ '%g' % r.on_po if r.on_po else '' }}</td><td class="small">{{ r.next_deliv or '' }}</td>
+<td class="right">{{ '%g' % r.sales_week if r.sales_week else '' }}</td><td class="small">{{ r.last_sold or '' }}</td></tr>
+{% else %}<tr><td colspan="11" class="muted">No items{% if q or cat or stock %} match{% endif %}.</td></tr>{% endfor %}</table></div>
+{% if rows|length >= 300 %}<p class="small muted">Showing the first 300 - search to narrow it down.</p>{% endif %}
+{% endblock %}

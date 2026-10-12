@@ -7,12 +7,12 @@
 <div class="row"><a class="btn" href="{{ url_for('sales.invoices', year=year, customer=cid, category=cat) }}">Invoices</a>
 <a class="btn" href="{{ url_for('sales.goals', year=year) }}">Goals &amp; commission</a>
 <a class="btn" href="{{ url_for('sales.export', year=year) }}">Export CSV</a>
-<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import sales CSV</a></div></div>
+<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import company reports / CSV</a></div></div>
 
 {% if not has %}
 <div class="card empty"><h3 style="margin-top:0">No sales history yet</h3>
 <p>Export your invoices / sales by line item from the company system as a CSV and import it. Any column names work - you match them up on the next screen.</p>
-<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import sales CSV</a> <a class="btn" href="{{ url_for('sales.template') }}">Download a sample CSV</a></div>
+<a class="btn primary" href="{{ url_for('sales.import_page') }}">Import company reports / CSV</a> <a class="btn" href="{{ url_for('sales.template') }}">Download a sample CSV</a></div>
 {% else %}
 <form class="row filters" method="get" style="gap:8px;margin-bottom:12px">
   <select name="year" onchange="this.form.submit()">{% for y in years %}<option {{ 'selected' if y|int == year }}>{{ y }}</option>{% endfor %}</select>

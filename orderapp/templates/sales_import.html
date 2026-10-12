@@ -3,6 +3,15 @@
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home') }}">← Sales</a></div><h1>Import sales history</h1>
 <div class="muted">One row per line item (invoice #, date, customer, item, amount...). Importing the same invoices again updates them - no duplicates.</div></div></div>
 {% if step == 'upload' %}
+<div class="card"><h3 style="margin-top:0">Company system reports</h3>
+<form method="post" enctype="multipart/form-data" action="{{ url_for('sales.company_upload') }}" class="row" style="gap:10px">
+<input type="file" name="files" accept=".csv,text/csv" multiple required><button class="btn primary">Next: check the reports</button></form>
+<p class="small muted">Pick any of these exports straight from the company system, several at once - no column matching:
+<b>Sales by Rep Detail</b> (best - it says whose sale each invoice is), Sales by Customer Detail, Sales by Item Detail,
+Sales by Ship To Address (fills in customer addresses), Item Price List, Inventory Stock Status, Item Turnover and
+Sales by Item Summary (price list, stock and margins go to <a href="{{ url_for('sales.items') }}">Items &amp; Stock</a> and into quotes).
+The summary reports are only used to double-check the totals.</p></div>
+<h3>Any other CSV: match columns</h3>
 <div class="card"><form method="post" enctype="multipart/form-data" class="row" style="gap:10px">
 <input type="file" name="file" accept=".csv,text/csv" required><button class="btn primary">Next: match columns</button></form>
 <p class="small muted">From Excel: File &gt; Save As &gt; CSV. Not sure what columns to export? <a href="{{ url_for('sales.template') }}">Download a sample CSV</a>.

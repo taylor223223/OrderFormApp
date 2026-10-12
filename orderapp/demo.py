@@ -334,8 +334,28 @@ def _seed_quotes_prices_deliveries(cids, today):
         lines.append(f"4     {sh[3]['cname']}       (no PO)          blinds")
     DL.record("\n".join(lines), "email", "Deliveries for today - Truck 2 (demo)", now()[:16], "demo-delivery-1",
               auto_apply=True)
+    _seed_items(today)
     x("""UPDATE account_holds SET days_late=?, aging=?, last_payment=? WHERE name='Canyon Vista Apartments'""",
       (75, dumps({"31-60": 1630.10, "61-90": 2688.45}), (today - timedelta(days=80)).isoformat()))
+
+
+def _seed_items(today):
+    """Items & Stock page (made up): list price, stock, margin for every item the demo sales history sold."""
+    r = random.Random(7)
+    vendors = ["Desert Supply Co (demo)", "Valley Door Works (demo)", "Sun Blind Mfg (demo)"]
+    rows = q("""SELECT l.item_no, MAX(l.description) d, MAX(l.category) c, AVG(l.unit_price) p, MAX(s.invoice_date) last,
+                SUM(l.qty) n FROM sales_lines l JOIN sales s ON s.id=l.sale_id
+                WHERE l.item_no<>'' AND l.unit_price IS NOT NULL GROUP BY l.item_no""")
+    for it in rows:
+        on_hand = r.choice([0, 2, 5, 12, 24, 40, -3])
+        on_so = r.choice([0, 0, 2, 6])
+        x("""INSERT OR REPLACE INTO items(item_no, description, vendor, list_price, category, on_hand, on_so, available,
+             on_po, reorder_pt, next_deliv, sales_week, qty_sold, last_sold, avg_price, avg_cost, margin_pct,
+             price_updated, stock_updated, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+          (it["item_no"], it["d"], r.choice(vendors), round(it["p"] * 1.05, 2), it["c"], on_hand, on_so,
+           on_hand - on_so, r.choice([0, 0, 12, 24]), 4, (today + timedelta(days=r.randint(2, 20))).isoformat(),
+           round(r.uniform(0.2, 6), 1), it["n"], it["last"], round(it["p"], 2), round(it["p"] * 0.6, 2), 40.0,
+           now(), now(), now()))
 
 
 def _seed_review(cids):
