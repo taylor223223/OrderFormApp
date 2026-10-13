@@ -1,0 +1,144 @@
+{% extends "base.html" %}{% block title %}{{ lay.name or 'Kitchen' }} - measure{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('kitchen.index', customer=c.id if c else None) }}">← Measure sheets</a>{% if c %} · <a href="{{ url_for('customers.view', cid=c.id) }}">{{ c.name }}</a>{% endif %}</div>
+<h1>Countertop &amp; cabinet measure</h1>
+<div class="muted">Pick the layout, then fill in each run (A, B, C...) measured along the wall edge. The drawing updates as you type - it's what goes on the PDF.</div></div>
+<div class="row" style="gap:6px"><button class="btn" id="saveBtn">Save</button><button class="btn primary" id="pdfBtn">Save &amp; make PDF</button>
+<a class="btn" href="{{ url_for('kitchen.blank') }}" target="_blank" title="Printable sheet to measure by hand">Blank sheet</a></div></div>
+
+<div class="card grid g4" style="gap:8px">
+  <div><label>Name</label><input id="f_name" value="{{ lay.name or '' }}" placeholder="Kitchen - B2 floorplan"></div>
+  <div><label>Unit / floorplan</label><input id="f_unit" value="{{ lay.unit or '' }}"></div>
+  <div><label>Room</label><select id="f_room">{% for r in ['Kitchen','Bath vanity','Laundry','Bar / other'] %}<option {{ 'selected' if lay.data.room == r }}>{{ r }}</option>{% endfor %}</select></div>
+  <div><label>Layout</label><select id="f_shape">{% for k, l in K.SHAPES.items() %}<option value="{{ k }}" {{ 'selected' if lay.data.shape == k }}>{{ l }}</option>{% endfor %}</select></div>
+  <div><label>Countertop</label><select id="f_material">{% for m in K.MATERIALS %}<option {{ 'selected' if lay.data.material == m }}>{{ m }}</option>{% endfor %}</select></div>
+  <div><label>Color / pattern</label><input id="f_color" value="{{ lay.data.color or '' }}"></div>
+  <div><label>Edge</label><input id="f_edge" value="{{ lay.data.edge or '' }}" placeholder="Post-formed, square, bevel..."></div>
+  <div><label>Extras</label><label class="row small" style="gap:6px"><input type="checkbox" id="f_island" style="width:auto"> Island</label>
+    <label class="row small" style="gap:6px"><input type="checkbox" id="f_peninsula" style="width:auto"> Peninsula</label></div>
+  <div style="grid-column:1/-1"><label>Notes</label><input id="f_notes" value="{{ lay.data.notes or '' }}"></div>
+</div>
+
+<div class="kitgrid">
+  <div id="runs"></div>
+  <div class="kitside"><div class="card" style="position:sticky;top:8px">
+    <h3 style="margin-top:0">Top view</h3>
+    <div id="svgbox" class="kitsvg">{{ svg|safe }}</div>
+    <div class="small muted" style="margin:4px 0 8px">Heavy black = wall (the edge you measure). Orange = finished end. Dashed = range / fridge / gap - no top there.</div>
+    <h3>Countertop pieces <span class="small muted" id="sqft"></span></h3>
+    <div class="tablewrap"><table id="pieces"></table></div>
+  </div></div>
+</div>
+<script id="kdata" type="application/json">{{ {"data": lay.data, "id": lay.id, "items": K.ITEM_TYPES, "bases": K.BASE_TYPES, "uppers": K.UPPER_TYPES, "ends": K.ENDS, "splash": K.SPLASH, "shape_runs": K.SHAPE_RUNS, "walls": K.RUN_WALL}|tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const K = JSON.parse(document.getElementById('kdata').textContent);
+  const D = K.data, $ = s => document.querySelector(s);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const opt = (list, v) => list.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  $('#f_island').checked = !!D.island; $('#f_peninsula').checked = !!D.peninsula;
+  function active() {
+    const ks = (K.shape_runs[D.shape] || ['B']).slice();
+    if (D.peninsula && D.shape !== 'galley') ks.push('P');
+    if (D.island && D.shape !== 'galley') ks.push('I');
+    return ks;
+  }
+  function runOf(k) { return k === 'P' ? D.peninsula : k === 'I' ? D.island : D.runs[k]; }
+  function title(k) {
+    if (k === 'P') return 'Peninsula P'; if (k === 'I') return 'Island I';
+    if (D.shape === 'galley') return 'Run ' + k + (k === 'A' ? ' - first wall' : ' - facing wall');
+    return 'Run ' + k + ' - ' + (K.walls[k] || '');
+  }
+  function rows(k, list, kind) {
+    const r = runOf(k), arr = r[list] || (r[list] = []);
+    return arr.map((it, i) => {
+      let cells = '';
+      if (kind === 'items') cells = `<td><select data-l="${list}" data-i="${i}" data-f="type">${Object.entries(K.items).map(([v, o]) => `<option value="${v}" ${v === it.type ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}</select></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="from" value="${esc(it.from)}" placeholder="from left" inputmode="decimal"></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="width" value="${esc(it.width)}" placeholder="width" inputmode="decimal"></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="size" value="${esc(it.size)}" placeholder="${it.type === 'sink' ? 'single / double bowl, 33x22' : 'notes'}"></td>`;
+      else if (kind === 'bases') cells = `<td><select data-l="${list}" data-i="${i}" data-f="type">${opt(K.bases, it.type)}</select></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="width" value="${esc(it.width)}" placeholder="width" inputmode="decimal"></td>
+        <td colspan="2"><input data-l="${list}" data-i="${i}" data-f="notes" value="${esc(it.notes)}" placeholder="notes"></td>`;
+      else cells = `<td><select data-l="${list}" data-i="${i}" data-f="type">${opt(K.uppers, it.type)}</select></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="width" value="${esc(it.width)}" placeholder="width" inputmode="decimal"></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="height" value="${esc(it.height)}" placeholder="height" inputmode="decimal"></td>
+        <td><input data-l="${list}" data-i="${i}" data-f="notes" value="${esc(it.notes)}" placeholder="notes"></td>`;
+      return `<tr>${cells}<td><button type="button" class="btn sm rm" data-l="${list}" data-i="${i}">×</button></td></tr>`;
+    }).join('');
+  }
+  function draw() {
+    $('#runs').innerHTML = active().map(k => {
+      const r = runOf(k);
+      return `<div class="card kitrun" data-k="${k}"><h3 style="margin-top:0"><span class="runletter">${k}</span> ${esc(title(k))}</h3>
+      <div class="grid g4" style="gap:8px">
+        <div><label>Length along the wall edge (in)</label><input data-f="length" value="${esc(r.length)}" inputmode="decimal" placeholder="e.g. 96-1/2"></div>
+        <div><label>Depth (in)</label><input data-f="depth" value="${esc(r.depth)}" inputmode="decimal"></div>
+        <div><label>Left end</label><select data-f="left">${opt(K.ends, r.left)}</select></div>
+        <div><label>Right end</label><select data-f="right">${opt(K.ends, r.right)}</select></div>
+        <div><label>Backsplash</label><select data-f="splash">${opt(K.splash, r.splash)}</select></div>
+        <div><label>Splash height (in)</label><input data-f="splash_h" value="${esc(r.splash_h)}" placeholder="full height only"></div>
+        <div style="grid-column:span 2" class="small muted" >Left / right = standing at the counter facing the wall. Sinks and appliances: measure from the LEFT end.</div>
+      </div>
+      <h4>Sink, cooktop &amp; appliances <span class="small muted">(range / fridge / gap = no top there)</span></h4>
+      <div class="tablewrap"><table><tr><th>What</th><th>From left (in)</th><th>Width (in)</th><th>Size / notes</th><th></th></tr>${rows(k, 'items', 'items')}</table></div>
+      <button type="button" class="btn sm add" data-l="items">+ Sink / appliance</button>
+      <h4>Base cabinets <span class="small muted">(left to right)</span></h4>
+      <div class="tablewrap"><table><tr><th>Type</th><th>Width</th><th colspan="2">Notes</th><th></th></tr>${rows(k, 'bases', 'bases')}</table></div>
+      <button type="button" class="btn sm add" data-l="bases">+ Base cabinet</button>
+      ${k === 'I' ? '' : `<h4>Upper cabinets <span class="small muted">(left to right; windows and hoods too)</span></h4>
+      <div class="tablewrap"><table><tr><th>Type</th><th>Width</th><th>Height</th><th>Notes</th><th></th></tr>${rows(k, 'uppers', 'uppers')}</table></div>
+      <button type="button" class="btn sm add" data-l="uppers">+ Upper / window / hood</button>`}
+      <div class="kitsvg elev" id="elev_${k}"></div></div>`;
+    }).join('');
+    preview();
+  }
+  let t = null;
+  function kick() { clearTimeout(t); t = setTimeout(preview, 350); }
+  async function preview() {
+    const r = await fetch(`/kitchen/${K.id}/preview`, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},
+                                                       body: JSON.stringify({data: D})}).then(x => x.json()).catch(() => null);
+    if (!r) return;
+    $('#svgbox').innerHTML = r.svg;
+    $('#sqft').textContent = `about ${r.sqft} sq ft`;
+    const f = v => { if (v == null) return ''; const w = Math.floor(v + 1e-9), s = Math.round((v - w) * 16); if (!s) return w + '"';
+      let n = s, dd = 16; while (n % 2 === 0) { n /= 2; dd /= 2; } return `${w}-${n}/${dd}"`; };
+    $('#pieces').innerHTML = '<tr><th>Piece</th><th>Length</th><th>Depth</th><th>Ends</th><th>Cut-outs</th></tr>' + r.pieces.map(p =>
+      `<tr><td><b>${p.name}</b></td><td>${f(p.length)}</td><td>${f(p.depth)}</td><td class="small">${esc(p.left)} / ${esc(p.right)}</td>` +
+      `<td class="small">${p.cutouts.map(c => `${c.type} ctr ${f(c.center_from_left)}`).join('; ')}</td></tr>`).join('');
+    for (const [k, svg] of Object.entries(r.elev || {})) {
+      const el = document.getElementById('elev_' + k);
+      if (el) el.innerHTML = `<svg viewBox="0 0 640 170" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+    }
+  }
+  $('#runs').addEventListener('input', e => {
+    const card = e.target.closest('.kitrun'); if (!card) return;
+    const r = runOf(card.dataset.k), el = e.target;
+    if (el.dataset.l) r[el.dataset.l][+el.dataset.i][el.dataset.f] = el.value; else if (el.dataset.f) r[el.dataset.f] = el.value;
+    kick();
+  });
+  $('#runs').addEventListener('change', e => { if (e.target.tagName === 'SELECT') e.target.dispatchEvent(new Event('input', {bubbles: true})); });
+  $('#runs').addEventListener('click', e => {
+    const card = e.target.closest('.kitrun'); if (!card) return;
+    const r = runOf(card.dataset.k);
+    if (e.target.classList.contains('add')) {
+      const l = e.target.dataset.l; (r[l] = r[l] || []).push(l === 'items' ? {type: 'sink'} : l === 'bases' ? {type: 'Base'} : {type: 'Wall cabinet', height: '30'});
+      draw();
+    } else if (e.target.classList.contains('rm')) { r[e.target.dataset.l].splice(+e.target.dataset.i, 1); draw(); }
+  });
+  ['room', 'material', 'color', 'edge', 'notes'].forEach(k => $('#f_' + k).addEventListener('input', e => { D[k] = e.target.value; kick(); }));
+  $('#f_shape').addEventListener('change', e => { D.shape = e.target.value; draw(); });
+  $('#f_island').addEventListener('change', e => { D.island = e.target.checked ? (D.island || {length: '', depth: '36', items: [], bases: [], left: 'Finished end', right: 'Finished end'}) : null; draw(); });
+  $('#f_peninsula').addEventListener('change', e => { D.peninsula = e.target.checked ? (D.peninsula || {length: '', depth: '25-1/2', items: [], bases: [], uppers: [], left: 'Corner', right: 'Finished end'}) : null; draw(); });
+  async function save() {
+    const r = await fetch(`/kitchen/${K.id}`, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},
+                          body: JSON.stringify({data: D, name: $('#f_name').value, unit: $('#f_unit').value})}).then(x => x.json());
+    return r && r.ok;
+  }
+  $('#saveBtn').onclick = async () => { if (await save()) { $('#saveBtn').textContent = 'Saved ✓'; setTimeout(() => $('#saveBtn').textContent = 'Save', 1500); } };
+  $('#pdfBtn').onclick = async () => { if (await save()) window.open(`/kitchen/${K.id}/pdf`, '_blank'); };
+  draw();
+})();
+</script>{% endblock %}

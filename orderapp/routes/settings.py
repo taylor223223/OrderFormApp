@@ -19,7 +19,7 @@ EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", 
             "subject_template", "body_template", "output_dir", "date_format", "session_minutes",
             "report_to", "report_cc", "ors_api_key", "route_start_address", "route_start_time",
             "route_visit_minutes", "route_return_to_start", "email_order_word", "email_auto_minutes",
-            "email_lookback_days", "delivery_subject_word", "quote_valid_days", "quote_terms"]
+            "email_lookback_days", "delivery_subject_word", "quote_valid_days", "quote_terms", "pdf_layout", "notice_subject_words"]
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -37,6 +37,8 @@ def index():
             set_setting("email_order_word", "Order")
         if "delivery_subject_word" in request.form:
             set_setting("delivery_auto", "1" if request.form.get("delivery_auto") else "0")
+        if "notice_subject_words" in request.form:
+            set_setting("notice_auto", "1" if request.form.get("notice_auto") else "0")
         if "quote_valid_days" in request.form and not request.form.get("quote_valid_days", "").strip().isdigit():
             set_setting("quote_valid_days", "30")
         if "route_start_address" in request.form:
@@ -45,6 +47,7 @@ def index():
         return redirect(url_for("settings.index"))
     vals = {k: setting(k) for k in EDITABLE}
     vals["delivery_auto"] = setting("delivery_auto")
+    vals["notice_auto"] = setting("notice_auto")
     od_ok, od_why = OutlookDesktop.available()
     g = GraphMail(vals["graph_client_id"], vals["graph_tenant"])
     graph_user = None
@@ -52,8 +55,22 @@ def index():
         graph_user = g.signed_in_as()
     except Exception:  # noqa: BLE001
         graph_user = None
+    from ..safety import status
     return render_template("settings.html", v=vals, od_ok=od_ok, od_why=od_why, graph_user=graph_user,
-                           default_out=default_output_dir(), data_dir=data_dir())
+                           default_out=default_output_dir(), data_dir=data_dir(),
+                           safe=status(current_app.config["DB_PATH"]))
+
+
+@bp.route("/settings/open-data", methods=["POST"])
+@login_required
+def open_data():
+    from ..emailer import open_file
+    folder = os.path.dirname(os.path.abspath(current_app.config["DB_PATH"]))
+    try:
+        open_file(folder)
+    except Exception:  # noqa: BLE001
+        flash(f"Your data folder is: {folder}", "info")
+    return redirect(url_for("settings.index") + "#data")
 
 
 @bp.route("/settings/password", methods=["POST"])

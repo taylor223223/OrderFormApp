@@ -7,7 +7,8 @@
     <div><label>Sales rep name (printed on forms)</label><input name="sales_rep" value="{{ v.sales_rep }}"></div>
     <div><label>Date format</label><select name="date_format">{% for f, l in [('%m/%d/%Y','09/30/2026'),('%m/%d/%y','09/30/26'),('%Y-%m-%d','2026-09-30')] %}<option value="{{ f }}" {{ 'selected' if v.date_format==f }}>{{ l }}</option>{% endfor %}</select></div>
     <div><label>Log out after (minutes)</label><input name="session_minutes" value="{{ v.session_minutes }}"></div>
-    {% if not cloud %}<div style="grid-column:1/-1"><label>Save PDFs to folder</label><input name="output_dir" value="{{ v.output_dir }}" placeholder="{{ default_out }}"><div class="small muted">Leave blank for {{ default_out }}. Each customer gets a subfolder.</div></div>{% endif %}
+    {% if not cloud %}<div style="grid-column:span 2"><label>Orders folder (every order PDF is saved here)</label><input name="output_dir" value="{{ v.output_dir }}" placeholder="{{ default_out }}"><div class="small muted">Leave blank for {{ default_out }}. File names start with the order date, e.g. "2026-10-13 - Customer - Vertical Blind Order Form - PO 123 - #45.pdf".</div></div>
+    <div><label>Organize order PDFs by</label><select name="pdf_layout">{% for k, l in [('customer','Customer folder (default)'),('customer_month','Customer, then month'),('month','Month (2026-10)')] %}<option value="{{ k }}" {{ 'selected' if (v.pdf_layout or 'customer')==k }}>{{ l }}</option>{% endfor %}</select><div class="small muted">Applies to PDFs made from now on.</div></div>{% endif %}
   </div>
   <h3 id="email">Email</h3>
   <div class="grid g2">
@@ -45,6 +46,13 @@
     <div><label class="row" style="gap:6px;margin-top:20px"><input type="checkbox" name="delivery_auto" value="1" style="width:auto" {{ 'checked' if v.delivery_auto == '1' }}> Mark sure matches (PO # or sales order #) Delivered automatically</label>
       <div class="small muted">Matches by customer name only always wait for you to confirm.</div></div>
   </div>
+  <h3>Order-received emails</h3>
+  <div class="grid g2">
+    <div><label>Subject words (comma separated)</label><input name="notice_subject_words" value="{{ v.notice_subject_words if v.notice_subject_words is not none else '' }}" placeholder="Order Received, Order Confirmation">
+      <div class="small muted">Emails with any of these in the subject (last 3 days) are matched to open orders by PO # / sales order # and moved to Confirmed. Blank = off.</div></div>
+    <div><label class="row" style="gap:6px;margin-top:20px"><input type="checkbox" name="notice_auto" value="1" style="width:auto" {{ 'checked' if v.notice_auto == '1' }}> Move sure matches to Confirmed automatically</label>
+      <div class="small muted">Name-only matches always wait for you (Order Tracking → Order-received emails).</div></div>
+  </div>
   <h3>Quotes</h3>
   <div class="grid g2">
     <div><label>Quotes are good for (days)</label><input name="quote_valid_days" value="{{ v.quote_valid_days }}" inputmode="numeric"></div>
@@ -79,7 +87,12 @@
   <div class="field"><label>New (8+ characters)</label><input type="password" name="new"></div>
   <div class="field"><label>Confirm new</label><input type="password" name="new2"></div><button class="btn">Change password</button></form>
 <div class="card"><h3 style="margin-top:0">Backup & export</h3>
-  <p class="small muted">Your data lives in {{ data_dir }}. Back it up now and then (OneDrive is a good place for the backup file).</p>
+  <div id="data" class="card" style="background:var(--brand-soft,#fff7ed);margin:0 0 10px">
+  <b>Your data is safe through updates.</b> Everything you enter ({% for k, n in safe.counts.items() %}{{ '{:,}'.format(n) }} {{ k }}{{ ', ' if not loop.last }}{% endfor %}) is stored in one file:
+  <div class="small" style="margin:4px 0"><code>{{ safe.path }}</code> ({{ '%.1f' % (safe.size / 1048576) }} MB)</div>
+  <div class="small muted">Installing a new version only replaces the program, never this folder, and new versions only add to the database. Each time a new version starts it first saves a copy, and it keeps a daily copy for 14 days{% if safe.backups %} - latest: {{ safe.backups[0].name }} ({{ safe.backups[0].when }}){% endif %}.</div>
+  {% if not cloud %}<form method="post" action="{{ url_for('settings.open_data') }}" style="margin-top:6px"><button class="btn sm">📂 Open data folder</button></form>{% endif %}</div>
+  <p class="small muted">For a copy somewhere else (another computer, OneDrive), download a backup.</p>
   <div class="row"><a class="btn" href="{{ url_for('settings.backup') }}">Download backup</a>
   <a class="btn" href="{{ url_for('settings.export', what='customers') }}">Customers CSV</a>
   <a class="btn" href="{{ url_for('settings.export', what='units') }}">Units CSV</a>

@@ -19,7 +19,7 @@
   const yes = ['', 'Yes', 'No'];
   const FIELDS = {
     door: [['location', 'Inside / outside', ['Interior', 'Exterior']], ['hinge', 'Hinges (seen from this room)', ['Left', 'Right']],
-           ['swing', 'Swings', ['in', 'out']], ['height', 'Height (in)'], ['style', 'Style', D.opts.door_styles],
+           ['swing', 'Swings', ['in', 'out']], ['height', 'Height (in)'], ['style', 'Style', D.opts.door_styles], ['panels', 'Panels', D.opts.door_panels || ['']],
            ['material', 'Material', D.opts.materials], ['core', 'Core', ['', 'Hollow', 'Solid']], ['finish', 'Color / finish'],
            ['hardware', 'Hardware'], ['notes', 'Notes']],
     window: [['height', 'Height (in)'], ['covering', 'Window covering', ['', 'Horizontal Blind', 'Vertical Blind', 'Roller Shade']],

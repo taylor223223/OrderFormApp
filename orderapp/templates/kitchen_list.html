@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block title %}Countertop & cabinet measure sheets{% endblock %}
+{% block body %}
+<div class="pagehead"><div>{% if c %}<div class="small"><a href="{{ url_for('customers.view', cid=c.id) }}">← {{ c.name }}</a></div>{% endif %}
+<h1>Countertop &amp; cabinet measure sheets{% if c %} · {{ c.name }}{% endif %}</h1>
+<div class="muted">Lay out a kitchen or bath: runs lettered A, B, C, sinks, appliances, base and upper cabinets. Makes the drawing and the measure sheet PDF.</div></div>
+<a class="btn" href="{{ url_for('kitchen.blank') }}" target="_blank">Print a blank sheet</a></div>
+<form method="post" action="{{ url_for('kitchen.new') }}" class="card grid g4" style="gap:8px">
+  <div><label>Customer</label><select name="customer_id">{% for cu in customers %}<option value="{{ cu.id }}" {{ 'selected' if c and cu.id == c.id }}>{{ cu.name }}</option>{% endfor %}</select></div>
+  <div><label>Name</label><input name="name" placeholder="Kitchen - B2 floorplan"></div>
+  <div><label>Unit / floorplan</label><input name="unit"></div>
+  <div><label>Layout</label><select name="shape">{% for k, l in shapes.items() %}<option value="{{ k }}" {{ 'selected' if k == 'l' }}>{{ l }}</option>{% endfor %}</select></div>
+  <div><label>Room</label><select name="room">{% for r in ['Kitchen','Bath vanity','Laundry','Bar / other'] %}<option>{{ r }}</option>{% endfor %}</select></div>
+  <div style="align-self:end"><button class="btn primary">+ New measure sheet</button></div>
+</form>
+<div class="tablewrap"><table><tr><th>Name</th><th>Customer</th><th>Unit</th><th>Room</th><th>Updated</th><th></th></tr>
+{% for r in rows %}<tr><td><a href="{{ url_for('kitchen.edit', lid=r.id) }}">{{ r.name or 'Kitchen' }}</a></td><td>{{ r.cname or '' }}</td><td>{{ r.unit or '' }}</td><td>{{ r.room or '' }}</td><td class="small">{{ (r.updated or '')[:16] }}</td>
+<td class="right"><a class="btn sm" href="{{ url_for('kitchen.pdf', lid=r.id) }}" target="_blank">PDF</a></td></tr>
+{% else %}<tr><td colspan="6" class="muted">No measure sheets yet.</td></tr>{% endfor %}</table></div>
+{% endblock %}

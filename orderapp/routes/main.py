@@ -88,7 +88,7 @@ def dashboard():
                           ORDER BY a.occurred_at DESC, a.id DESC LIMIT 5"""),
            "kinds": ACTIVITY_KINDS}
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
-    return render_template("dashboard.html", today=today, route=route, crm=crm, customers=customers,
+    return render_template("dashboard.html", today=today, is_monday=date.today().weekday() == 0, route=route, crm=crm, customers=customers,
                            contacts=_contact_options(), stats=stats, by_status=by_status, recent=recent, due=due,
                            forms=form_list(), batches=pending_batches(), **_extras())
 

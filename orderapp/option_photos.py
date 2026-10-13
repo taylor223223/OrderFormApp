@@ -62,6 +62,17 @@ def find(group, label_or_slug):
     return None
 
 
+def available(group):
+    """Every photo slug there is for a group (bundled + uploaded)."""
+    out = set()
+    if not _safe(group):
+        return []
+    for d in (user_dir(group), bundled_dir(group)):
+        if os.path.isdir(d):
+            out |= {os.path.splitext(f)[0] for f in os.listdir(d) if f.lower().endswith(EXTS)}
+    return sorted(out)
+
+
 def is_custom(group, label_or_slug):
     p = find(group, label_or_slug)
     return bool(p and p.startswith(user_dir()))

@@ -157,9 +157,12 @@ def check_email(prov=None):
     out["found"] = len(msgs)
     seen = {r["msg_id"] for r in q("SELECT msg_id FROM delivery_checks WHERE msg_id IS NOT NULL")}
     auto = (setting("delivery_auto") or "1") == "1"
+    from .order_notices import is_notice
     for m in msgs:
         if m["msg_id"] in seen:
             continue
+        if is_notice(m.get("subject")):
+            continue                    # an order-received email, not the truck list
         try:
             full = prov.get_message(m["msg_id"])
         except Exception:  # noqa: BLE001
@@ -172,9 +175,10 @@ def check_email(prov=None):
     return out
 
 
-def recent(limit=10):
+def recent(limit=10, kind="delivery"):
     rows = []
-    for r in q("SELECT * FROM delivery_checks ORDER BY id DESC LIMIT ?", (limit,)):
+    for r in q("SELECT * FROM delivery_checks WHERE coalesce(kind,'delivery')=? ORDER BY id DESC LIMIT ?",
+               (kind, limit)):
         d = dict(r)
         d["results"] = loads(r["results"], [])
         d["applied"] = loads(r["applied"], [])

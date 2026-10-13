@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% block title %}Plan my {{ view }}{% endblock %}
+{% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
+{% block body %}
+<div class="pagehead"><div><h1>Plan my {{ view }}</h1>
+<div class="muted">{{ label }} at a glance, who to see and why, and where the month is heading. Nothing is added to your routes until you tick it.</div></div>
+<div class="row" style="gap:6px">
+  <a class="btn sm {{ 'primary' if view == 'week' }}" href="{{ url_for('plan.overview', view='week') }}">Week</a>
+  <a class="btn sm {{ 'primary' if view == 'month' }}" href="{{ url_for('plan.overview', view='month') }}">Month</a>
+  {% if view == 'week' %}<a class="btn sm" href="{{ url_for('plan.overview', view='week', start=prev) }}">←</a><a class="btn sm" href="{{ url_for('plan.overview', view='week', start=nxt) }}">→</a>
+  {% else %}<a class="btn sm" href="{{ url_for('plan.overview', view='month', month=prev) }}">←</a><a class="btn sm" href="{{ url_for('plan.overview', view='month', month=nxt) }}">→</a>{% endif %}
+  <a class="btn sm" href="{{ url_for('plan.week') }}">Routes</a></div></div>
+
+{% if view == 'week' %}
+<div class="weekgrid">
+{% for d in days %}<div class="card wday {{ 'today' if d.iso == today }}" style="margin:0">
+<div class="row" style="justify-content:space-between"><b>{{ d.name }} {{ d.date.strftime('%m/%d') }}</b><a class="small" href="{{ url_for('plan.day', day=d.iso) }}">route →</a></div>
+{% for s in d.stops %}<div class="small">📍 {{ s.cname or s.label }}{% if s.expected %} <span class="muted">· {{ money(s.expected) }}</span>{% endif %}</div>{% endfor %}
+{% for t in d.tasks %}<div class="small">☑ {{ t.title }}{% if t.cname %} <span class="muted">· {{ t.cname }}</span>{% endif %}</div>{% endfor %}
+{% for o in d.orders_due %}<div class="small">📦 <a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a> {{ o.cname or '' }} <span class="muted">{{ o.status }}</span></div>{% endfor %}
+{% for dl in d.deals %}<div class="small">🤝 {{ dl.name }} <span class="muted">{{ money(dl.value) }}</span></div>{% endfor %}
+{% for qu in d.quotes %}<div class="small">🧾 <a href="{{ url_for('quotes.edit', qid=qu.id) }}">{{ qu.number }}</a> expires</div>{% endfor %}
+{% if not (d.stops or d.tasks or d.orders_due or d.deals or d.quotes) %}<div class="small muted">Open</div>{% endif %}
+</div>{% endfor %}</div>
+{% else %}
+<div class="tablewrap"><table class="monthcal"><tr>{% for n in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}<th>{{ n }}</th>{% endfor %}</tr>
+{% for wk in weeks %}<tr>{% for d in wk %}<td style="vertical-align:top;height:78px;{{ 'opacity:.4;' if not d.in_month }}{{ 'background:var(--brand-soft,#fff7ed);' if d.iso == today }}">
+<a href="{{ url_for('plan.day', day=d.iso) }}"><b>{{ d.date.day }}</b></a>
+{% if d.stops %}<div class="small">📍 {{ d.stops|length }} stop{{ 's' if d.stops|length > 1 }}</div>{% endif %}
+{% if d.tasks %}<div class="small">☑ {{ d.tasks|length }}</div>{% endif %}
+{% if d.orders_due %}<div class="small">📦 {{ d.orders_due|length }} due</div>{% endif %}
+{% if d.deals %}<div class="small">🤝 {{ d.deals|length }}</div>{% endif %}
+{% if d.quotes %}<div class="small">🧾 {{ d.quotes|length }}</div>{% endif %}
+</td>{% endfor %}</tr>{% endfor %}</table></div>
+{% endif %}
+
+<form method="post" action="{{ url_for('plan.plan_add') }}" class="card"><input type="hidden" name="view" value="{{ view }}">
+<div class="row" style="justify-content:space-between"><h2 style="margin:0">Who to see {{ 'this week' if view == 'week' else 'this month' }}</h2>
+<button class="btn primary">Add ticked to my routes</button></div>
+<p class="small muted">Worked out from your quotes, follow-ups, deals, orders and the company sales data. Each is given a day, grouping the same city together - change the day before adding. Calls are marked 📞.</p>
+<div class="tablewrap"><table><tr><th></th><th>Account</th><th>Why</th><th class="right">$ at stake</th><th>Day</th></tr>
+{% for r in recs[:40] %}{% set k = loop.index %}<tr>
+<td><input type="checkbox" name="pick" value="{{ k }}" {{ 'checked' if loop.index <= 8 and r.kind == 'visit' and 'HOLD' not in r.why[0] }}>
+<input type="hidden" name="cid_{{ k }}" value="{{ r.customer_id or '' }}"><input type="hidden" name="addr_{{ k }}" value="{{ r.address }}"><input type="hidden" name="name_{{ k }}" value="{{ r.name }}"><input type="hidden" name="why_{{ k }}" value="{{ r.why[0] }}"></td>
+<td>{{ '📞 ' if r.kind == 'call' }}{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id) }}">{{ r.name }}</a>{% else %}{{ r.name }} <span class="small muted">(not in your customers)</span>{% endif %}<div class="small muted">{{ r.city }}</div></td>
+<td class="small">{% for w in r.why %}<div>{{ w }}</div>{% endfor %}</td>
+<td class="right">{{ money(r.value) if r.value else '' }}</td>
+<td><input type="date" name="day_{{ k }}" value="{{ r.day }}" style="width:auto"></td></tr>
+{% else %}<tr><td colspan="5" class="muted">Nothing urgent. Import the company reports and add quotes / follow-ups and this fills up.</td></tr>{% endfor %}</table></div>
+</form>
+
+<div class="card" id="projection"><h2 style="margin-top:0">{{ proj.month }}: where it's heading</h2>
+<div class="grid g4 stats">
+<div class="stat"><div class="l">Sales so far</div><div class="n">{{ money(proj.mtd) }}</div><div class="small muted">{{ proj.biz_done }} of {{ proj.biz_days }} work days · last year same point {{ money(proj.ly_same) }}</div></div>
+<div class="stat"><div class="l">At this pace</div><div class="n">{{ money(proj.run_rate) }}</div><div class="small muted">last year's month: {{ money(proj.ly_full) }}</div></div>
+<div class="stat"><div class="l">Booked + planned</div><div class="n">{{ money(proj.plan_total) }}</div><div class="small muted">so far + planned stops + quotes x {{ '%g' % proj.win_rate }}%</div></div>
+<div class="stat"><div class="l">Goal</div><div class="n">{{ money(proj.goal) if proj.goal else '-' }}</div><div class="small">{% if proj.gap is not none %}{% if proj.gap > 0 %}<span class="down">{{ money(proj.gap) }} short</span>{% else %}<span class="up">on track</span>{% endif %}{% else %}<a href="{{ url_for('sales.goals') }}">set a goal</a>{% endif %}</div></div>
+</div>
+<div class="chart" data-chart='{{ {"type":"hbar","labels":["Sales so far","At this pace","Booked + planned"] + (["Goal"] if proj.goal else []),"series":[{"name":"$","values":[proj.mtd, proj.run_rate, proj.plan_total] + ([proj.goal] if proj.goal else [])}]}|tojson }}'></div>
+<form method="post" action="{{ url_for('plan.plan_projection') }}"><input type="hidden" name="view" value="{{ view }}">
+<h3>Play with the plan</h3>
+<p class="small muted">Put what you expect each planned stop to order this month, and how many open quotes you usually win. Save to update the plan number.</p>
+<div class="row" style="gap:8px;margin-bottom:8px"><label class="row" style="gap:6px">Quote win rate <input name="win_rate" value="{{ '%g' % proj.win_rate }}" style="width:70px">%</label>{% if proj.hist_rate is not none %}<span class="small muted">your history: {{ proj.hist_rate }}%</span>{% endif %}
+<span class="small muted">Open quotes: {{ money(proj.quotes_total) }} ({{ proj.quotes|length }})</span></div>
+<div class="tablewrap"><table><tr><th>Day</th><th>Stop</th><th>Why</th><th class="right">Expected $</th></tr>
+{% for s in proj.stops %}<tr><td class="small nowrap">{{ s.day }}</td><td>{{ s.cname or s.label }}</td><td class="small muted">{{ (s.purpose or '')[:70] }}</td>
+<td class="right"><input name="exp_{{ s.id }}" value="{{ '%g' % s.expected if s.expected else '' }}" inputmode="decimal" style="width:100px;text-align:right" placeholder="$"></td></tr>
+{% else %}<tr><td colspan="4" class="muted">No stops planned for the rest of the month yet - add some above.</td></tr>{% endfor %}</table></div>
+<div class="row" style="margin-top:8px"><button class="btn primary">Save &amp; update projection</button></div></form>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='charts.js') }}"></script>{% endblock %}

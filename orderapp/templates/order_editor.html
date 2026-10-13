@@ -49,6 +49,15 @@
 <div id="blocks"></div>
 <div class="row" style="margin-bottom:16px"><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
 
+<div class="grid g2" id="helpPanels" style="margin-bottom:16px">
+<details class="card" id="prevCard"><summary><b>🕘 Previous orders</b> <span class="small muted" id="prevSum">pick a customer to see what they ordered before</span></summary>
+<input id="prevFilter" placeholder="Filter: size, item #, unit..." style="margin:8px 0">
+<div class="tablewrap" style="max-height:340px;overflow:auto"><table id="prevTbl"></table></div></details>
+<details class="card" id="estCard"><summary><b>💲 Estimated price</b> <span class="small muted" id="estSum">fill in a line to get a rough range</span></summary>
+<div class="small muted" style="margin:6px 0">A rough range from what this account and others paid for the same or similar items (nearest sizes). Use it until the real quote comes back.</div>
+<div class="tablewrap"><table id="estTbl"></table></div></details>
+</div>
+
 <div class="sticky-actions">
   <button class="btn" name="action" value="save">Save</button>
   <button class="btn primary" name="action" value="pdf">Save & create PDF</button>
@@ -119,7 +128,14 @@ function refreshBlock(el){
   });
   el.querySelectorAll('.opt-photo').forEach(box => {
     const wrap = box.closest('[data-f]'), f = FIELD[wrap.dataset.f], sel = wrap.querySelector('select');
-    const slug = f && f.photo_map && f.photo_map[sel.value];
+    let slug = f && f.photo_map && f.photo_map[sel.value];
+    if (f && f.photos === 'door_style') {     // door photo = panels + style together (2 Panel + Arch -> 2-panel-arch)
+      const pn = (el.querySelector('[data-k="panels"]') || {}).value || '', st = sel.value || '';
+      const sl = t => t.split(' (')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const have = new Set(SPEC.door_photo_slugs || []);
+      const cands = [pn === 'Flush' ? 'hc-primecoat' : '', pn && st ? sl(pn + ' ' + st) : '', st ? sl(st) : '', pn ? sl(pn) : ''];
+      slug = cands.find(c => c && have.has(c)) || slug;
+    }
     box.style.display = slug ? 'block' : 'none';
     if (slug) box.querySelector('img').src = PHOTO_URL.replace('/G/', '/' + f.photos + '/').replace(/N$/, slug);
   });
@@ -270,5 +286,54 @@ $('#orderForm').addEventListener('submit', () => {
   dirty = false;
 });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// Previous orders + price estimate (updates as lines are filled in)
+(function () {
+  const API = {{ url_for('orders.api_order_help')|tojson }};
+  const money = v => v == null ? '' : '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let timer = null, rows = [];
+  function drawPrev() {
+    const f = ($('#prevFilter').value || '').toLowerCase().trim();
+    const list = rows.filter(r => !f || (r.date + ' ' + r.invoice + ' ' + r.item_no + ' ' + r.desc).toLowerCase().includes(f));
+    $('#prevTbl').innerHTML = '<tr><th>Date</th><th>Invoice / order</th><th>Item</th><th class="right">Qty</th><th class="right">Price</th></tr>' +
+      (list.length ? list.map(r => `<tr${r.match ? ' style="background:#fef9c3"' : ''}><td class="small nowrap">${esc(r.date)}</td>` +
+        `<td class="small">${r.order_id ? `<a href="/orders/${r.order_id}">${esc(r.invoice)}</a>` : esc(r.invoice)}</td>` +
+        `<td>${esc(r.desc)}${r.item_no ? `<div class="small muted">${esc(r.item_no)}</div>` : ''}</td>` +
+        `<td class="right">${r.qty == null ? '' : r.qty}</td><td class="right">${money(r.price)}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="muted">Nothing yet.</td></tr>');
+  }
+  async function refresh() {
+    const cid = $('#customer_id').value;
+    const blocks = [...document.querySelectorAll('#blocks .blk')].map(getBlock).filter(b => Object.keys(b).length);
+    let r;
+    try {
+      r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},
+                            body: JSON.stringify({customer: cid, form: FORM_KEY, blocks})}).then(x => x.json());
+    } catch (e) { return; }
+    rows = r.previous || [];
+    const m = rows.filter(x => x.match).length;
+    $('#prevSum').textContent = !cid ? 'pick a customer to see what they ordered before'
+      : rows.length ? `${rows.length} earlier line(s)` + (m ? ` · ${m} match what you're ordering (highlighted)` : '') : 'none found for this customer';
+    if (m) $('#prevCard').open = true;
+    drawPrev();
+    const e = r.estimate;
+    if (!e || !e.lines.length) { $('#estSum').textContent = 'fill in a line to get a rough range'; $('#estTbl').innerHTML = ''; return; }
+    $('#estSum').textContent = e.low || e.high ? `about ${money(e.low)} - ${money(e.high)}` + (e.unpriced ? ` (+${e.unpriced} line(s) with no history)` : '') : 'no price history for these items yet';
+    $('#estTbl').innerHTML = '<tr><th>Line</th><th class="right">Qty</th><th class="right">Each (range)</th><th>Based on</th></tr>' + e.lines.map(l => {
+      const x = l.est;
+      if (!x || x.low == null) return `<tr><td>${esc(l.desc)}</td><td class="right">${l.qty}</td><td class="right muted">no history</td><td></td></tr>`;
+      const rng = x.low === x.high ? money(x.low) : `${money(x.low)} - ${money(x.high)}`;
+      const basis = (x.exact ? `<div><b>${esc(x.exact.source)}</b> ${money(x.exact.price)} ${esc(x.exact.date || '')}</div>` : '') +
+        (x.basis || []).slice(0, 3).map(b => `<div class="small muted">${esc(b.desc)} - ${money(b.price)} (${esc(b.date || '')})</div>`).join('');
+      return `<tr><td>${esc(l.desc)}</td><td class="right">${l.qty}</td><td class="right nowrap">${rng}</td><td class="small">${basis}</td></tr>`;
+    }).join('') + `<tr><td colspan="2" class="right"><b>Total</b></td><td class="right nowrap"><b>${money(e.low)} - ${money(e.high)}</b></td><td></td></tr>`;
+  }
+  const kick = () => { clearTimeout(timer); timer = setTimeout(refresh, 700); };
+  $('#blocks').addEventListener('input', kick); $('#blocks').addEventListener('change', kick);
+  $('#custSel').addEventListener('change', kick);
+  $('#prevFilter').addEventListener('input', drawPrev);
+  refresh();
+})();
 </script>
 {% endblock %}

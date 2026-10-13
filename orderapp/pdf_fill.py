@@ -143,6 +143,15 @@ def _place_photo(page, idx, fields, block, ref):
     if not ws:
         return
     for f in fields:
+        if f.get("photos") == "door_style" and (block.get("panels") or block.get("style")):
+            from .catalog import door_photo
+            p = door_photo(block)
+            if p:
+                try:
+                    page.insert_image(ws[0].rect, filename=p, keep_proportion=True)
+                except Exception:   # noqa: BLE001
+                    pass
+            return
         if f.get("photos") and block.get(f["key"]) and _visible(f, block):
             p = option_photos.find(f["photos"], block[f["key"]])
             if p:
@@ -244,6 +253,15 @@ def _fill(form_key, data):
     spec = FORMS[form_key]
     per_page = len(spec["blocks"])
     blocks = [b for b in (data.get("blocks") or []) if any(str(v).strip() for v in b.values() if v is not None)]
+    if form_key == "horizontal_blind":
+        from .catalog import split_blind_style
+        blocks = [split_blind_style(b) for b in blocks]
+    if form_key in ("door", "prehung"):
+        from .catalog import split_door_style
+        blocks = [split_door_style(b) for b in blocks]
+    if form_key == "closet_bifold" and not data.get("_v212"):
+        from .catalog import split_closet
+        blocks = [split_closet(b) for b in blocks]
     if not blocks:
         blocks = [{}]
     has_unit_field = any(f["key"] == "unit" for f in spec["blocks"][0])

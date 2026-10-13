@@ -27,7 +27,8 @@ NEW_DOOR_TYPES = ["5 Panel", "2 Panel", "2 Panel Arch", "2 Panel Arch Plank", "5
 HARDWARE_STYLES = ["Marina", "Soma", "Lombard", "Sea Cliff", "Tiburon"]
 HARDWARE_TYPES = ["Passage", "Privacy", "Entry"]
 HARDWARE_FINISHES = ["Satin Nickel", "Matte Black"]
-NEW_BLIND_STYLES = ['Basswood 2"', 'Basswood 2-1/2"', '1" Metal Plus Mini', '2" Metal Plus']
+NEW_BLIND_STYLES = ["Basswood", "Metal Plus"]
+BLIND_SLATS = ['1"', '2"', '2-1/2"']          # slat size is its own choice (any style, any size)
 SUNSCREEN_COLORS = ["Black", "Brown", "Beige", "Stucco", "Gray", "Dark Bronze"]
 
 
@@ -150,11 +151,12 @@ def _heading_box(p, y_head, y_top, y_bot, title):
 # --------------------------------------------------------------------------- forms
 DOOR_SPLIT = 275.9      # just under the company's door style rows
 DOOR_ROW = 11.5
-DOOR_STYLE_COLS = [     # first column lines up with the company's door types
-    (53.1, ["2 Panel", "5 Panel", "2 Panel Arch", "2 Panel Arch Plank"]),
-    (190.0, ["HC Primecoat", "1 Panel Shaker", "2 Panel Shaker", "5 Panel Shaker"]),
-    (318.0, ["3 Panel Shaker Equal", "3 Panel Shaker Craftsman"]),
-]
+DOOR_STYLE_COLS = [(53.1, ["", "", "", ""])]   # 4 rows: panels + top, then 3 rows of styles
+DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plank", "Plank", "Smooth", "Camden",
+                "Carrara", "Cheyenne", "Colonial", "Coventry", "Cremona", "Lincoln Park", "Riverside", "Rockport",
+                "Roman"]
+DOOR_PANELS = ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]
+DOOR_TOPS = ["Square Top", "Arched Top"]
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
 EXTRA_ROWS = 4          # material, pre-hung + hardware, hardware style, hardware type
 def door_added_height():
@@ -182,10 +184,18 @@ def patch_door(doc, prehung=False):
     # 1) clear everything below the style rows; it is redrawn lower down at the end
     page.draw_rect(fitz.Rect(30, y0, 580, 600), color=None, fill=(1, 1, 1))
     page.draw_rect(fitz.Rect(30, 676, 580, 766), color=None, fill=(1, 1, 1))
-    # 2) more door types, in the same box and columns as the company's
-    for x, types in DOOR_STYLE_COLS:
-        for i, t in enumerate(types):
-            p.option(door_style_name(t), x, y0 + 10 + i * DOOR_ROW, t)
+    # 2) panel count + top shape on one row, then every door style (any style with any panel count)
+    q.flow(40, y0 + 10, [("label", "Panels:")] +
+           [("cb", f"DoorPanels {slug(t)}.0", t.replace(" Panel", "")) for t in DOOR_PANELS] +
+           [("label", "   Panel top:")] + [("cb", f"DoorTop {slug(t)}.0", t.replace(" Top", "")) for t in DOOR_TOPS],
+           PHOTO_X - 4)
+    rows, per = [], 6
+    for i in range(0, len(DOOR_DESIGNS), per):
+        rows.append(DOOR_DESIGNS[i:i + per])
+    indent = 40 + q.width("Style:") + 6
+    for r_i, names in enumerate(rows[:3]):
+        items = ([("label", "Style:")] if r_i == 0 else []) + [("cb", door_style_name(t), t) for t in names]
+        q.flow(40 if r_i == 0 else indent, y0 + 10 + (r_i + 1) * DOOR_ROW, items, PHOTO_X - 4)
     page.draw_line((37.4, y_hw), (PHOTO_X, y_hw), color=(0, 0, 0), width=0.75)
     # 3) pre-hung + door hardware
     q.flow(40, y_hw + 9.5, [("label", "Door Material:")] +
@@ -372,6 +382,9 @@ def patch_blind(doc):
         for col, (x, labels) in enumerate(((64, old), (140, NEW_BLIND_STYLES))):
             for i, lab in enumerate(labels):
                 p.option(f"Blind {n} Style {lab}", x, rows[i] + 8.5, lab)
+        p.text(212, rows[0] + 8.5 - 1.2, "Slat size:", bold=True)
+        for i, lab in enumerate(BLIND_SLATS):
+            p.option(f"Blind {n} Slat {lab}", 212, rows[i + 1] + 8.5, lab)
         for i, (lab, key) in enumerate(zip(BLIND_LOC, BLIND_LOC_KEYS)):
             p.checkbox(f"Blind {n} Location {key}", 296, rows[i] + 8.5)
             p.text(296 + 8.5 + GAP, rows[i] + 8.5 - 1.2, lab)
@@ -394,7 +407,8 @@ def patch_blind(doc):
                 (abs(r.x0 - 26.1) < 1 or abs(r.x0 - 240.8) < 1):
             if any("Window" in w.field_name and w.rect.y0 + 5 < r.y0 < w.rect.y1 - 5 for w in page.widgets()):
                 page.draw_rect(fitz.Rect(r.x0 + 1.2, r.y0 - 0.9, r.x1 - 1.2, r.y0 + 0.9), color=None, fill=CYAN)
-    p.new_names = [x for x in p.new_names if " Style " in x and any(t in x for t in NEW_BLIND_STYLES)]
+    p.new_names = [x for x in p.new_names if (" Style " in x and any(t in x for t in NEW_BLIND_STYLES))
+                   or " Slat " in x]
     p.finish(doc)
 
 

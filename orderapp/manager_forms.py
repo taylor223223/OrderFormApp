@@ -1055,13 +1055,25 @@ def door_card(pg, k, n, y, item, exterior):
     ys += 10
     # style strip
     pg.rect((L, ys - 2, R, ys + 1.5), color=None, fill=GREY)
-    pg.text(L + 6, ys + 12, "DOOR STYLE (check one):", 8.5, bold=True)
+    pg.text(L + 6, ys + 12, "DOOR LOOK (check the closest):" if not exterior else "DOOR STYLE (check one):", 8.5,
+            bold=True)
     names = EXTERIOR_STYLES if exterior else INTERIOR_STYLES
     if exterior:
         pg.text(L + 130, ys + 12, "Standard door glass sizes shown. Glass with blinds = blinds built in "
                 "between the glass.", 6.8, color=DARK)
     ye = visual_options(pg, k, "Style", L + 4, ys + 18, R - L - 8, _style_strip_items(names), icon_h=60,
                         cols=len(names))
+    if not exterior:
+        # panel count and style name are separate, so any mix can be ordered (e.g. a 2-panel Camden)
+        yp = ye + 8
+        x = L + 8
+        x += pg.text(x, yp + 3, "NUMBER OF PANELS:", 8.5, bold=True) + 8
+        for lab in ("1", "2", "3", "4", "5", "6", "Flat"):
+            x += pg.check(f"{k} Panels {lab}", x, yp + 3, lab, 8) + 22
+        x += 6
+        pg.text(x, yp + 3, "STYLE NAME (if known):", 8.5, bold=True)
+        pg.field(f"{k} Style Name", (x + 118, yp - 7, R - 6, yp + 7), size=8.5)
+        ye = yp + 8
     return notes_row(pg, k, ye + 8, x1=R - 6) + 2
 
 
@@ -1208,10 +1220,12 @@ class ClosetDoors(Form):
         yc = choices(pg, k, CX, yc - 6, [
             ("OR MIRRORED / WARDROBE:", ["Mirrored bypass", "Mirrored swing", "White vinyl board"], 2),
             ("MIRROR FRAME COLOR:", ["White", "Satin nickel", "Aztec gold", NOT_SURE], 2),
-            ("DOOR STYLE:", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", NOT_SURE], 2),
-            ("HOW MANY DOOR PANELS?", ["2", "4", "Not sure"], 3),
+            ("DOOR STYLE:", ["Flat (smooth)", "Shaker", "Colonist (6 panel)", "Mirrored", NOT_SURE], 2),
+            ("PANELS ON EACH DOOR:", ["Flat", "2", "6", "Other"], 4),
+            ("HOW MANY DOORS?", ["2", "4", "Not sure"], 3),
             ("FINISH:", ["Primecoat (paint)", "White", "Not sure"], 2),
             ("NEED THE TRACK / HARDWARE?", ["Yes", "No"], 2),
+            ("BALL CATCH (keeps doors closed)?", ["Yes", "No"], 2),
         ])
         pg.line((CX - 8, y), (CX - 8, max(yc, yv + 14)), color=GREY, width=1)
         y3 = notes_row(pg, k, max(yv + 30, yc + 8))

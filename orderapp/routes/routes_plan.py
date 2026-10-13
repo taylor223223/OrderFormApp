@@ -521,3 +521,79 @@ def route_progress():
     r = q("SELECT COUNT(*) n, SUM(CASE WHEN lat IS NOT NULL THEN 1 ELSE 0 END) g FROM customers "
           "WHERE coalesce(address,'')<>''", one=True)
     return jsonify({"total": r["n"], "located": r["g"] or 0})
+
+
+# ------------------------------------------------------------------ plan my week / month
+@bp.route("/plan")
+@login_required
+def overview():
+    """Week or month at a glance, who to see and why, and where the month is heading."""
+    from .. import planner as PL
+    view = request.args.get("view", "week")
+    today = date.today()
+    if view == "month":
+        ym = request.args.get("month") or today.isoformat()[:7]
+        try:
+            y, m = int(ym[:4]), int(ym[5:7])
+        except ValueError:
+            y, m = today.year, today.month
+        weeks = PL.month_grid(y, m)
+        recs = PL.recommendations(30, today)
+        prev_m = (date(y, m, 1) - timedelta(days=1)).isoformat()[:7]
+        next_m = (date(y, m, 28) + timedelta(days=7)).isoformat()[:7]
+        days, label = None, date(y, m, 1).strftime("%B %Y")
+    else:
+        start = _day(request.args.get("start")) or (today - timedelta(days=today.weekday()))
+        days = PL.glance(start, 7)
+        recs = PL.recommendations(7, today)
+        weeks, prev_m, next_m = None, (start - timedelta(days=7)).isoformat(), (start + timedelta(days=7)).isoformat()
+        label = f"Week of {start:%b %d}"
+    proj = PL.projection(today)
+    return render_template("plan.html", view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
+                           prev=prev_m, nxt=next_m, today=today.isoformat(), monday=today.weekday() == 0)
+
+
+@bp.route("/plan/add", methods=["POST"])
+@login_required
+def plan_add():
+    """Put the ticked recommendations on their days (each slotted where it adds the least driving)."""
+    f = request.form
+    n = 0
+    days = set()
+    for key in f.getlist("pick"):
+        day = f.get(f"day_{key}") or date.today().isoformat()
+        cid = f.get(f"cid_{key}", type=int)
+        addr = f.get(f"addr_{key}", "").strip()
+        if not cid and not addr:
+            continue
+        add_stop(day, customer_id=cid, label=f.get(f"name_{key}", "") if not cid else "", address=addr if not cid else "",
+                 purpose=f.get(f"why_{key}", "")[:200], source="Plan")
+        days.add(day)
+        n += 1
+    for d in days:
+        try:
+            plan_day(d)
+        except geo.GeoError:
+            pass
+    flash(f"Added {n} stop(s) to your route{'s' if len(days) > 1 else ''}.", "ok")
+    return redirect(url_for("plan.overview", view=f.get("view", "week")))
+
+
+@bp.route("/plan/projection", methods=["POST"])
+@login_required
+def plan_projection():
+    """Save what you expect each planned stop to bring in, and the quote win rate (play with the numbers)."""
+    from ..db import set_setting
+    f = request.form
+    for k, v in f.items():
+        if k.startswith("exp_") and k[4:].isdigit():
+            try:
+                val = float(v.replace("$", "").replace(",", "")) if v.strip() else None
+            except ValueError:
+                continue
+            x("UPDATE route_stops SET expected=? WHERE id=?", (val, int(k[4:])))
+    wr = f.get("win_rate", "").strip().rstrip("%")
+    if wr.replace(".", "", 1).isdigit():
+        set_setting("plan_win_rate", wr)
+    flash("Projection updated.", "ok")
+    return redirect(url_for("plan.overview", view=f.get("view", "week")) + "#projection")

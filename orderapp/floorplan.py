@@ -173,6 +173,7 @@ def measurements_for(plan):
         if t == "door":
             prod = "entry_door" if p.get("location") == "Exterior" else "interior_door"
             data = {"width": w, "height": p.get("height", "80"), "style": p.get("style", ""),
+                    "panels": p.get("panels", ""),
                     "material": p.get("material", ""), "core": p.get("core", ""),
                     "swing": {"Left": "Left Hand", "Right": "Right Hand"}.get(p.get("hinge", ""), ""),
                     "door_location": p.get("location", "Interior"), "finish": p.get("finish", "")}

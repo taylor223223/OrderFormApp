@@ -303,3 +303,50 @@ def deliveries():
     return render_template("deliveries.html", checks=checks, word=setting("delivery_subject_word") or "",
                            auto=(setting("delivery_auto") or "1") == "1", open_n=len(DL.candidates()),
                            today=date.today().isoformat())
+
+
+# ------------------------------------------------------------------ order-received emails
+@bp.route("/order-notices", methods=["GET", "POST"])
+@login_required
+def notices():
+    from .. import order_notices as ON
+    if request.method == "POST":
+        if request.form.get("check_email"):
+            r = ON.check_email()
+            if r["error"]:
+                flash(r["error"], "error")
+            elif not r["new"]:
+                flash("No new order-received emails in the last 3 days.", "info")
+            else:
+                flash(f"Read {r['new']} order-received email(s): {r['matched']} order(s) matched, {r['applied']} "
+                      f"moved to Confirmed.", "ok")
+            return redirect(url_for("quotes.notices"))
+        if request.form.get("apply"):
+            ids = [int(i) for i in request.form.getlist("order_id") if i.isdigit()]
+            res = [{"order_id": i, "sure": True, "how": "you"} for i in ids]
+            n = ON.apply(res)
+            cid = request.form.get("check_id", type=int)
+            if cid:
+                row = q("SELECT applied FROM delivery_checks WHERE id=?", (cid,), one=True)
+                done = set(loads(row["applied"], [])) | set(ids) if row else set(ids)
+                from ..db import dumps
+                x("UPDATE delivery_checks SET applied=? WHERE id=?", (dumps(sorted(done)), cid))
+            flash(f"Moved {n} order(s) to Confirmed.", "ok")
+            return redirect(url_for("quotes.notices"))
+        text = request.form.get("text", "")
+        f = request.files.get("file")
+        if f and f.filename:
+            text += "\n" + DL.attachment_text([(f.filename, f.read())])
+        if not text.strip():
+            flash("Paste the order-received email first.", "error")
+            return redirect(url_for("quotes.notices"))
+        _, res, _ = ON.record(text, "pasted", "Pasted order notice", now()[:16], auto_apply=False)
+        flash(f"Found {len(res)} matching order(s). Check them below and click Mark confirmed.", "ok")
+        return redirect(url_for("quotes.notices"))
+    checks = DL.recent(10, kind="received")
+    for c in checks:
+        for r in c["results"]:
+            o = q("SELECT status FROM orders WHERE id=?", (r["order_id"],), one=True)
+            r["now"] = o["status"] if o else "(deleted)"
+    return render_template("order_notices.html", checks=checks, words=ON.words(),
+                           auto=(setting("notice_auto") or "1") == "1", open_n=len(DL.candidates()))

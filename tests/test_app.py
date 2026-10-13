@@ -284,16 +284,22 @@ def test_merged_forms_pick_paper_version():
     keys = [k for k, _ in form_list()]
     assert "new_door" not in keys and "vertical_blind_2" not in keys
     styles = next(f for f in public_spec("door")["fields"] if f["key"] == "style")["options"]
-    assert "Two-Panel Embossed (Classique)" in styles and "3 Panel Shaker Craftsman" in styles
-    assert "HC Primecoat" in styles
+    assert "Two-Panel Embossed (Classique)" in styles and "Shaker Craftsman" in styles and "Camden" in styles
+    panels = next(f for f in public_spec("door")["fields"] if f["key"] == "panels")["options"]
+    assert panels == ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]
     assert "mount" in [f["key"] for f in public_spec("vertical_blind")["fields"]]
     hdr = {"name": "Sunrise", "po": "P1", "date": "10/02/2026"}
     # one Door form (the company's) with a box for every door type we carry
-    d = {"header": hdr, "blocks": [{"qty": "1", "style": "3 Panel Shaker Craftsman", "finish": "Primecoat",
+    d = {"header": hdr, "blocks": [{"qty": "1", "style": "Camden", "panels": "2 Panel", "finish": "Primecoat",
                                     "width": "30", "height": "80", "swing": "Left Hand"}]}
     assert choose_variant("door", d) == "door"
+    fk, back = read_filled_form(fill_form("door", d)[0])        # any style with any panel count: 2 panel Camden
+    assert fk == "door" and back["blocks"][0]["style"] == "Camden" and back["blocks"][0]["panels"] == "2 Panel"
+    # a door saved before style and panels were split still prints both boxes
+    d["blocks"][0] = dict(d["blocks"][0], style="3 Panel Shaker Craftsman")
+    d["blocks"][0].pop("panels")
     fk, back = read_filled_form(fill_form("door", d)[0])
-    assert fk == "door" and back["blocks"][0]["style"] == "3 Panel Shaker Craftsman"
+    assert back["blocks"][0]["style"] == "Shaker Craftsman" and back["blocks"][0]["panels"] == "3 Panel"
     # old saved names still work
     d["blocks"][0]["style"] = "Colonist (6-Panel)"
     fk, back = read_filled_form(fill_form("door", d)[0])
@@ -388,16 +394,23 @@ def test_new_products_and_app_made_forms():
     assert "cabinet" not in keys and "closet_shower" not in keys        # retired: old orders still open
     spec = public_spec("door")
     style = next(f for f in spec["fields"] if f["key"] == "style")
-    assert style["photos"] == "door_style" and "2 Panel Arch" in style["photo_map"]
+    assert style["photos"] == "door_style" and "2-panel-arch" in spec["door_photo_slugs"]
     thr = next(f for f in spec["fields"] if f["key"] == "threshold")
     assert thr["show_if"] == {"key": "prehung", "in": ["Yes"]}
     prof = next(f for f in public_spec("trim")["fields"] if f["key"] == "profile")
     assert len(prof["options"]) == 10 and prof["photo_map"]
     assert option_photos.slug("A: #103 Casing") == "a" and option_photos.slug("Soma (Matte Black)") == "soma"
     hz = next(f for f in public_spec("horizontal_blind")["fields"] if f["key"] == "style")
-    assert 'Basswood 2-1/2"' in hz["options"] and "All Vinyl" in hz["options"]
+    assert "Basswood" in hz["options"] and "All Vinyl" in hz["options"]
+    slat = next(f for f in public_spec("horizontal_blind")["fields"] if f["key"] == "slat_size")
+    assert slat["options"] == ['1"', '2"', '2-1/2"']          # slat size is its own choice now
+    fk, back = read_filled_form(fill_form("horizontal_blind", {"blocks": [{"style": "Faux Wood",
+                                                                            "slat_size": '2"'}]})[0])
+    assert fk == "horizontal_blind" and back["blocks"][0]["style"] == "Faux Wood"
+    assert back["blocks"][0]["slat_size"] == '2"'
+    # an order saved before the split still prints right
     fk, back = read_filled_form(fill_form("horizontal_blind", {"blocks": [{"style": '1" Metal Plus Mini'}]})[0])
-    assert fk == "horizontal_blind" and back["blocks"][0]["style"] == '1" Metal Plus Mini' 
+    assert back["blocks"][0]["style"] == "Metal Plus" and back["blocks"][0]["slat_size"] == '1"' 
     # vertical: 2" ribbed only in white
     w = fill_form("vertical_blind", {"blocks": [{"slat_width": '2"', "slat_style": "Ribbed", "color": "Alabaster"}]})[1]
     assert any("only come in White" in x for x in w)

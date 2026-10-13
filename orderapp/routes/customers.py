@@ -84,6 +84,14 @@ def view(cid):
         """SELECT product, COUNT(*) n, COUNT(DISTINCT unit_id) units, COUNT(DISTINCT floorplan_id) fps
            FROM measurements WHERE customer_id=? GROUP BY product ORDER BY n DESC""", (cid,))]
     crm = {}
+    if tab == "products":
+        from .. import order_insights as OI
+        cat = request.args.get("category", "")
+        view = request.args.get("view", "products")
+        rows = OI.condensed(cid, cat) if view == "products" else \
+            [r for r in OI.purchases(cid) if not cat or r["category"] == cat]
+        cats = sorted({r["category"] for r in OI.purchases(cid)})
+        crm = {"prod_rows": rows, "prod_view": view, "prod_cat": cat, "prod_cats": cats, "fmt_in": OI.fmt_in}
     if tab == "history":
         from .. import history
         crm = {"hist": history.lines(cid), "hist_products": PRODUCTS}
@@ -109,7 +117,15 @@ def view(cid):
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
                            tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid),
-                           co_key=_company_key(c["name"]), **crm)
+                           co_key=_company_key(c["name"]), top_products=_top_products(cid), **crm)
+
+
+def _top_products(cid):
+    from ..order_insights import products_summary
+    try:
+        return products_summary(cid, 6)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _company_key(name):
@@ -251,14 +267,14 @@ def floorplan(fid):
 def floor_plan(fid):
     """2D floor plan: draw rooms, doors, windows, closets, cabinets; click any item for its details."""
     from .. import floorplan as FP
-    from ..catalog import CABINET_STYLES, DOOR_MATERIALS, HORIZONTAL_STYLES, NEW_DOOR_TYPES
+    from ..catalog import CABINET_STYLES, DOOR_DESIGNS, DOOR_MATERIALS, DOOR_PANELS, HORIZONTAL_STYLES
     fp = q("SELECT * FROM floorplans WHERE id=?", (fid,), one=True) or abort(404)
     if request.method == "POST":
         n = FP.save_plan(fid, request.get_json(silent=True) or {})
         return {"ok": True, "measurements": n}
     c = _cust_or_404(fp["customer_id"])
     units = q("SELECT unit_number FROM units WHERE floorplan_id=? ORDER BY length(unit_number), unit_number", (fid,))
-    opts = {"door_styles": ["6 Panel"] + [t for t in NEW_DOOR_TYPES if t != "HC Primecoat"] + ["Flat (HC Primecoat)"],
+    opts = {"door_styles": [""] + DOOR_DESIGNS + ["Colonist", "Steel"], "door_panels": [""] + DOOR_PANELS,
             "materials": DOOR_MATERIALS, "cab_styles": CABINET_STYLES,
             "blind_styles": ["All Vinyl", "Vinyl Plus", "All Metal", "Faux Wood"] + HORIZONTAL_STYLES}
     return render_template("floor_plan.html", fp=fp, c=c, plan=FP.get_plan(fid), units=[u["unit_number"] for u in units],

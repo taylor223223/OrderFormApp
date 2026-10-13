@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.10.0"
+__version__ = "2.12.0"
 
 
 def _secret_key():
@@ -17,6 +17,27 @@ def _secret_key():
             fh.write(secrets.token_hex(32))
     with open(p, encoding="utf-8") as fh:
         return fh.read().strip()
+
+
+_BACK = {   # detail pages with no "← list" link of their own
+    "customers.view": ("customers.index", "Customers"),
+    "orders.editor": ("orders.tracking", "Order Tracking"),
+    "customers.edit": ("customers.index", "Customers"),
+}
+
+
+def _back_link():
+    from flask import request, url_for
+    ep = request.endpoint or ""
+    if ep not in _BACK:
+        return None
+    target, label = _BACK[ep]
+    if ep == "customers.edit" and request.view_args.get("cid"):
+        return {"url": url_for("customers.view", cid=request.view_args["cid"]), "label": "customer"}
+    try:
+        return {"url": url_for(target), "label": label}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def create_app(db_path=None, testing=False, demo=None):
@@ -35,7 +56,13 @@ def create_app(db_path=None, testing=False, demo=None):
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
         app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE="Lax")
+    from . import safety
+    if not testing:
+        safety.protect(app.config["DB_PATH"], __version__)     # copy the data before any upgrade touches it
     db.init_db(app.config["DB_PATH"])
+    _c = db.connect(app.config["DB_PATH"])
+    safety.mark_version(_c, __version__)
+    _c.close()
     app.teardown_appcontext(db.close_db)
     if app.config["DEMO"]:
         from . import demo as _demo
@@ -120,14 +147,14 @@ def create_app(db_path=None, testing=False, demo=None):
             except Exception:  # noqa: BLE001
                 pc = ed = 0
         from . import holds as _holds
-        return {"demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
+        return {"back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username"), "hold_for": _holds.hold_for,
                 "holds_count": _holds.count() if session.get("uid") else 0}
 
     from .routes import (auth, crm, customers, emails, forms_lib, holds, imports, main, orders, photos, routes_plan,
-                         quotes, sales, settings, company)
+                         quotes, sales, settings, company, kitchen)
     for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
-               holds.bp, forms_lib.bp, sales.bp, quotes.bp, company.bp):
+               holds.bp, forms_lib.bp, sales.bp, quotes.bp, company.bp, kitchen.bp):
         app.register_blueprint(bp)
     if not testing and not app.config["DEMO"]:
         _start_email_watcher(app)
@@ -161,6 +188,8 @@ def _start_email_watcher(app):
                         if (db.setting("delivery_subject_word") or "").strip():
                             from .deliveries import check_email
                             check_email()
+                        from .order_notices import check_email as check_notices
+                        check_notices()
             except Exception:  # noqa: BLE001 - never let a mail hiccup stop the app
                 pass
             time.sleep(max(mins, 1) * 60 if mins > 0 else 120)

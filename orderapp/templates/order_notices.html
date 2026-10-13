@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Order-received emails{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('orders.tracking') }}">← Order Tracking</a></div><h1>Order-received emails</h1>
+<div class="muted">Emails saying an order came in are matched to your {{ open_n }} open order(s) by PO # or sales order #, and those orders move to <b>Confirmed</b>. An order never moves backwards.</div></div>
+<form method="post"><input type="hidden" name="check_email" value="1"><button class="btn primary">Check Outlook now</button></form></div>
+<div class="card small">{% if words %}The app looks for emails with <b>{{ words|join('</b>, <b>')|safe }}</b> in the subject every time it checks email{% if auto %} and confirms sure matches on its own{% else %}; you confirm every match{% endif %}. If the email has a sales order # and the order doesn't, it's saved on the order. Change the words in Settings.{% else %}Automatic reading is off - add subject words in Settings.{% endif %} Name-only matches always wait for you.</div>
+<form method="post" enctype="multipart/form-data" class="card"><h3 style="margin-top:0">Or paste / attach one</h3>
+<textarea name="text" rows="4" placeholder="Paste the order-received email here"></textarea>
+<div class="row" style="margin-top:8px"><input type="file" name="file" accept=".pdf,.csv,.txt,.xlsx"><button class="btn">Match orders</button></div></form>
+{% for c in checks %}
+<form method="post" class="card"><input type="hidden" name="apply" value="1"><input type="hidden" name="check_id" value="{{ c.id }}">
+<div class="row" style="justify-content:space-between"><h3 style="margin:0">{{ c.subject or 'Order notice' }} <span class="small muted">· {{ c.received or c.created[:16] }} · {{ c.source }}</span></h3>
+{% if c.results %}<button class="btn sm primary">Mark checked Confirmed</button>{% endif %}</div>
+<div class="tablewrap" style="margin-top:8px"><table><tr><th></th><th>Order</th><th>Customer</th><th>PO / SO #</th><th>Matched by</th><th>Now</th><th>Line in the email</th></tr>
+{% for r in c.results %}<tr><td><input type="checkbox" name="order_id" value="{{ r.order_id }}" {{ 'checked' if r.sure and r.now in ('Ready','Sent') }}></td>
+<td><a href="{{ url_for('orders.view', oid=r.order_id) }}">#{{ r.order_id }}</a> <span class="small muted">{{ r.title or '' }}</span></td><td>{{ r.cname }}</td><td class="small">{{ r.po }}{% if r.vendor_ref %} / {{ r.vendor_ref }}{% endif %}</td>
+<td><span class="tag {{ 'ok' if r.sure else 'warn' }}">{{ r.how }}{{ '' if r.sure else ' - check' }}</span></td><td><span class="tag">{{ r.now }}</span></td><td class="small muted">{{ r.line }}</td></tr>
+{% else %}<tr><td class="empty" colspan="7">No open orders matched this email.</td></tr>{% endfor %}
+</table></div></form>
+{% else %}<div class="card empty">No order-received emails read yet.</div>{% endfor %}
+{% endblock %}

@@ -107,6 +107,8 @@ DEFAULT_SETTINGS = {
     "quote_terms": "Prices are good until the date above. Sales tax and delivery charges, if any, are added on the "
                    "invoice. Custom-sized items are made to order. Thank you for the opportunity!",
     # morning delivery list email
+    "notice_subject_words": "Order Received, Order Confirmation, Order Acknowledgement, Acknowledgment, Order Entered",
+    "notice_auto": "1",
     "delivery_subject_word": "Deliver",
     "delivery_auto": "1",
 }
@@ -184,10 +186,12 @@ CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
 MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
                   "owner": "TEXT"},
-    "route_stops": {"products": "TEXT", "done_at": "TEXT"},
+    "route_stops": {"products": "TEXT", "done_at": "TEXT", "expected": "REAL"},
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
+    "orders": {"est_value": "REAL", "est_complete": "INTEGER"},
+    "delivery_checks": {"kind": "TEXT"},
 }
 
 # quick picks for "what am I estimating" on a route stop
@@ -211,11 +215,14 @@ def init_db(path=None):
     con.executescript(ITEMS_SCHEMA)
     from .company_db import COMPANY_SCHEMA
     con.executescript(COMPANY_SCHEMA)
+    from .kitchen import KITCHEN_SCHEMA
+    con.executescript(KITCHEN_SCHEMA)
     for table, cols in MIGRATIONS.items():
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():
             if col not in have:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+    _data_migrations(con)
     for k, v in DEFAULT_SETTINGS.items():
         con.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (k, v))
     con.commit()
@@ -312,3 +319,95 @@ def find_customer(name=None, acct=None, email=None):
 def add_status(order_id, status, note=""):
     x("INSERT INTO order_status_history(order_id, status, note, ts) VALUES (?,?,?,?)",
       (order_id, status, note, now()))
+
+
+def _data_migrations(con):
+    """One-time fixes to saved data when a field changes shape. Each runs once (flag in settings)."""
+    import json
+    done = {r[0] for r in con.execute("SELECT key FROM settings WHERE key LIKE 'dm_%'")}
+    if "dm_blind_slat" not in done:
+        from .catalog import OLD_BLIND_STYLES, split_blind_style
+        olds = tuple(OLD_BLIND_STYLES)
+
+        def fix(raw, many):
+            try:
+                d = json.loads(raw or "{}")
+            except ValueError:
+                return None
+            blocks = d.get("blocks") if many else [d]
+            if not isinstance(blocks, list) or not any(isinstance(b, dict) and b.get("style") in olds
+                                                       for b in blocks):
+                return None
+            new = [split_blind_style(b) for b in blocks]
+            if many:
+                d["blocks"] = new
+                return json.dumps(d)
+            return json.dumps(new[0])
+        for oid, raw in con.execute("SELECT id, data FROM orders WHERE data LIKE '%Basswood%' OR "
+                                    "data LIKE '%Metal Plus%'").fetchall():
+            n = fix(raw, True)
+            if n:
+                con.execute("UPDATE orders SET data=? WHERE id=?", (n, oid))
+        for mid, raw in con.execute("SELECT id, data FROM measurements WHERE data LIKE '%Basswood%' OR "
+                                    "data LIKE '%Metal Plus%'").fetchall():
+            n = fix(raw, False)
+            if n:
+                con.execute("UPDATE measurements SET data=? WHERE id=?", (n, mid))
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_blind_slat', '1')")
+    if "dm_door_split" not in done:
+        from .catalog import OLD_DOOR_STYLES, split_door_style
+        olds = set(OLD_DOOR_STYLES)
+
+        def fixd(raw, many):
+            try:
+                d = json.loads(raw or "{}")
+            except ValueError:
+                return None
+            blocks = d.get("blocks") if many else [d]
+            if not isinstance(blocks, list) or not any(isinstance(b, dict) and b.get("style") in olds
+                                                       for b in blocks):
+                return None
+            new = [split_door_style(b) if isinstance(b, dict) else b for b in blocks]
+            if many:
+                d["blocks"] = new
+                return json.dumps(d)
+            return json.dumps(new[0])
+        for oid, fk, raw in con.execute("SELECT id, form_key, data FROM orders WHERE form_key IN ('door','prehung')"
+                                        ).fetchall():
+            n = fixd(raw, True)
+            if n:
+                con.execute("UPDATE orders SET data=? WHERE id=?", (n, oid))
+        for mid, raw in con.execute("SELECT id, data FROM measurements WHERE product IN ('interior_door',"
+                                    "'entry_door','prehung_door','storage_door')").fetchall():
+            n = fixd(raw, False)
+            if n:
+                con.execute("UPDATE measurements SET data=? WHERE id=?", (n, mid))
+        for fid, raw in con.execute("SELECT id, plan FROM floorplans WHERE plan LIKE '%Panel%' OR plan LIKE '%Primecoat%'").fetchall():
+            try:
+                plan = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            changed = False
+            for it in plan.get("items", []) if isinstance(plan, dict) else []:
+                tgt = it.get("p") if isinstance(it, dict) else None
+                if isinstance(tgt, dict) and it.get("t") == "door" and tgt.get("style") in olds:
+                    st, pn, _tp = OLD_DOOR_STYLES[tgt["style"]]
+                    tgt["style"], tgt["panels"] = st, tgt.get("panels") or pn
+                    changed = True
+            if changed:
+                con.execute("UPDATE floorplans SET plan=? WHERE id=?", (json.dumps(plan), fid))
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_door_split', '1')")
+    if "dm_closet_leaves" not in done:
+        from .catalog import split_closet
+        for oid, raw in con.execute("SELECT id, data FROM orders WHERE form_key='closet_bifold'").fetchall():
+            try:
+                d = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            if d.get("_v212"):
+                continue
+            d["blocks"] = [split_closet(b) for b in d.get("blocks") or []]
+            d["_v212"] = True
+            con.execute("UPDATE orders SET data=? WHERE id=?", (json.dumps(d), oid))
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_closet_leaves', '1')")
+    con.commit()

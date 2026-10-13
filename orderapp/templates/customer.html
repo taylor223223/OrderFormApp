@@ -8,6 +8,7 @@
     <a class="btn" href="{{ url_for('customers.view', cid=c.id, tab='crm') }}#quicklog">Log call/visit</a>
     <a class="btn" href="{{ url_for('quotes.new', customer=c.id) }}">+ Quote</a>
     <a class="btn" href="{{ url_for('quotes.prices', cid=c.id) }}">Account prices</a>
+    <a class="btn" href="{{ url_for('kitchen.index', customer=c.id) }}" title="Countertop & cabinet layout: runs A/B/C, sinks, appliances, cabinets">Counter / cabinet measure</a>
     {% if co_key %}<a class="btn" href="{{ url_for('company.account', key=co_key) }}" title="Every purchase in the company reports, charts and insights">Company profile</a>{% endif %}
     <a class="btn" href="{{ url_for('customers.edit', cid=c.id) }}">Edit</a>
     <a class="btn" href="{{ url_for('imports.upload', customer=c.id) }}">Import CSV</a>
@@ -30,8 +31,11 @@
 <span class="chip">Last year ${{ '{:,.0f}'.format(sales.last_year) }}</span><span class="chip">Last order {{ sales.last }}</span>
 {% for k in sales.cats[:4] %}<span class="chip muted">{{ k.category }}</span>{% endfor %}
 <a class="btn sm" style="margin-left:auto" href="{{ url_for('sales.home', customer=c.id) }}">Sales report</a></div>{% endif %}
+{% if top_products %}<div class="measbox"><b>🛒 Buys most:</b>
+{% for p in top_products %}<a class="chip" href="{{ url_for('customers.view', cid=c.id, tab='products', category=p.category) }}" title="{{ p.orders }} order(s), last {{ p.last }}">{{ p.desc[:48] }} · {{ '%g' % p.qty }}</a>{% endfor %}
+<a class="btn sm" style="margin-left:auto" href="{{ url_for('customers.view', cid=c.id, tab='products') }}">All products bought</a></div>{% endif %}
 <div class="tabs">
-  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] %}
+  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('products','Products & Sizes Bought','#2a78d6'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] %}
   <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}" style="--c:{{ col }}">{{ l }}</a>{% endfor %}
 </div>
 
@@ -104,6 +108,30 @@
 <td class="right">{% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}" style="display:inline"><button class="btn sm" title="One click: same items, new draft">↻ Reorder</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7" class="empty">No orders yet.</td></tr>{% endfor %}
 </table></div>
+{% elif tab == 'products' %}
+<div class="row" style="gap:8px;margin-bottom:8px;flex-wrap:wrap">
+  <a class="btn sm {{ 'primary' if prod_view == 'products' }}" href="{{ url_for('customers.view', cid=c.id, tab='products', category=prod_cat) }}">By product &amp; size</a>
+  <a class="btn sm {{ 'primary' if prod_view == 'lines' }}" href="{{ url_for('customers.view', cid=c.id, tab='products', view='lines', category=prod_cat) }}">Every invoice line</a>
+  <form class="row" style="gap:6px"><input type="hidden" name="tab" value="products"><input type="hidden" name="view" value="{{ prod_view }}">
+  <select name="category" onchange="this.form.submit()"><option value="">All products</option>{% for k in prod_cats %}<option {{ 'selected' if k == prod_cat }}>{{ k }}</option>{% endfor %}</select></form>
+  {% if co_key %}<a class="btn sm" style="margin-left:auto" href="{{ url_for('company.account', key=co_key) }}">Company profile &amp; charts</a>{% endif %}
+</div>
+{% if not prod_rows %}<div class="card empty">No invoice lines for this account yet. Import the company reports (Sales → Import company reports) and they show up here.</div>
+{% elif prod_view == 'products' %}
+<p class="small muted">Everything this account has bought, from the company invoices. The same product and size ordered more than once is one line with the total quantity. Notes after * on the invoices (unit numbers, rooms) are listed under each line.</p>
+<div class="tablewrap"><table><tr><th>Product</th><th>Item #</th><th>Size (W x H)</th><th class="right">Total qty</th><th class="right">Orders</th><th>First</th><th>Last</th><th class="right">Last price</th></tr>
+{% set ns = namespace(cat='') %}
+{% for r in prod_rows %}{% if r.category != ns.cat %}{% set ns.cat = r.category %}<tr><td colspan="8" style="background:var(--brand-soft,#fff7ed)"><b>{{ r.category }}</b></td></tr>{% endif %}
+<tr><td>{{ r.desc }}{% if r.notes %}<div class="small muted">{{ r.notes[:8]|join(' · ') }}{% if r.notes|length > 8 %} · +{{ r.notes|length - 8 }} more{% endif %}</div>{% endif %}</td>
+<td class="small">{{ r.item_no }}{% if r.stock_desc and r.stock_desc|lower != r.desc|lower %}<div class="muted" title="Stock item it's made from">{{ r.stock_desc[:40] }}</div>{% endif %}</td>
+<td class="nowrap">{% if r.width %}{{ fmt_in(r.width) }} x {{ fmt_in(r.height) }}{% endif %}</td>
+<td class="right"><b>{{ '%g' % r.qty }}</b></td><td class="right">{{ r.orders }}</td><td class="small nowrap">{{ r.first }}</td><td class="small nowrap">{{ r.last }}</td>
+<td class="right">{{ '$%.2f' % r.last_price if r.last_price else '' }}</td></tr>{% endfor %}</table></div>
+{% else %}
+<div class="tablewrap"><table><tr><th>Date</th><th>Invoice</th><th>Item #</th><th>Description</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Amount</th><th>Rep</th></tr>
+{% for r in prod_rows %}<tr><td class="small nowrap">{{ r.date }}</td><td class="small">{{ r.invoice }}{% if r.type and r.type != 'Invoice' %}<div class="muted">{{ r.type }}</div>{% endif %}</td><td class="small">{{ r.item_no }}</td><td>{{ r.desc }}</td>
+<td class="right">{{ '%g' % r.qty if r.qty is not none else '' }}</td><td class="right">{{ '%.2f' % r.price if r.price is not none else '' }}</td><td class="right">{{ '{:,.2f}'.format(r.amount or 0) }}</td><td class="small">{{ r.rep }}</td></tr>{% endfor %}</table></div>
+{% endif %}
 {% elif tab == 'history' %}
 {% set rows = hist %}{% set show_customer = False %}{% include '_history_table.html' %}
 {% elif tab == 'crm' %}

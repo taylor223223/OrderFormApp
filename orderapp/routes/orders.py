@@ -32,6 +32,28 @@ def output_dir():
     return ensure_dir(setting("output_dir") or default_output_dir())
 
 
+def _iso(d):
+    """Order date as YYYY-MM-DD (it's stored the way it's typed: 10/13/2026, 2026-10-13...)."""
+    s = (d or "").strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%m-%d-%Y"):
+        try:
+            return datetime.strptime(s[:10], fmt).date().isoformat()
+        except ValueError:
+            continue
+    return date.today().isoformat()
+
+
+def order_folder(customer, day=None):
+    """Where an order PDF goes: Orders folder / Customer (default), / 2026-10, or / Customer / 2026-10."""
+    layout = setting("pdf_layout") or "customer"
+    month = (day or date.today().isoformat())[:7]
+    if layout == "month":
+        return os.path.join(output_dir(), month)
+    if layout == "customer_month":
+        return os.path.join(output_dir(), safe_name(customer), month)
+    return os.path.join(output_dir(), safe_name(customer))
+
+
 def safe_name(s):
     return re.sub(r'[\\/:*?"<>|]+', "-", s).strip()[:150]
 
@@ -115,8 +137,8 @@ def save():
     po, odate = h.get("po", ""), h.get("date", "")
     title = FORMS[form_key]["title"]
     if oid:
-        x("""UPDATE orders SET customer_id=?, form_key=?, title=?, po=?, order_date=?, data=?, updated=?
-             WHERE id=?""", (cid, form_key, title, po, odate, dumps(data), now(), oid))
+        x("""UPDATE orders SET customer_id=?, form_key=?, title=?, po=?, order_date=?, data=?, updated=?,
+             est_value=NULL WHERE id=?""", (cid, form_key, title, po, odate, dumps(data), now(), oid))
     else:
         oid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, created,
                    updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?)""",
@@ -169,9 +191,15 @@ def _make_pdf(oid):
     data = loads(o["data"])
     pdf, warns = fill_form(o["form_key"], data)
     cust = o["cname"] or data.get("header", {}).get("name") or "Customer"
-    fname = safe_name(f"{cust} - {FORMS[o['form_key']]['title']} - PO {o['po'] or 'none'} - #{oid}.pdf")
-    folder = ensure_dir(os.path.join(output_dir(), safe_name(cust)))
+    day = _iso(o["order_date"])
+    fname = safe_name(f"{day} - {cust} - {FORMS[o['form_key']]['title']} - PO {o['po'] or 'none'} - #{oid}.pdf")
+    folder = ensure_dir(order_folder(cust, day))
     path = os.path.join(folder, fname)
+    if o["pdf_path"] and os.path.exists(o["pdf_path"]) and os.path.abspath(o["pdf_path"]) != os.path.abspath(path):
+        try:                      # re-made after an edit or a rename: don't leave the old copy behind
+            os.remove(o["pdf_path"])
+        except OSError:
+            pass
     with open(path, "wb") as fh:
         fh.write(pdf)
     x("UPDATE orders SET pdf_path=?, updated=? WHERE id=?", (path, now(), oid))
@@ -414,8 +442,25 @@ def tracking():
     rows = q(sql, args)
     counts = {r["status"]: r["n"] for r in q("SELECT status, COUNT(*) n FROM orders GROUP BY status")}
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
+    from ..order_insights import tracking_totals
+    try:
+        totals = tracking_totals()
+    except Exception:   # noqa: BLE001 - the board must always load
+        totals = None
     return render_template("tracking.html", rows=rows, statuses=STATUSES, st=st, s=s, counts=counts,
-                           customers=customers, month=month)
+                           customers=customers, month=month, totals=totals, out_dir=output_dir())
+
+
+@bp.route("/orders/folder", methods=["POST"])
+@login_required
+def open_orders_folder():
+    """Open the folder all order PDFs are saved in, in File Explorer on this computer."""
+    from ..emailer import open_file
+    try:
+        open_file(output_dir())
+    except Exception:  # noqa: BLE001
+        flash(f"Your order PDFs are in: {output_dir()}", "info")
+    return redirect(request.referrer or url_for("orders.tracking"))
 
 
 @bp.route("/tracking/add", methods=["POST"])
@@ -435,6 +480,25 @@ def tracking_add():
 
 
 # ---------------- JSON helpers for the editor ----------------
+@bp.route("/api/order-help", methods=["POST"])
+@login_required
+def api_order_help():
+    """Previous orders of this product for the customer + a rough price range for the lines being filled in."""
+    from .. import order_insights as OI
+    j = request.get_json(silent=True) or {}
+    cid = j.get("customer")
+    try:
+        cid = int(cid) if cid else None
+    except (TypeError, ValueError):
+        cid = None
+    fk = j.get("form") if j.get("form") in FORMS else None
+    blocks = [b for b in (j.get("blocks") or []) if isinstance(b, dict)][:30]
+    prev = OI.previous_for(cid, fk, blocks) if cid and fk else []
+    for r in prev:
+        r.pop("size", None)
+    est = OI.estimate_order(cid, fk, blocks) if fk and blocks else None
+    return jsonify({"previous": prev, "estimate": est})
+
 @bp.route("/api/unit")
 @login_required
 def api_unit():

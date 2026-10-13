@@ -56,7 +56,26 @@ SHOWER_GLASS = ["Clear", "Obscure / Rain", "Other"]
 NEW_DOOR_TYPES = ["5 Panel", "2 Panel", "2 Panel Arch", "2 Panel Arch Plank", "5 Panel Shaker",
                   "3 Panel Shaker Equal", "3 Panel Shaker Craftsman", "2 Panel Shaker", "1 Panel Shaker",
                   "HC Primecoat"]
-NEW_BLIND_STYLES = ['Basswood 2"', 'Basswood 2-1/2"', '1" Metal Plus Mini', '2" Metal Plus']
+# v2.12: door style (the design) and panel count are separate, so any combination can be ordered
+DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plank", "Plank", "Smooth", "Camden",
+                "Carrara", "Cheyenne", "Colonial", "Coventry", "Cremona", "Lincoln Park", "Riverside", "Rockport",
+                "Roman"]
+DOOR_PANELS = ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]
+DOOR_TOPS = ["Square Top", "Arched Top"]
+# door styles saved before the split -> (style, panels, top)
+OLD_DOOR_STYLES = {"5 Panel": ("", "5 Panel", ""), "2 Panel": ("", "2 Panel", ""),
+                   "2 Panel Arch": ("Arch", "2 Panel", "Arched Top"),
+                   "2 Panel Arch Plank": ("Arch Plank", "2 Panel", "Arched Top"),
+                   "5 Panel Shaker": ("Shaker", "5 Panel", ""), "3 Panel Shaker Equal": ("Shaker Equal", "3 Panel", ""),
+                   "3 Panel Shaker Craftsman": ("Shaker Craftsman", "3 Panel", ""),
+                   "2 Panel Shaker": ("Shaker", "2 Panel", ""), "1 Panel Shaker": ("Shaker", "1 Panel", ""),
+                   "HC Primecoat": ("Smooth", "Flush", ""), "Flat (HC Primecoat)": ("Smooth", "Flush", ""),
+                   "6 Panel": ("Colonist", "6 Panel", "")}
+NEW_BLIND_STYLES = ["Basswood", "Metal Plus"]
+BLIND_SLATS = ['1"', '2"', '2-1/2"']
+# styles that used to include the slat size (before v2.12) -> (style, slat size)
+OLD_BLIND_STYLES = {'Basswood 2"': ("Basswood", '2"'), 'Basswood 2-1/2"': ("Basswood", '2-1/2"'),
+                    '1" Metal Plus Mini': ("Metal Plus", '1"'), '2" Metal Plus': ("Metal Plus", '2"')}
 HORIZONTAL_STYLES = ['2" Faux Wood', 'Premium Basswood 2"', 'Premium Basswood 2-1/2"', '1" Aluminum Mini Blind',
                      '1" Vinyl Mini Blind', '1" Metal Plus Mini Blind', '2" Metal Plus Blind']
 CABINET_STYLES = ["Shaker", "Shaker Slim", "Italia", "Bradford", "Elegante", "Elegante Gauntlet Supermatte"]
@@ -153,9 +172,11 @@ def _door_common(prehung=False):
             ("Four-Panel Embossed (Carmelle)", "FourPanEmb1.0"),
             ("Three-Panel Embossed (Clermont)", "ThreePanEmb1.0"),
             ("Six Panel Steel", "SixPanSteel1.0")] +
-           [(t, f"DoorStyle {_slug(t)}.0") for t in NEW_DOOR_TYPES] +
+           [(t, f"DoorStyle {_slug(t)}.0") for t in DOOR_DESIGNS] +
            [("Other", "OtherDoor1.0")], other_option="Other", other_field="style_other", photos="door_style"),
         _t("style_other", "Style - Other", "OtherDoorTXT.0"),
+        _c("panels", "Panels", [(t, f"DoorPanels {_slug(t)}.0") for t in DOOR_PANELS]),
+        _c("door_top", "Panel Top", [(t, f"DoorTop {_slug(t)}.0") for t in DOOR_TOPS]),
         _c("material", "Door Material", [(m, f"Material {_slug(m)}.0") for m in DOOR_MATERIALS]),
         _c("core", "Core Type", [("Hollow Core", "HC_Door.0"), ("Solid Core", "SC_Door.0")]),
         _c("door_location", "Door Location", [("Interior", "InteriorDoor.0"), ("Exterior", "Exterior_Door.0")]),
@@ -390,6 +411,7 @@ def _horiz_block(i):
         _c("style", "Style", [("All Vinyl", f"{p} Style All Vinyl"), ("Vinyl Plus", f"{p} Style Vinyl Plus"),
                               ("All Metal", f"{p} Style All Metal"), ("Faux Wood", f"{p} Style Faux Wood")] +
            [(t, f"{p} Style {t}") for t in NEW_BLIND_STYLES]),
+        _c("slat_size", "Slat Size", [(t, f"{p} Slat {t}") for t in BLIND_SLATS]),
         _c("room", "Location", [("Bedroom", f"{p} Location Bedroom"), ("Kitchen", f"{p} Location Kitchen"),
                                 ("Living Room", f"{p} Location Living Room"), ("Other", f"{p} Location Other")],
            other_option="Other", other_field="room_other"),
@@ -821,14 +843,23 @@ GENERATED = {
             _gc("frame_finish", "Mirror Frame Finish", WARDROBE_FINISHES, other_option="Other",
                 other_field="frame_finish_other", show_if=("closet_type", WARDROBE_TYPES[:2])),
             _g("frame_finish_other", "Mirror Frame Finish - Other", show_if=("frame_finish", ["Other"])),
-            _gc("style", "Door Style", ["Flat (smooth)", "2 Panel", "6 Panel", "Shaker", "Mirrored", "Other"],
-                other_option="Other", other_field="style_other"),
+            _gc("style", "Door Style", ["Smooth", "Shaker", "Colonist", "Camden", "Carrara", "Riverside", "Mirrored",
+                                        "Other"], other_option="Other", other_field="style_other"),
             _g("style_other", "Style - Other", show_if=("style", ["Other"])),
-            _gc("panels", "Number of Panels", ["2", "4"]),
-            _gc("finish", "Finish", ["Primecoat", "White", "Other"], other_option="Other",
+            _gc("panels", "Panels (design)", ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]),
+            _gc("leaves", "Number of Doors (leaves)", ["1", "2", "3", "4"]),
+            _gc("finish", "Finish", ["Primecoat", "Embossed Primecoat", "White", "Other"], other_option="Other",
                 other_field="finish_other"),
             _g("finish_other", "Finish - Other", show_if=("finish", ["Other"])),
-            _g("width", "Opening Width (in)", measure=True), _g("height", "Opening Height (in)", measure=True),
+            _gc("core", "Core Type", ["Hollow Core", "Solid Core"]),
+            _gc("thickness", "Door Thickness", ['1-3/8"', '1-1/8"', "Other"]),
+            _g("width", "Door Width (in)", measure=True, placeholder="each door"),
+            _g("height", "Door Height (in)", measure=True),
+            _g("opening_width", "Opening W (in)", measure=True),
+            _g("opening_height", "Opening H (in)", measure=True),
+            _gc("ball_catch", "Ball Catch", ["Yes", "No"]),
+            _gc("finger_pull", "Finger Pull", ["Yes", "No"]),
+            _g("finger_pull_dist", "Finger Pull from Top (in)", measure=True, show_if=("finger_pull", ["Yes"])),
             _gc("track", "Track & Hardware Included", ["Yes", "No"]),
             _LINE_COMMENTS]],
         "products": ["closet_door", "bypass_door", "wardrobe_door"],
@@ -1022,6 +1053,69 @@ def translate_for_variant(form_key, variant, data):
     return d
 
 
+def split_door_style(blk):
+    """Old saved doors ('2 Panel Arch') -> style 'Arch' + panels '2 Panel' + top 'Arched Top'."""
+    if isinstance(blk, dict) and blk.get("style") in OLD_DOOR_STYLES:
+        st, pn, tp = OLD_DOOR_STYLES[blk["style"]]
+        blk = dict(blk, style=st)
+        if pn and not blk.get("panels"):
+            blk["panels"] = pn
+        if tp and not blk.get("door_top"):
+            blk["door_top"] = tp
+        if not st:
+            blk.pop("style")
+    return blk
+
+
+_OLD_CLOSET_STYLES = {"Flat (smooth)": ("Smooth", "Flush"), "2 Panel": ("", "2 Panel"), "6 Panel": ("Colonist", "6 Panel")}
+
+
+def split_closet(blk):
+    """Closet doors saved before v2.12: 'Number of Panels' (2/4) meant how many doors; style held panels."""
+    if not isinstance(blk, dict):
+        return blk
+    blk = dict(blk)
+    if blk.get("panels") in ("2", "4") and not blk.get("leaves"):
+        blk["leaves"] = blk.pop("panels")
+    if blk.get("style") in _OLD_CLOSET_STYLES:
+        st, pn = _OLD_CLOSET_STYLES[blk["style"]]
+        if st:
+            blk["style"] = st
+        else:
+            blk.pop("style")
+        blk.setdefault("panels", pn)
+    return blk
+
+
+def door_photo(blk):
+    """Photo for a door: the exact panels + style picture if there is one ('2 Panel' + 'Arch' -> 2-panel-arch),
+    else the style, else the panel count."""
+    from . import option_photos
+    st, pn = (blk.get("style") or "").strip(), (blk.get("panels") or "").strip()
+    cands = []
+    if pn == "Flush":
+        cands.append("HC Primecoat")
+    if pn and st:
+        cands.append(f"{pn} {st}")
+    cands += [c for c in (st, pn) if c]
+    for c in cands:
+        p = option_photos.find("door_style", c)
+        if p:
+            return p
+    return None
+
+
+def split_blind_style(blk):
+    """Old saved horizontal blinds ('2" Metal Plus') -> style 'Metal Plus' + slat size '2"'."""
+    if isinstance(blk, dict) and blk.get("style") in OLD_BLIND_STYLES:
+        st, sl = OLD_BLIND_STYLES[blk["style"]]
+        blk = dict(blk, style=st)
+        blk.setdefault("slat_size", sl)
+        if not blk.get("slat_size"):
+            blk["slat_size"] = sl
+    return blk
+
+
 def product_fields(product_key):
     """Union of the block fields of every form for that product, so a saved
     measurement can fill any of them. Choices become suggestion lists so custom
@@ -1094,8 +1188,12 @@ def public_spec(form_key):
             d["photos"] = fd["photos"]
             d["photo_map"] = {o: photos.slug(o) for o in d["options"] if photos.find(fd["photos"], o)}
         fields.append(d)
+    door_slugs = []
+    if any(fd.get("photos") == "door_style" for fd in fields):
+        from . import option_photos as photos
+        door_slugs = photos.available("door_style")
     return {
-        "key": form_key, "title": f["title"],
+        "key": form_key, "title": f["title"], "door_photo_slugs": door_slugs,
         "header": [k for k in ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "po", "date"]
                    if k in f["header"] or (k in ("city", "state", "zip") and f.get("address_combined"))],
         "has_sales_rep": bool(f.get("sales_rep")),
