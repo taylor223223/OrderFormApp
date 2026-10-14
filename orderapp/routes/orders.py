@@ -330,6 +330,8 @@ def send_page(oid):
         except Exception as e:  # noqa: BLE001
             flash(f"Email failed: {e}", "error")
             return redirect(url_for("orders.send_page", oid=oid))
+        x("UPDATE orders SET sent_subject=?, sent_to=? WHERE id=?",
+          (request.form.get("subject", ""), ", ".join(a for a in (to, request.form.get("cc", "").strip()) if a), oid))
         if not review:
             x("UPDATE orders SET status='Sent', sent_at=?, updated=? WHERE id=?", (now(), now(), oid))
             add_status(oid, "Sent", f"Emailed to {to}")

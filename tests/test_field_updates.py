@@ -183,7 +183,35 @@ def test_order_notices(app):
     assert n == 0                                   # already Confirmed - never moves backwards or twice
     assert c.get("/order-notices").status_code == 200
     c.post("/order-notices", data={"csrf_token": t, "text": "Order Acknowledgement PO-55501"})
-    assert b"Order-received emails" in c.get("/tracking").data
+    assert b"Order replies" in c.get("/tracking").data
+
+
+def test_reply_got_it(app):
+    with app.app_context():
+        from orderapp.db import x
+        from orderapp import order_notices as ON
+        ids = [r["id"] for r in Q(app, "SELECT id FROM orders WHERE status NOT IN ('Delivered','Completed','Installed',"
+                                       "'Cancelled','Draft','Confirmed') ORDER BY id LIMIT 3")]
+        a, b, d = ids
+        x("UPDATE orders SET status='Ready', po='77120', sent_subject='Door Order - Test Place - PO 77120' WHERE id=?", (a,))
+        x("UPDATE orders SET status='Sent', po='88231', sent_subject=NULL WHERE id=?", (b,))
+        x("UPDATE orders SET status='Sent', po='99342', sent_subject='Blinds - Test - PO 99342' WHERE id=?", (d,))
+        quoted = "\n\nFrom: Taylor\nSent: Monday\nSubject: Door Order\nPlease order the following, any questions?"
+        assert ON.reply_verdict("Got it" + quoted)[0] == "yes"       # the quoted '?' below doesn't count
+        assert ON.reply_verdict("got it, but the 2nd door is missing a size?")[0] == "check"
+        assert ON.reply_verdict("")[0] == "no"
+        cid, res, n = ON.record_reply({"subject": "RE: Door Order - Test Place - PO 77120", "body": "Got it" + quoted,
+                                       "sender": "jimmy@x.com"}, "m1")
+        assert n == 1 and res[0]["order_id"] == a
+        # no stored subject: the PO # in the reply subject still finds it
+        _, res, n = ON.record_reply({"subject": "Re: RE: Something - PO 88231", "body": "got it thanks"}, "m2")
+        assert n == 1 and res[0]["order_id"] == b
+        # a question waits for you
+        _, res, n = ON.record_reply({"subject": "RE: Blinds - Test - PO 99342", "body": "Which color on these?"}, "m3")
+        assert n == 0 and res and not res[0]["sure"]
+        assert ON.is_reply("RE: x") and not ON.is_reply("Order for Unit 5")
+    st = {r["id"]: r["status"] for r in Q(app, "SELECT id, status FROM orders WHERE id IN (?,?,?)", (a, b, d))}
+    assert st[a] == "Confirmed" and st[b] == "Confirmed" and st[d] == "Sent"
 
 
 def test_plan_page(app):
@@ -242,3 +270,19 @@ def test_kitchen_measure(app):
     assert "Measure Sheet" in txt and "COUNTERTOP PIECES" in txt and len(doc) >= 2
     assert c.get("/kitchen/blank.pdf").data[:4] == b"%PDF"
     assert c.get(f"/kitchen?customer={cid}").status_code == 200
+
+
+def test_reply_settings_save(app):
+    c = app.test_client()
+    t = _csrf(c)
+    assert b"got it" in c.get("/settings").data
+    c.post("/settings", data={"csrf_token": t, "notice_subject_words": "Order Received",
+                              "reply_confirm_words": "got it, rcvd"})
+    with app.app_context():
+        from orderapp import order_notices as ON
+        assert not ON.reply_on() and ON.reply_words() == ["got it", "rcvd"]
+    c.post("/settings", data={"csrf_token": t, "notice_subject_words": "Order Received", "reply_confirm": "1",
+                              "reply_confirm_words": "got it"})
+    with app.app_context():
+        from orderapp import order_notices as ON
+        assert ON.reply_on()

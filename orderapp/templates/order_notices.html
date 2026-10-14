@@ -1,7 +1,7 @@
-{% extends "base.html" %}{% block title %}Order-received emails{% endblock %}
+{% extends "base.html" %}{% block title %}Order replies & confirmations{% endblock %}
 {% block body %}
-<div class="pagehead"><div><div class="small"><a href="{{ url_for('orders.tracking') }}">← Order Tracking</a></div><h1>Order-received emails</h1>
-<div class="muted">Emails saying an order came in are matched to your {{ open_n }} open order(s) by PO # or sales order #, and those orders move to <b>Confirmed</b>. An order never moves backwards.</div></div>
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('orders.tracking') }}">← Order Tracking</a></div><h1>Order replies &amp; confirmations</h1>
+<div class="muted">When your order guy replies "got it" to an order you emailed from the app, that order moves to <b>Confirmed</b>. Emails saying an order came in are also matched to your {{ open_n }} open order(s) by PO # or sales order #, and those orders move to <b>Confirmed</b>. An order never moves backwards.</div></div>
 <form method="post"><input type="hidden" name="check_email" value="1"><button class="btn primary">Check Outlook now</button></form></div>
 <div class="card small">{% if words %}The app looks for emails with <b>{{ words|join('</b>, <b>')|safe }}</b> in the subject every time it checks email{% if auto %} and confirms sure matches on its own{% else %}; you confirm every match{% endif %}. If the email has a sales order # and the order doesn't, it's saved on the order. Change the words in Settings.{% else %}Automatic reading is off - add subject words in Settings.{% endif %} Name-only matches always wait for you.</div>
 <form method="post" enctype="multipart/form-data" class="card"><h3 style="margin-top:0">Or paste / attach one</h3>
@@ -17,5 +17,5 @@
 <td><span class="tag {{ 'ok' if r.sure else 'warn' }}">{{ r.how }}{{ '' if r.sure else ' - check' }}</span></td><td><span class="tag">{{ r.now }}</span></td><td class="small muted">{{ r.line }}</td></tr>
 {% else %}<tr><td class="empty" colspan="7">No open orders matched this email.</td></tr>{% endfor %}
 </table></div></form>
-{% else %}<div class="card empty">No order-received emails read yet.</div>{% endfor %}
+{% else %}<div class="card empty">No order replies or order-received emails read yet.</div>{% endfor %}
 {% endblock %}

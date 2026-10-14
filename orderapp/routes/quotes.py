@@ -316,9 +316,9 @@ def notices():
             if r["error"]:
                 flash(r["error"], "error")
             elif not r["new"]:
-                flash("No new order-received emails in the last 3 days.", "info")
+                flash("No new order replies or order-received emails in the last 3 days.", "info")
             else:
-                flash(f"Read {r['new']} order-received email(s): {r['matched']} order(s) matched, {r['applied']} "
+                flash(f"Read {r['new']} order email(s): {r['matched']} order(s) matched, {r['applied']} "
                       f"moved to Confirmed.", "ok")
             return redirect(url_for("quotes.notices"))
         if request.form.get("apply"):

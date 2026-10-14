@@ -52,6 +52,10 @@
       <div class="small muted">Emails with any of these in the subject (last 3 days) are matched to open orders by PO # / sales order # and moved to Confirmed. Blank = off.</div></div>
     <div><label class="row" style="gap:6px;margin-top:20px"><input type="checkbox" name="notice_auto" value="1" style="width:auto" {{ 'checked' if v.notice_auto == '1' }}> Move sure matches to Confirmed automatically</label>
       <div class="small muted">Name-only matches always wait for you (Order Tracking → Order-received emails).</div></div>
+    <div><label class="row" style="gap:6px;margin-top:8px"><input type="checkbox" name="reply_confirm" value="1" style="width:auto" {{ 'checked' if v.reply_confirm != '0' }}> A short reply to an order I emailed ("got it") means it was received</label>
+      <div class="small muted">The reply has to be to the email the app made for that order (same subject, or the PO # in the subject). Replies with a question or a problem ("missing", "need", "?", "backorder"...) are listed for you instead of moving the order.</div></div>
+    <div><label>Reply words that mean "received"</label><input name="reply_confirm_words" value="{{ v.reply_confirm_words if v.reply_confirm_words is not none else '' }}" placeholder="got it, received, will do">
+      <div class="small muted">Only the new part of the reply is read, not the quoted order underneath.</div></div>
   </div>
   <h3>Quotes</h3>
   <div class="grid g2">

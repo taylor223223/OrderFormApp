@@ -243,9 +243,12 @@ def auto_check(prov=None):
         return res
     res["found"] = len(msgs)
     seen = {r["msg_id"] for r in q("SELECT msg_id FROM email_messages WHERE msg_id IS NOT NULL")}
+    from ..order_notices import is_reply, match_reply
     for m in msgs:
         if m["msg_id"] in seen:
             continue
+        if is_reply(m.get("subject")) and match_reply(m.get("subject")):
+            continue    # a reply to an order you sent ("got it") - not a new order; Order Tracking handles it
         try:
             full = prov.get_message(m["msg_id"])
         except Exception:  # noqa: BLE001

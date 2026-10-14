@@ -109,6 +109,8 @@ DEFAULT_SETTINGS = {
     # morning delivery list email
     "notice_subject_words": "Order Received, Order Confirmation, Order Acknowledgement, Acknowledgment, Order Entered",
     "notice_auto": "1",
+    "reply_confirm": "1",
+    "reply_confirm_words": "got it, got this, received, recieved, will do, on it, entered, placed, confirmed, done, thanks, thank you, ok, okay, 10-4, sounds good",
     "delivery_subject_word": "Deliver",
     "delivery_auto": "1",
 }
@@ -190,7 +192,7 @@ MIGRATIONS = {
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
-    "orders": {"est_value": "REAL", "est_complete": "INTEGER"},
+    "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
 }
 
