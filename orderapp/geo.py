@@ -113,7 +113,14 @@ def _http(url, data=None, headers=None, timeout=20, note=True):
     except urllib.error.HTTPError as e:
         msg = e.read().decode(errors="ignore")[:200]
         if e.code in (401, 403) and "openrouteservice" in host:
-            err = "OpenRouteService key was rejected - check it in Settings (no spaces or quotes)."
+            ors_reply = msg.lstrip().startswith("{") and ("error" in msg or "message" in msg)
+            if ors_reply or e.code == 401:
+                err = ("OpenRouteService turned the key down (" + str(e.code) + "): "
+                       + (msg[:120] or "no details") + " - re-copy the key into Settings, or check it at "
+                       "openrouteservice.org (Dashboard).")
+            else:   # a web filter answered instead of OpenRouteService
+                err = ("Your network blocked api.openrouteservice.org (" + str(e.code) + " from a web filter, not from "
+                       "OpenRouteService) - the key is fine. Ask IT to allow it, or try a hotspot.")
         elif e.code == 407:
             err = explain(e, host)
         elif e.code == 429:
