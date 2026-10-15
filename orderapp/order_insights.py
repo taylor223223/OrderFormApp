@@ -396,7 +396,7 @@ def tracking_totals(today=None, compute_limit=40):
                ("This month", today.replace(day=1), today), ("Year to date", today.replace(month=1, day=1), today)]
     first = min(p[1] for p in periods).isoformat()
     rows = q("""SELECT o.*, substr(coalesce(nullif(o.sent_at,''), nullif(o.order_date,''), o.created),1,10) d
-                FROM orders o WHERE o.status NOT IN ('Draft','Cancelled')
+                FROM orders o WHERE o.status NOT IN ('Draft','Cancelled') AND coalesce(o.kind,'order')<>'quote'
                 AND substr(coalesce(nullif(o.sent_at,''), nullif(o.order_date,''), o.created),1,10)>=?""", (first,))
     done, pending = 0, 0
     vals = []

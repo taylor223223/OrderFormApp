@@ -307,3 +307,11 @@ a.stat{color:inherit;text-decoration:none}
 .runletter{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:2px solid #c2410c;color:#c2410c;font-weight:800;margin-right:4px}
 /* maps stay under the sticky top bar (Leaflet's own layers use z-index 400-1000) */
 .leaflet-container{position:relative;z-index:0;isolation:isolate}
+
+.kindtoggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-bottom:6px;background:#fff}
+.kindtoggle button{border:0;background:transparent;padding:7px 14px;font-weight:600;cursor:pointer;color:var(--muted,#666)}
+.kindtoggle button.on{background:var(--brand,#c2410c);color:#fff}
+.taps{display:flex;flex-wrap:wrap;gap:6px}
+.taps button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-weight:600;cursor:pointer}
+.taps button.on{background:var(--brand,#c2410c);border-color:var(--brand,#c2410c);color:#fff}
+.taps.sm button{padding:3px 8px;font-size:12px}

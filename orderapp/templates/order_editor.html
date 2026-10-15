@@ -4,7 +4,11 @@
 <div class="holdbanner" id="holdBanner" {% if not hold %}style="display:none"{% endif %}><b>⛔ ACCOUNT HOLD</b> — <span id="holdText">{% if hold %}{{ hold.name }} owes <b>${{ '{:,.2f}'.format(hold.balance or 0) }}</b>{% endif %}</span>. This account must be brought current before any purchase.
 <a href="{{ url_for('holds.index') }}">Account Holds</a></div>
 <div class="pagehead">
-  <div><h1>{{ spec.title }}{% if order %} <span class="muted">#{{ order.id }}</span>{% endif %}</h1>
+  <div><div class="kindtoggle" role="radiogroup" aria-label="Order or estimate">
+    <button type="button" data-kind="order" class="{{ 'on' if kind != 'quote' }}">🧾 Order</button><button type="button" data-kind="quote" class="{{ 'on' if kind == 'quote' }}">💲 Estimate / quote</button>
+  </div>
+  <h1><span id="formTitle" data-order="{{ spec.title }}" data-quote="{{ spec.title.replace(' Order Form', ' Quote Request') if ' Order Form' in spec.title else spec.title ~ ' (Quote Request)' }}">{{ spec.title if kind != 'quote' else (spec.title.replace(' Order Form', ' Quote Request') if ' Order Form' in spec.title else spec.title ~ ' (Quote Request)') }}</span>{% if order %} <span class="muted">#{{ order.id }}</span>{% endif %}</h1>
+  <div class="small" id="quoteNote" {% if kind != 'quote' %}hidden{% endif %} style="color:#b91c1c;font-weight:600">Estimate: same form, but the PDF says QUOTE REQUEST - PLEASE PRICE, the email asks for pricing, and it isn't counted as an order.</div>
   <div class="muted small">Yellow = predicted from saved measurements / past orders. Check it, then save. Dropdowns accept any typed value.</div></div>
   <div class="row">
     <select id="switchForm" style="max-width:260px" title="Switch form">{% for k, t in forms %}<option value="{{ k }}" {{ 'selected' if k==form_key }}>{{ t }}</option>{% endfor %}</select>
@@ -17,6 +21,7 @@
 <input type="hidden" name="customer_id" id="customer_id" value="{{ c.id if c else '' }}">
 <input type="hidden" name="payload" id="payload">
 <input type="hidden" name="source" value="{{ order.source if order else 'manual' }}">
+<input type="hidden" name="kind" id="kind" value="{{ kind }}">
 
 <div class="card">
   <div class="grid g4">
@@ -296,6 +301,11 @@ $('#orderForm').addEventListener('submit', () => {
                                         sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : ''});
   dirty = false;
 });
+document.querySelectorAll('.kindtoggle button').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.kindtoggle button').forEach(x => x.classList.toggle('on', x === btn));
+  const k = btn.dataset.kind; $('#kind').value = k; $('#quoteNote').hidden = k !== 'quote';
+  const t = $('#formTitle'); t.textContent = t.dataset[k]; dirty = true;
+}));
 $('#photoInput').addEventListener('change', e => {
   const box = $('#photoPreview'); box.innerHTML = '';
   [...e.target.files].forEach(f => { const d = document.createElement('div'); d.className = 'ph';

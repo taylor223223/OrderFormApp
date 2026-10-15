@@ -199,3 +199,65 @@ def test_roller_shade_fabric_fields(app):
     doc = fitz.open(stream=pdf, filetype="pdf")
     vals = {w.field_name: w.field_value for p in doc for w in p.widgets() or []}
     assert "VX Solar Screen 3000" in vals.values() and "3%" in vals.values() and "Vertilux (VX)" in vals.values()
+
+
+def test_order_sizes_go_to_units_automatically(app, c):
+    def save(payload, oid=""):
+        r = c.post("/orders/save", data={"csrf_token": c.t, "form_key": "vertical_blind", "customer_id": app.cid2,
+                                         "order_id": oid, "payload": json.dumps(payload), "action": "save"})
+        return int(r.headers["Location"].rsplit("/", 1)[1])
+
+    def meas():
+        with app.app_context():
+            from orderapp.db import q, loads
+            return [(r["unit_number"], r["room"], loads(r["data"]).get("width"), loads(r["data"]).get("height"))
+                    for r in q("""SELECT m.*, u.unit_number FROM measurements m JOIN units u ON u.id=m.unit_id
+                                  WHERE m.customer_id=? ORDER BY u.unit_number, m.room, m.id""", (app.cid2,))]
+    p = {"header": {"name": "Mesa Ridge Homes", "po": "A1"}, "blocks": [
+        {"qty": "1", "unit": "201", "room": "Living Room", "width": "72", "height": "84"},
+        {"qty": "1", "unit": "201", "room": "Bedroom", "width": "36", "height": "60"},
+        {"qty": "1", "unit": "305", "room": "Living Room", "width": "96", "height": "84"}]}
+    oid = save(p)
+    assert sorted(meas()) == sorted([("201", "Bedroom", "36", "60"), ("201", "Living Room", "72", "84"),
+                                     ("305", "Living Room", "96", "84")])
+    save(dict(p, header={"name": "Mesa Ridge Homes", "po": "A2"}))      # same sizes on a 2nd order: no duplicates
+    assert len(meas()) == 3
+    p["blocks"][1]["width"] = "35-1/2"                                  # fix a typo on the first order
+    save(p, oid)
+    assert ("201", "Bedroom", "35-1/2", "60") in meas() and len(meas()) == 4   # 2nd order still has 36
+    with app.app_context():
+        from orderapp.suggest import measurements_for_unit
+        _, _, rows = measurements_for_unit(app.cid2, "305", form_key="vertical_blind")
+        assert rows
+    assert "Sizes saved to units automatically" in c.get(f"/orders/{oid}").get_data(as_text=True)
+
+
+def test_estimate_toggle_and_status_taps(app, c):
+    payload = {"header": {"name": "Mesa Ridge Homes", "po": "Q-1", "date": "10/15/2030"},
+               "blocks": [{"qty": "1", "unit": "9", "width": "30", "height": "80"}]}
+    ed = c.get(f"/orders/editor?form=door&customer={app.cid2}").get_data(as_text=True)
+    assert 'data-kind="quote"' in ed and 'name="kind"' in ed
+    r = c.post("/orders/save", data={"csrf_token": c.t, "form_key": "door", "customer_id": app.cid2, "kind": "quote",
+                                     "payload": json.dumps(payload), "action": "pdf"})
+    oid = int(r.headers["Location"].rsplit("/", 1)[1])
+    with app.app_context():
+        from orderapp.db import q
+        o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+    assert o["kind"] == "quote" and o["title"] == "Door Quote Request" and o["status"] == "Ready"
+    assert "Door Quote Request" in os.path.basename(o["pdf_path"])
+    import pymupdf as fitz
+    assert "QUOTE REQUEST" in fitz.open(o["pdf_path"])[0].get_text()
+    page = c.get(f"/orders/{oid}").get_data(as_text=True)
+    assert 'value="Quote ready" class="on"' in page and "<select name=\"status\">" not in page
+    assert "Turn into an order" in page
+    assert "Please price the attached" in c.get(f"/orders/{oid}/send").get_data(as_text=True)
+    # one tap -> order sent: becomes an order, banner gone
+    c.post(f"/orders/{oid}/status", data={"csrf_token": c.t, "tap": "Order sent"})
+    with app.app_context():
+        from orderapp.db import q
+        o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+    assert (o["kind"], o["status"], o["title"]) == ("order", "Sent", "Door Order Form") and o["sent_at"]
+    assert "QUOTE REQUEST" not in fitz.open(o["pdf_path"])[0].get_text()
+    c.post(f"/orders/{oid}/status", data={"csrf_token": c.t, "tap": "Delivered"})
+    trk = c.get("/tracking?status=all").get_data(as_text=True)
+    assert 'value="Delivered" class="on"' in trk and 'value="Order sent"' in trk

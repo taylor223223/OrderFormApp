@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.14.0"
+__version__ = "2.15.0"
 
 
 def _secret_key():
@@ -64,6 +64,12 @@ def create_app(db_path=None, testing=False, demo=None):
     safety.mark_version(_c, __version__)
     _c.close()
     app.teardown_appcontext(db.close_db)
+    try:   # one time after updating: sizes from orders already in the app go onto their units
+        with app.app_context():
+            from .unit_sizes import backfill_once
+            backfill_once()
+    except Exception:  # noqa: BLE001
+        pass
     if app.config["DEMO"]:
         from . import demo as _demo
         with app.app_context():
@@ -148,7 +154,9 @@ def create_app(db_path=None, testing=False, demo=None):
                 pc = ed = 0
         from . import holds as _holds
         from .people import POSITIONS as _positions
-        return {"positions": _positions, "back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
+        from . import order_kind as _ok
+        return {"positions": _positions, "status_label": _ok.status_label, "tap_labels": _ok.TAP_LABELS,
+                "tap_for": _ok.tap_for, "back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username"), "hold_for": _holds.hold_for,
                 "holds_count": _holds.count() if session.get("uid") else 0}
 

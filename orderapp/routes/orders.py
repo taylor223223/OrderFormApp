@@ -120,7 +120,8 @@ def editor():
     return render_template("order_editor.html", spec=public_spec(form_key), form_key=form_key, order=order,
                            data=data, c=c, customers=customers, units=[dict(u) for u in units],
                            fps=[dict(f) for f in fps], sugg=suggestions(form_key, cid), forms=form_list(),
-                           last=last, photos=_photos_for(oid) if oid else [])
+                           last=last, photos=_photos_for(oid) if oid else [],
+                           kind=((order["kind"] if order else None) or request.args.get("kind") or "order"))
 
 
 @bp.route("/orders/save", methods=["POST"])
@@ -140,16 +141,19 @@ def save():
         cust = find_customer(h.get("name"), h.get("acct"))
         cid = cust["id"] if cust else None
     po, odate = h.get("po", ""), h.get("date", "")
-    title = FORMS[form_key]["title"]
+    from ..order_kind import kind_title
+    kind = "quote" if request.form.get("kind") == "quote" else "order"
+    title = kind_title(FORMS[form_key]["title"], kind)
     if oid:
         x("""UPDATE orders SET customer_id=?, form_key=?, title=?, po=?, order_date=?, data=?, updated=?,
-             est_value=NULL WHERE id=?""", (cid, form_key, title, po, odate, dumps(data), now(), oid))
+             est_value=NULL, kind=? WHERE id=?""", (cid, form_key, title, po, odate, dumps(data), now(), kind, oid))
         if cid:   # keep the auto contact-log entry on the right property
             x("UPDATE activities SET customer_id=? WHERE order_id=? AND owner='auto'", (cid, oid))
     else:
         oid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, created,
-                   updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?)""",
-                (cid, form_key, title, po, odate, dumps(data), request.form.get("source", "manual"), now(), now()))
+                   updated, kind) VALUES (?,?,?,?,?,'Draft',?,?,?,?,?)""",
+                (cid, form_key, title, po, odate, dumps(data), request.form.get("source", "manual"), now(), now(),
+                 kind))
         add_status(oid, "Draft", "Created")
         try:   # every order puts its property on the CRM contact log
             from ..contact_log import sync_orders
@@ -159,6 +163,11 @@ def save():
         email_id = request.form.get("email_id", type=int)
         if email_id:
             x("UPDATE email_messages SET status='ordered', order_id=? WHERE id=?", (oid, email_id))
+    try:   # sizes on the order go onto the property's units by themselves (no duplicates)
+        from ..unit_sizes import save_order_sizes
+        save_order_sizes(oid)
+    except Exception:  # noqa: BLE001 - never block saving an order
+        pass
     from .photos import _save_uploads
     new_photos = _save_uploads(oid, "photo_caption")
     if new_photos:
@@ -212,13 +221,17 @@ def _make_pdf(oid):
     data = loads(o["data"])
     pdf, warns = fill_form(o["form_key"], data)
     cust = o["cname"] or data.get("header", {}).get("name") or "Customer"
+    from ..order_kind import is_quote, kind_title, stamp_quote
+    if is_quote(o):
+        pdf = stamp_quote(pdf)
     from ..photos import append_photo_pages
     try:      # photo references go on their own pages at the end of the order
         pdf = append_photo_pages(pdf, oid, f"{cust} - PO {o['po'] or '-'} - Order #{oid}")
     except Exception as e:  # noqa: BLE001 - never lose the order form over a photo
         warns = list(warns) + [f"Photos couldn't be added to the PDF: {e}"]
     day = _iso(o["order_date"])
-    fname = safe_name(f"{day} - {cust} - {FORMS[o['form_key']]['title']} - PO {o['po'] or 'none'} - #{oid}.pdf")
+    fname = safe_name(f"{day} - {cust} - {kind_title(FORMS[o['form_key']]['title'], o['kind'])} - "
+                      f"PO {o['po'] or 'none'} - #{oid}.pdf")
     folder = ensure_dir(order_folder(cust, day))
     path = os.path.join(folder, fname)
     if o["pdf_path"] and os.path.exists(o["pdf_path"]) and os.path.abspath(o["pdf_path"]) != os.path.abspath(path):
@@ -375,6 +388,11 @@ def send_page(oid):
         cust_emails += [k["email"] for k in q("SELECT email FROM contacts WHERE customer_id=? AND email<>''",
                                               (o["customer_id"],))]
     body = _fmt(setting("body_template"), o, data)
+    from ..order_kind import is_quote
+    if is_quote(o):
+        body = body.replace("Please see the attached", "Please price the attached", 1)
+        if "price" not in body.lower():
+            body = "Quote request - please price this and send the quote back (not an order yet).\n\n" + body
     if not has_form:
         extra = [f"Units: {data['units']}" if data.get("units") else "", data.get("comments", "")]
         extra = "\n".join(e for e in extra if e)
@@ -399,14 +417,15 @@ def reorder(oid):
     if o["form_key"] not in FORMS:
         flash("That order has no order form to copy.", "error")
         return redirect(url_for("orders.view", oid=oid))
+    from ..order_kind import kind_title
     data = loads(o["data"]) or {}
     h = data.setdefault("header", {})
     h["po"] = ""
     h["date"] = today()
     nid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, notes, created,
                updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?,?)""",
-            (o["customer_id"], o["form_key"], o["title"], "", date.today().isoformat(), dumps(data), "reorder",
-             f"Reorder of #{oid}", now(), now()))
+            (o["customer_id"], o["form_key"], kind_title(o["title"], "order"), "", date.today().isoformat(), dumps(data),
+             "reorder", f"Reorder of #{oid}", now(), now()))
     add_status(nid, "Draft", f"Reorder of #{oid}")
     from ..holds import hold_for, hold_message
     hd = hold_for(o["customer_id"])
@@ -421,6 +440,15 @@ def reorder(oid):
 def set_status(oid):
     o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
     st = request.form.get("status")
+    from ..order_kind import TAPS, kind_title
+    tap = next((t for t in TAPS if t[0] == request.form.get("tap")), None)
+    if tap:                       # one tap: "Quote sent" = status Sent + it's an estimate
+        st = tap[2]
+        if tap[1] and tap[1] != (o["kind"] or "order"):
+            x("UPDATE orders SET kind=?, title=? WHERE id=?", (tap[1], kind_title(o["title"], tap[1]), oid))
+            if o["pdf_path"] and os.path.exists(o["pdf_path"]) and o["form_key"] in FORMS:
+                _make_pdf(oid)    # banner on / off
+            o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
     if st in STATUSES:
         fields = {"status": st, "updated": now()}
         for k in ("vendor_ref", "due_date", "notes"):
@@ -450,6 +478,7 @@ def delete(oid):
 @bp.route("/tracking")
 @login_required
 def tracking():
+    from ..order_kind import TAP_LABELS, TAPS, status_label
     month = request.args.get("month", "").strip()[:7]
     st = request.args.get("status", "all" if month else "open")
     s = request.args.get("q", "").strip()
@@ -462,6 +491,13 @@ def tracking():
     if st == "open":
         sql += f" AND o.status IN ({','.join('?' * len(OPEN_STATUSES))})"
         args += OPEN_STATUSES
+    elif st in TAP_LABELS:
+        _t = next(t for t in TAPS if t[0] == st)
+        sql += " AND o.status=?"
+        args.append(_t[2])
+        if _t[1]:
+            sql += " AND coalesce(o.kind,'order')=?"
+            args.append(_t[1])
     elif st and st != "all":
         sql += " AND o.status=?"
         args.append(st)
@@ -470,7 +506,10 @@ def tracking():
         args += [f"%{s}%"] * 5
     sql += " ORDER BY CASE WHEN coalesce(o.due_date,'')='' THEN 1 ELSE 0 END, o.due_date, o.updated DESC"
     rows = q(sql, args)
-    counts = {r["status"]: r["n"] for r in q("SELECT status, COUNT(*) n FROM orders GROUP BY status")}
+    counts = {}
+    for r in q("SELECT status, coalesce(kind,'order') kind, COUNT(*) n FROM orders GROUP BY status, kind"):
+        lab = status_label(r["status"], r["kind"])
+        counts[lab] = counts.get(lab, 0) + r["n"]
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
     from ..order_insights import tracking_totals
     try:
@@ -499,12 +538,16 @@ def tracking_add():
     """Manual tracking entry for an order placed outside the app."""
     title = request.form.get("title", "").strip() or "Manual order"
     cid = request.form.get("customer_id", type=int)
+    from ..order_kind import TAPS
+    tap = next((t for t in TAPS if t[0] == request.form.get("tap")), None)
+    st = tap[2] if tap else (request.form.get("status") if request.form.get("status") in STATUSES else "Sent")
+    kind = tap[1] if tap and tap[1] else "order"
     oid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, vendor_ref,
-               due_date, notes, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               due_date, notes, created, updated, kind) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (cid, None, title, request.form.get("po", "").strip(), request.form.get("order_date", "").strip() or today(),
-             request.form.get("status", "Sent"), "{}", "manual-tracking", request.form.get("vendor_ref", "").strip(),
-             request.form.get("due_date", "").strip(), request.form.get("notes", "").strip(), now(), now()))
-    add_status(oid, request.form.get("status", "Sent"), "Added manually")
+             st, "{}", "manual-tracking", request.form.get("vendor_ref", "").strip(),
+             request.form.get("due_date", "").strip(), request.form.get("notes", "").strip(), now(), now(), kind))
+    add_status(oid, st, "Added manually")
     flash("Tracking entry added.", "ok")
     return redirect(url_for("orders.tracking"))
 
@@ -571,30 +614,11 @@ def learn(oid):
     if not o["customer_id"]:
         flash("Link the order to a customer first.", "error")
         return redirect(url_for("orders.view", oid=oid))
-    from ..catalog import products_for_form
-    from ..importer import guess_product
-    data = loads(o["data"])
-    prods = products_for_form(o["form_key"])
-    b = new_batch("order", f"Measurements from order #{oid}")
-    n = 0
-    for blk in data.get("blocks", []):
-        if not blk.get("unit") or not (blk.get("width") or blk.get("height")):
-            continue
-        u = q("""SELECT u.*, f.name AS fp FROM units u LEFT JOIN floorplans f ON f.id=u.floorplan_id
-                 WHERE u.customer_id=? AND lower(u.unit_number)=lower(?)""", (o["customer_id"], blk["unit"]), one=True)
-        product = blk.get("product") or guess_product(blk.get("_product", "")) or (prods[0] if prods else "other")
-        d = {k: v for k, v in blk.items() if k not in ("unit", "line_comments", "_room", "_product", "price", "product",
-                                                       "description", "amount", "notes", "qty", "item_no") and v}
-        room = d.pop("room", "") or blk.get("_room", "")
-        add_change(b, "new_measurement", customer_id=o["customer_id"],
-                   payload={"product": product, "room": room, "data": d, "unit_number": blk["unit"],
-                            "floorplan_name": u["fp"] if u and u["fp"] else "", "verified": False})
-        n += 1
-    if not n:
-        x("DELETE FROM change_batches WHERE id=?", (b,))
-        flash("No lines with a unit number and measurements to save.", "info")
-        return redirect(url_for("orders.view", oid=oid))
-    return redirect(url_for("imports.review_batch", bid=b))
+    from ..unit_sizes import save_order_sizes
+    a, u = save_order_sizes(oid)
+    flash(f"Sizes saved to units: {a} new, {u} updated." if (a or u) else
+          "Every size on this order is already saved on its units.", "ok")
+    return redirect(url_for("orders.view", oid=oid))
 
 
 @bp.route("/orders/<int:oid>/contact_from_email", methods=["POST"])

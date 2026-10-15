@@ -194,7 +194,7 @@ MIGRATIONS = {
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
-    "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT"},
+    "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT", "kind": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
     "activities": {"order_id": "INTEGER", "temp": "TEXT"},
 }
