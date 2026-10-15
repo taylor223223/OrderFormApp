@@ -6,7 +6,7 @@ datas = [
     ("orderapp/static", "orderapp/static"),
     ("orderapp/forms", "orderapp/forms"),
 ]
-hidden = collect_submodules("orderapp") + ["win32com", "win32com.client", "pythoncom", "pywintypes"]
+hidden = collect_submodules("orderapp") + ["win32com", "win32com.client", "pythoncom", "pywintypes", "truststore"]
 
 a = Analysis(["run.py"], pathex=["."], datas=datas, hiddenimports=hidden, excludes=["tkinter", "numpy", "pandas", "matplotlib", "scipy", "IPython", "playwright", "pytest"])
 pyz = PYZ(a.pure)

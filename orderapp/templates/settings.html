@@ -75,6 +75,9 @@
     <div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="route_return_to_start" value="1" {{ 'checked' if v.route_return_to_start == '1' }}> Return to start at end of day</label></div>
     <div style="grid-column:1/-1"><label>OpenRouteService key (free, optional)</label><input name="ors_api_key" value="{{ v.ors_api_key }}" placeholder="Paste key for real road drive times" autocomplete="off">
     <div class="small muted">Without a key, drive times are estimated. For real road times: sign up free at <b>openrouteservice.org/dev/#/signup</b> → Dashboard → copy the API key → paste here.</div></div>
+    <div><label>Network proxy (only if your work network needs one)</label><input name="net_proxy" value="{{ v.net_proxy or '' }}" placeholder="e.g. proxy.company.com:8080 - leave blank normally" autocomplete="off"></div>
+    <div><label>&nbsp;</label><a class="btn" href="{{ url_for('settings.test_maps') }}">🩺 Test map connection</a></div>
+    {% if map_error %}<div style="grid-column:1/-1" class="flash error small">Last map problem: {{ map_error }}</div>{% endif %}
   </div>
   <button class="btn primary">Save settings</button>
 </form>

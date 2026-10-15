@@ -7,7 +7,7 @@
 <div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}">{% set n_done = rows|selectattr('s.status', 'equalto', 'Done')|list|length %}<button class="btn primary" {{ 'disabled' if rows|length < 2 }} title="{{ 'Re-orders only the stops you have not visited yet, starting from your last visited stop' if n_done else 'Puts the stops in the order with the least driving' }}">{{ '🔄 Re-plan rest of day' if n_done else 'Optimize route' }}</button></form>
 {% if rows %}<a class="btn" href="{{ url_for('plan.sheet', day=day) }}">Stop list</a>{% endif %}
 {% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">{{ 'Navigate remaining stops' if (n_done and d == d.today()) else 'Open in Google Maps' }}</a>{% endif %}</div></div>
-{% for e in res.errors %}<div class="flash error">{{ e }}</div>{% endfor %}
+{% for e in res.errors %}<div class="flash error">{{ e }} <a href="{{ url_for('settings.test_maps') }}">Test map connection</a></div>{% endfor %}
 {% if not res.start %}<div class="flash error">Couldn't find the starting address on the map. Fix it below or in Settings.</div>{% endif %}
 <div class="grid g2">
 <div>

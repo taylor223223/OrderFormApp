@@ -6,6 +6,9 @@ Without a key: addresses are found through OpenStreetMap Nominatim and drive tim
 """
 import json
 import math
+import os
+import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -24,6 +27,74 @@ class GeoError(Exception):
     pass
 
 
+def _ssl_context():
+    """Trust the same certificates Windows does. Work laptops often have security software that re-signs
+    secure connections with the company's own certificate - browsers accept it, plain Python doesn't."""
+    try:
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:  # noqa: BLE001 - not installed / not supported: fall back to the normal store
+        ctx = ssl.create_default_context()
+        try:
+            ctx.load_default_certs()
+        except Exception:  # noqa: BLE001
+            pass
+        return ctx
+
+
+def _proxy():
+    """A proxy typed in Settings wins; otherwise whatever Windows / environment proxies say."""
+    try:
+        from .db import setting
+        p = (setting("net_proxy") or "").strip()
+    except Exception:  # noqa: BLE001 - outside the app (tests, scripts)
+        p = ""
+    if p:
+        if "://" not in p:
+            p = "http://" + p
+        return {"http": p, "https": p}
+    return urllib.request.getproxies()
+
+
+def _opener():
+    return urllib.request.build_opener(urllib.request.ProxyHandler(_proxy()),
+                                       urllib.request.HTTPSHandler(context=_ssl_context()))
+
+
+def explain(e, host=""):
+    """Plain-English reason a map request failed."""
+    r = getattr(e, "reason", e)
+    txt = str(r)
+    if isinstance(r, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in txt:
+        return ("This network checks secure connections with its own certificate (common on work laptops), "
+                "and the app couldn't verify it. Install the latest app version; if it still fails, ask IT to "
+                f"allow {host or 'the map site'} or try on a hotspot.")
+    if isinstance(r, socket.gaierror) or "getaddrinfo" in txt or "Name or service not known" in txt:
+        return (f"Couldn't look up {host or 'the map site'} - no internet, or this network blocks it "
+                "(try a hotspot to check).")
+    if isinstance(r, (socket.timeout, TimeoutError)) or "timed out" in txt:
+        return f"{host or 'The map site'} didn't answer in time - this network may be blocking it (try a hotspot)."
+    if isinstance(r, ConnectionRefusedError) or "refused" in txt.lower() or "10061" in txt:
+        return f"The connection to {host or 'the map site'} was refused - a firewall or proxy is blocking it."
+    if "Tunnel connection failed" in txt and "407" not in txt:
+        return (f"This network's proxy blocked the connection to {host or 'the map site'} - ask IT to allow it "
+                "for AIS Sales Support, or try a hotspot.")
+    if "407" in txt or "Proxy Authentication" in txt:
+        return "This network's proxy needs a login - put the proxy address in Settings, or try a hotspot."
+    if "10013" in txt or "forbidden by its access permissions" in txt:
+        return "Windows security software blocked the app from connecting - ask IT to allow AIS Sales Support."
+    return f"Can't reach {host or 'the map service'}: {txt}"
+
+
+def _note(err):
+    """Remember the last map problem (shown on the route pages and in Settings)."""
+    try:
+        from .db import set_setting
+        set_setting("map_last_error", (time.strftime("%Y-%m-%d %H:%M ") + err) if err else "")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _http(url, data=None, headers=None, timeout=20):
     h = {"User-Agent": UA, "Accept": "application/json"}
     h.update(headers or {})
@@ -32,18 +103,94 @@ def _http(url, data=None, headers=None, timeout=20):
         body = json.dumps(data).encode()
         h["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, headers=h)
+    host = urllib.parse.urlparse(url).hostname or ""
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode())
+        with _opener().open(req, timeout=timeout) as r:
+            out = json.loads(r.read().decode())
+        _note("")
+        return out
     except urllib.error.HTTPError as e:
         msg = e.read().decode(errors="ignore")[:200]
-        if e.code in (401, 403):
-            raise GeoError("OpenRouteService key was rejected - check it in Settings.") from e
-        if e.code == 429:
-            raise GeoError("Map service daily limit reached - try again later.") from e
-        raise GeoError(f"Map service error {e.code}: {msg}") from e
-    except OSError as e:
-        raise GeoError(f"Can't reach the map service (no internet?): {e}") from e
+        if e.code in (401, 403) and "openrouteservice" in host:
+            err = "OpenRouteService key was rejected - check it in Settings (no spaces or quotes)."
+        elif e.code == 407:
+            err = explain(e, host)
+        elif e.code == 429:
+            err = "Map service daily limit reached - try again later."
+        else:
+            err = f"Map service error {e.code} from {host}: {msg}"
+        _note(err)
+        raise GeoError(err) from e
+    except (OSError, ssl.SSLError) as e:
+        err = explain(e, host)
+        _note(err)
+        raise GeoError(err) from e
+
+
+def diagnose(key=None):
+    """Step-by-step check of everything the route planner needs. [{name, ok, detail}]"""
+    out = []
+    px = _proxy()
+    pac = ""
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as k:
+                try:
+                    pac = winreg.QueryValueEx(k, "AutoConfigURL")[0]
+                except OSError:
+                    pac = ""
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        import truststore  # noqa: F401
+        certs = "Windows certificates"
+    except Exception:  # noqa: BLE001
+        certs = "built-in certificates"
+    out.append({"name": "Network setup", "ok": True,
+                "detail": (f"Proxy: {px.get('https') or px.get('http')}" if px else "No proxy") +
+                          (f" · this computer uses a proxy setup script ({pac}) - if checks below fail, ask IT for "
+                           "the proxy address and put it in Settings" if pac else "") + f" · using {certs}"})
+
+    def check(name, fn):
+        t = time.time()
+        try:
+            detail = fn()
+            out.append({"name": name, "ok": True, "detail": f"{detail} ({time.time() - t:.1f}s)"})
+        except GeoError as e:
+            out.append({"name": name, "ok": False, "detail": str(e)})
+        except Exception as e:  # noqa: BLE001
+            out.append({"name": name, "ok": False, "detail": explain(e)})
+    if key:
+        def ors_geo():
+            q = urllib.parse.urlencode({"api_key": key, "text": "200 W Washington St, Phoenix AZ",
+                                        "boundary.country": "US", "size": 1})
+            d = _http(f"{ORS}/geocode/search?{q}")
+            if not (d.get("features") or []):
+                raise GeoError("Reached OpenRouteService but it found no match for a test address.")
+            return "Found a test address"
+        check("OpenRouteService - finding addresses", ors_geo)
+
+        def ors_matrix():
+            d = _http(f"{ORS}/v2/matrix/driving-car", {"locations": [[-112.07, 33.45], [-111.93, 33.42]],
+                                                        "metrics": ["duration", "distance"]},
+                      headers={"Authorization": key})
+            s = d["durations"][0][1]
+            return f"Drive time test: {round(s / 60)} min"
+        check("OpenRouteService - drive times", ors_matrix)
+    else:
+        out.append({"name": "OpenRouteService key", "ok": False,
+                    "detail": "No key saved - addresses use OpenStreetMap and drive times are estimated."})
+
+    def nomi():
+        q = urllib.parse.urlencode({"q": "200 W Washington St, Phoenix AZ", "format": "json", "limit": 1})
+        d = _http(f"https://nominatim.openstreetmap.org/search?{q}")
+        if not d:
+            raise GeoError("Reached OpenStreetMap but it found no match for a test address.")
+        return "Found a test address"
+    check("OpenStreetMap - finding addresses (backup)", nomi)
+    return out
 
 
 # ---------------------------------------------------------------- geocoding

@@ -20,7 +20,7 @@ def _day(s):
 
 
 def _key():
-    return (setting("ors_api_key") or "").strip() or None
+    return (setting("ors_api_key") or "").strip().strip('"').strip("'").strip() or None
 
 
 def stops_for(day):
@@ -257,7 +257,10 @@ def week():
     return render_template("route_week.html", days=days, start=start, end=start + timedelta(days=ROLLING_DAYS - 1),
                            prev=(prev if prev > today else today).isoformat(), at_today=start == today,
                            nxt=nxt.isoformat(), customers=customers, today=today.isoformat(),
-                           has_key=bool(_key()), items=ESTIMATE_ITEMS)
+                           has_key=bool(_key()), items=ESTIMATE_ITEMS, map_error=setting("map_last_error"),
+                           mapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NOT NULL", one=True)["n"],
+                           unmapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''",
+                                      one=True)["n"])
 
 
 @bp.route("/routes/log")

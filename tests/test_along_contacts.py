@@ -137,3 +137,37 @@ def test_along_the_way(app, c):
         assert [s["label"] for s in st][0] == "Halfway Flats"     # slotted in on the way out, not at the end
         assert st[0]["source"] == "Along the way"
     assert "Halfway Flats" not in c.get(f"/routes/day/{DAY}/along").data.decode().split("<table")[1].split("</table>")[0]
+
+
+def test_map_connection_messages(app, c, monkeypatch):
+    import socket
+    import ssl
+    import urllib.error
+    from orderapp import geo
+    assert "certificate" in geo.explain(urllib.error.URLError(ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED")), "api.openrouteservice.org")
+    assert "look up" in geo.explain(urllib.error.URLError(socket.gaierror(11001, "getaddrinfo failed")), "x.org")
+    assert "didn't answer" in geo.explain(urllib.error.URLError(socket.timeout("timed out")))
+
+    class Boom:
+        def open(self, *a, **k):
+            raise urllib.error.URLError(socket.gaierror(11001, "getaddrinfo failed"))
+    monkeypatch.setattr(geo, "_opener", lambda: Boom())
+    with app.app_context():
+        from orderapp.db import set_setting, setting
+        set_setting("ors_api_key", "abc")
+        with pytest.raises(geo.GeoError):
+            geo._http("https://api.openrouteservice.org/geocode/search?x=1")
+        assert "api.openrouteservice.org" in setting("map_last_error")
+        checks = geo.diagnose("abc")
+        assert not all(ch["ok"] for ch in checks) and any("look up" in ch["detail"] for ch in checks)
+    html = c.get("/settings/test-maps").data.decode()
+    assert "Map connection test" in html and "hotspot" in html
+    assert "Map lookups aren't working" in c.get("/routes").data.decode()
+    assert "Network proxy" in c.get("/settings").data.decode()
+    with app.app_context():
+        from orderapp.db import set_setting
+        set_setting("net_proxy", "proxy.example.com:8080")
+        assert geo._proxy()["https"] == "http://proxy.example.com:8080"
+        set_setting("net_proxy", "")
+        set_setting("ors_api_key", "")
+        set_setting("map_last_error", "")

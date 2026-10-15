@@ -20,7 +20,7 @@ EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", 
             "report_to", "report_cc", "ors_api_key", "route_start_address", "route_start_time",
             "route_visit_minutes", "route_return_to_start", "email_order_word", "email_auto_minutes",
             "email_lookback_days", "delivery_subject_word", "quote_valid_days", "quote_terms", "pdf_layout", "notice_subject_words",
-            "reply_confirm_words"]
+            "reply_confirm_words", "net_proxy"]
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -61,7 +61,17 @@ def index():
     from ..safety import status
     return render_template("settings.html", v=vals, od_ok=od_ok, od_why=od_why, graph_user=graph_user,
                            default_out=default_output_dir(), data_dir=data_dir(),
-                           safe=status(current_app.config["DB_PATH"]))
+                           safe=status(current_app.config["DB_PATH"]), map_error=setting("map_last_error"))
+
+
+@bp.route("/settings/test-maps", methods=["GET", "POST"])
+@login_required
+def test_maps():
+    """Step-by-step check of the map services the route planner uses."""
+    from .. import geo
+    key = (setting("ors_api_key") or "").strip().strip('"').strip("'") or None
+    checks = geo.diagnose(key)
+    return render_template("map_test.html", checks=checks, ok=all(c["ok"] for c in checks), has_key=bool(key))
 
 
 @bp.route("/settings/open-data", methods=["POST"])

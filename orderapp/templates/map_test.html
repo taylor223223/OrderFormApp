@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Map connection test{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('settings.index') }}">← Settings</a></div><h1>Map connection test</h1>
+<div class="muted">Checks everything the route planner needs, one step at a time.</div></div>
+<a class="btn primary" href="{{ url_for('settings.test_maps') }}">Run again</a></div>
+<div class="card">{% if ok %}<div class="flash ok">Everything the route planner needs is reachable. If routes still don't work, open Routes and click "Find map locations for all properties".</div>
+{% else %}<div class="flash error">Something below is blocked. The red line says what - most often a work network or security software stopping the app from reaching the map service. A quick test: connect the laptop to your phone's hotspot and run this again. If it passes there, ask IT to allow <b>api.openrouteservice.org</b> and <b>nominatim.openstreetmap.org</b> for AIS Sales Support (or give you a proxy address to put in Settings).</div>{% endif %}
+<div class="tablewrap"><table>
+{% for c in checks %}<tr><td style="width:28px">{{ '✅' if c.ok else '❌' }}</td><td><b>{{ c.name }}</b><div class="small {{ 'muted' if c.ok else 'err' }}">{{ c.detail }}</div></td></tr>{% endfor %}
+<tr><td id="tileicon">⏳</td><td><b>Map pictures (shown by your browser)</b><div class="small muted" id="tiletxt">Checking…</div></td></tr>
+</table></div></div>
+{% endblock %}
+{% block scripts %}<script>
+(function(){
+  const img = new Image(), t = setTimeout(() => done(false, 'No answer from tile.openstreetmap.org - the map background may stay grey on this network.'), 8000);
+  function done(ok, msg){ clearTimeout(t); document.getElementById('tileicon').textContent = ok ? '✅' : '❌'; const e = document.getElementById('tiletxt'); e.textContent = msg; e.className = 'small ' + (ok ? 'muted' : 'err'); }
+  img.onload = () => done(true, 'Map pictures load.');
+  img.onerror = () => done(false, 'Map pictures are blocked on this network - stops still plan, but the map background stays grey.');
+  img.src = 'https://tile.openstreetmap.org/11/385/821.png?' + Date.now();
+})();
+</script>{% endblock %}

@@ -5,6 +5,8 @@
 <div class="row"><a class="btn primary" href="{{ url_for('plan.day', day=today) }}">Today's route</a>
 <a class="btn" href="{{ url_for('plan.trip_log') }}" title="Past days: stops, miles and drive time for expenses">🧾 Trip log</a>
 <form method="post" action="{{ url_for('plan.geocode_all') }}"><button class="btn" title="Look up map locations for every property with an address">Locate all properties</button></form></div></div>
+{% if map_error %}<div class="flash error">Map lookups aren't working on this computer: {{ map_error }} <a href="{{ url_for('settings.test_maps') }}">Test map connection</a></div>{% endif %}
+{% if unmapped %}<div class="small muted" style="margin:-4px 0 8px">{{ mapped }} properties on the map · {{ unmapped }} with an address still to locate{% if not map_error %} - click "Locate all properties"{% endif %}.</div>{% endif %}
 {% if not has_key %}<div class="flash">Drive times are <b>estimated</b> until you add a free OpenRouteService key in <a href="{{ url_for('settings.index') }}#routes">Settings</a> (2 minutes, no credit card).</div>{% endif %}
 <form method="post" action="{{ url_for('plan.add') }}" class="card"><input type="hidden" name="next" value="{{ request.full_path }}">
 <h3 style="margin-top:0">Add a stop</h3>
