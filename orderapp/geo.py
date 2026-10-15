@@ -27,6 +27,9 @@ class GeoError(Exception):
     pass
 
 
+LAST = {"matrix": ""}   # why the last drive-time request fell back to estimates ("" = it didn't)
+
+
 def _ssl_context():
     """Trust the same certificates Windows does. Work laptops often have security software that re-signs
     secure connections with the company's own certificate - browsers accept it, plain Python doesn't."""
@@ -228,24 +231,34 @@ def geocode(address, key=None, db=None):
             return (r[0], r[1])
     lat = lon = None
     provider = ""
+    ors_err = None
     if key:
-        q = urllib.parse.urlencode({"api_key": key, "text": address, "boundary.country": "US", "size": 1})
-        d = _http(f"{ORS}/geocode/search?{q}")
-        feats = d.get("features") or []
-        if feats:
-            lon, lat = feats[0]["geometry"]["coordinates"][:2]
-            provider = "ors"
-    else:
-        with _nominatim_lock:  # Nominatim policy: max 1 request per second
-            wait = 1.1 - (time.time() - _last_nominatim[0])
-            if wait > 0:
-                time.sleep(wait)
-            q = urllib.parse.urlencode({"q": address, "format": "json", "limit": 1, "countrycodes": "us"})
-            d = _http(f"https://nominatim.openstreetmap.org/search?{q}")
-            _last_nominatim[0] = time.time()
-        if d:
-            lat, lon = float(d[0]["lat"]), float(d[0]["lon"])
-            provider = "nominatim"
+        try:
+            q = urllib.parse.urlencode({"api_key": key, "text": address, "boundary.country": "US", "size": 1})
+            d = _http(f"{ORS}/geocode/search?{q}")
+            feats = d.get("features") or []
+            if feats:
+                lon, lat = feats[0]["geometry"]["coordinates"][:2]
+                provider = "ors"
+        except GeoError as e:
+            ors_err = e
+    if lat is None:     # no key, or OpenRouteService couldn't find / reach it: try OpenStreetMap
+        try:
+            with _nominatim_lock:  # Nominatim policy: max 1 request per second
+                wait = 1.1 - (time.time() - _last_nominatim[0])
+                if wait > 0:
+                    time.sleep(wait)
+                q = urllib.parse.urlencode({"q": address, "format": "json", "limit": 1, "countrycodes": "us"})
+                d = _http(f"https://nominatim.openstreetmap.org/search?{q}", note=not key)
+                _last_nominatim[0] = time.time()
+            if d:
+                lat, lon = float(d[0]["lat"]), float(d[0]["lon"])
+                provider = "nominatim"
+        except GeoError:
+            if ors_err:
+                raise ors_err
+            if not key:
+                raise
     if lat is None:
         return None
     if db is not None:
@@ -285,9 +298,10 @@ def matrix(points, key=None):
                 headers={"Authorization": key})
             dur = [[x or 0 for x in row] for row in d["durations"]]
             dist = [[x or 0 for x in row] for row in d["distances"]]
+            LAST["matrix"] = ""
             return dur, dist, False
-        except GeoError:
-            pass
+        except (GeoError, KeyError, TypeError) as e:
+            LAST["matrix"] = str(e) if isinstance(e, GeoError) else "OpenRouteService sent drive times the app couldn't read"
     dur, dist = estimate_matrix(points)
     return dur, dist, True
 

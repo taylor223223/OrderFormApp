@@ -1,5 +1,6 @@
 """Route planner: a rolling 7 days of stops, driving order, drive times, map, and a trip log of past days."""
 import json
+import time
 from datetime import date, datetime, timedelta
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
@@ -82,10 +83,16 @@ def plan_day(day, optimize=False):
     result = {"legs": [], "total_s": 0, "total_m": 0, "estimated": True, "geometry": None, "errors": errors,
               "missing": [m["id"] for m in missing], "start": start_pt, "start_address": start_addr,
               "start_time": start_time, "round_trip": round_trip}
+    if not start_pt and start_addr:
+        msg = f"Couldn't find your start address on the map: \"{start_addr}\". Check it in Settings or below."
+        if msg not in errors:
+            errors.append(msg)
     if not start_pt or not ok_stops:
         return result
     allp = [start_pt] + pts
     dur, dist, est = geo.matrix(allp, _key())
+    if est and _key() and geo.LAST.get("matrix"):
+        errors.append("Drive times below are estimates - OpenRouteService drive times failed: " + geo.LAST["matrix"])
     order = list(range(1, len(allp)))
     if optimize and len(ok_stops) > 1:
         # stops already visited stay first (in the order you did them); only the rest of the day is
@@ -557,37 +564,117 @@ def along_find(day):
     return redirect(url_for("plan.day", day=day))
 
 
+NOT_FOUND = "NOT FOUND|"
+_geo_job = {"running": False}
+
+
+def _job(**kw):
+    """Locate-all progress, kept in settings so the page can show it."""
+    from ..db import loads, set_setting
+    cur = loads(setting("geo_job") or "{}", {})
+    cur.update(kw)
+    set_setting("geo_job", json.dumps(cur))
+    return cur
+
+
+def locate_all(limit=None, pause=None):
+    """Find map points for every property with an address. Paced for the free OpenRouteService plan
+    (100 a minute); waits out a per-minute limit, stops cleanly on the daily one. Addresses no map service
+    can find are marked so they aren't retried until the address changes."""
+    key = _key()
+    pause = (0.7 if key else 0) if pause is None else pause
+    rows = [c for c in q("SELECT * FROM customers WHERE lat IS NULL AND coalesce(address,'')<>'' ORDER BY name")
+            if (c["geo_address"] or "") != NOT_FOUND + geo.full_address(c)]
+    if limit:
+        rows = rows[:limit]
+    _job(running=True, todo=len(rows), done=0, located=0, not_found=0, error="", started=now(), finished="")
+    located = missing = done = errs = 0
+    for c in rows:
+        addr = geo.full_address(c)
+        pt = None
+        for attempt in range(2):
+            try:
+                pt = geo.geocode(addr, key, get_db())
+                errs = 0
+                break
+            except geo.GeoError as e:
+                msg = str(e)
+                if "limit" in msg.lower() and attempt == 0:
+                    _job(error="Waiting a minute for the map service's per-minute limit...")
+                    time.sleep(65)
+                    continue
+                errs += 1
+                _job(error=msg)
+                if "limit" in msg.lower() or errs >= 3:
+                    _job(running=False, finished=now(), done=done, located=located, not_found=missing,
+                         error=msg + (" Click Locate all properties again tomorrow to finish."
+                                      if "limit" in msg.lower() else ""))
+                    return
+                break
+        if pt:
+            x("UPDATE customers SET lat=?, lon=?, geo_address=? WHERE id=?", (pt[0], pt[1], addr, c["id"]))
+            located += 1
+        elif errs == 0:
+            x("UPDATE customers SET geo_address=? WHERE id=?", (NOT_FOUND + addr, c["id"]))
+            missing += 1
+        done += 1
+        if done % 10 == 0:
+            _job(done=done, located=located, not_found=missing, error="")
+        if pause:
+            time.sleep(pause)
+    _job(running=False, finished=now(), done=done, located=located, not_found=missing,
+         error="" if errs == 0 else setting("map_last_error") or "")
+
+
 @bp.route("/routes/geocode_all", methods=["POST"])
 @login_required
 def geocode_all():
-    """Find map locations for customers in the background (rate-limited)."""
+    """Find map locations for every property in the background."""
     import threading
     from flask import current_app
+    if _geo_job["running"]:
+        flash("Already finding map locations - watch the progress on this page.", "info")
+        return redirect(url_for("plan.week"))
     app = current_app._get_current_object()
 
     def work():
-        with app.app_context():
-            rows = q("SELECT * FROM customers WHERE lat IS NULL AND coalesce(address,'')<>'' LIMIT 1000")
-            for c in rows:
-                try:
-                    pt = geo.geocode(geo.full_address(c), _key(), get_db())
-                except geo.GeoError:
-                    break
-                if pt:
-                    x("UPDATE customers SET lat=?, lon=?, geo_address=? WHERE id=?",
-                      (pt[0], pt[1], geo.full_address(c), c["id"]))
+        _geo_job["running"] = True
+        try:
+            with app.app_context():
+                locate_all()
+        finally:
+            _geo_job["running"] = False
+            try:
+                with app.app_context():
+                    _job(running=False)
+            except Exception:  # noqa: BLE001
+                pass
     threading.Thread(target=work, daemon=True).start()
-    flash("Finding map locations for all properties in the background (about 1 per second). "
-          "You can keep working.", "ok")
+    flash("Finding map locations for every property in the background (about 1 a second - roughly 15 minutes "
+          "for 850). You can keep working; progress shows on this page.", "ok")
     return redirect(url_for("plan.week"))
+
+
+@bp.route("/routes/unlocated")
+@login_required
+def unlocated():
+    """Properties whose address no map service could find - fix the address and locate again."""
+    rows = q("""SELECT id, name, address, city, zip, geo_address FROM customers
+                WHERE lat IS NULL AND coalesce(address,'')<>'' ORDER BY name""")
+    return render_template("route_unlocated.html", rows=rows, nf=NOT_FOUND)
 
 
 @bp.route("/api/route_progress")
 @login_required
 def route_progress():
+    from ..db import loads
     r = q("SELECT COUNT(*) n, SUM(CASE WHEN lat IS NOT NULL THEN 1 ELSE 0 END) g FROM customers "
           "WHERE coalesce(address,'')<>''", one=True)
-    return jsonify({"total": r["n"], "located": r["g"] or 0})
+    nf = q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND geo_address LIKE ?", (NOT_FOUND + "%",),
+           one=True)["n"]
+    job = loads(setting("geo_job") or "{}", {})
+    job["running"] = bool(_geo_job["running"])
+    return jsonify({"total": r["n"], "located": r["g"] or 0, "not_found": nf, "job": job})
 
 
 # ------------------------------------------------------------------ plan my week / month

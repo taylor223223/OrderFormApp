@@ -189,3 +189,59 @@ def test_road_line_failure_is_quiet(app, monkeypatch):
         assert geo.directions_geometry([(33.4, -112.0), (33.5, -111.9)], "k") is None
         assert "geo+json" in seen["accept"]
         assert setting("map_last_error") == ""        # a missing road line isn't reported as a map failure
+
+
+def test_geocode_falls_back_and_explains(app, monkeypatch):
+    from orderapp import geo
+    calls = []
+
+    def fake(url, data=None, headers=None, timeout=20, note=True):
+        calls.append(url.split("?")[0])
+        if "openrouteservice" in url and "geocode" in url:
+            return {"features": []}                       # ORS can't find it
+        if "nominatim" in url:
+            return [{"lat": "33.48", "lon": "-112.39"}]
+        if "matrix" in url:
+            raise geo.GeoError("Map service error 500 from api.openrouteservice.org: boom")
+        return {}
+    monkeypatch.setattr(geo, "_http", fake)
+    monkeypatch.setattr(geo, "_last_nominatim", [0.0])
+    assert geo.geocode("2209 N 135th Dr, Goodyear AZ", "k") == (33.48, -112.39)
+    assert any("nominatim" in c for c in calls)
+    dur, dist, est = geo.matrix([(33.4, -112.0), (33.5, -111.9)], "k")
+    assert est and "500" in geo.LAST["matrix"]
+
+
+def test_locate_all_marks_not_found_and_stops_on_daily_limit(app, c, monkeypatch):
+    from orderapp import geo
+    with app.app_context():
+        from orderapp.db import x, q
+        from orderapp.routes import routes_plan as RP
+        ids = [x("INSERT INTO customers(name, address, city, state) VALUES (?, ?, 'Phoenix', 'AZ')", (n, a))
+               for n, a in [("Loc A", "1 Good St"), ("Loc B", "2 Typo Stt"), ("Loc C", "3 Good St")]]
+        seen = []
+
+        def fake(addr, key=None, db=None):
+            seen.append(addr)
+            return None if "Typo" in addr else (33.5, -112.0)
+        monkeypatch.setattr(geo, "geocode", fake)
+        RP.locate_all(pause=0)
+        got = {r["name"]: r for r in q("SELECT * FROM customers WHERE id IN (?,?,?)", ids)}
+        assert got["Loc A"]["lat"] == 33.5 and got["Loc C"]["lat"] == 33.5
+        assert got["Loc B"]["lat"] is None and got["Loc B"]["geo_address"].startswith(RP.NOT_FOUND)
+        seen.clear()
+        RP.locate_all(pause=0)
+        assert not any("Typo" in s for s in seen)          # not retried until the address changes
+        x("INSERT INTO customers(name, address, city) VALUES ('Loc D', '4 Late St', 'Mesa')")
+
+        def limited(addr, key=None, db=None):
+            raise geo.GeoError("Map service daily limit reached - try again later.")
+        monkeypatch.setattr(geo, "geocode", limited)
+        monkeypatch.setattr(RP.time, "sleep", lambda s: None)
+        RP.locate_all(pause=0)
+        from orderapp.db import loads, setting
+        job = loads(setting("geo_job"), {})
+        assert not job["running"] and "tomorrow" in job["error"]
+    d = c.get("/api/route_progress").get_json()
+    assert d["not_found"] >= 1 and "job" in d
+    assert "Loc B" in c.get("/routes/unlocated").data.decode()

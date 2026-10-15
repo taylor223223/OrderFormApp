@@ -8,7 +8,7 @@
 {% if rows %}<a class="btn" href="{{ url_for('plan.sheet', day=day) }}">Stop list</a>{% endif %}
 {% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">{{ 'Navigate remaining stops' if (n_done and d == d.today()) else 'Open in Google Maps' }}</a>{% endif %}</div></div>
 {% for e in res.errors %}<div class="flash error">{{ e }} <a href="{{ url_for('settings.test_maps') }}">Test map connection</a></div>{% endfor %}
-{% if not res.start %}<div class="flash error">Couldn't find the starting address on the map. Fix it below or in Settings.</div>{% endif %}
+{% if not res.start and not res.start_address %}<div class="flash error">No start address yet - add where you leave from in Settings → Route planner (or below for just this day).</div>{% endif %}
 <div class="grid g2">
 <div>
 <form method="post" action="{{ url_for('plan.add') }}" class="card row"><input type="hidden" name="day" value="{{ day }}"><input type="hidden" name="next" value="{{ url_for('plan.day', day=day) }}">

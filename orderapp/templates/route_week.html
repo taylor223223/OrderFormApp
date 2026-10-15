@@ -6,7 +6,7 @@
 <a class="btn" href="{{ url_for('plan.trip_log') }}" title="Past days: stops, miles and drive time for expenses">🧾 Trip log</a>
 <form method="post" action="{{ url_for('plan.geocode_all') }}"><button class="btn" title="Look up map locations for every property with an address">Locate all properties</button></form></div></div>
 {% if map_error %}<div class="flash error">Map lookups aren't working on this computer: {{ map_error }} <a href="{{ url_for('settings.test_maps') }}">Test map connection</a></div>{% endif %}
-{% if unmapped %}<div class="small muted" style="margin:-4px 0 8px">{{ mapped }} properties on the map · {{ unmapped }} with an address still to locate{% if not map_error %} - click "Locate all properties"{% endif %}.</div>{% endif %}
+{% if unmapped %}<div class="small muted" style="margin:-4px 0 8px">{{ mapped }} properties on the map · {{ unmapped }} with an address still to locate - click "Locate all properties" (about 15 minutes for all of them).</div>{% endif %}
 {% if not has_key %}<div class="flash">Drive times are <b>estimated</b> until you add a free OpenRouteService key in <a href="{{ url_for('settings.index') }}#routes">Settings</a> (2 minutes, no credit card).</div>{% endif %}
 <form method="post" action="{{ url_for('plan.add') }}" class="card"><input type="hidden" name="next" value="{{ request.full_path }}">
 <h3 style="margin-top:0">Add a stop</h3>
@@ -32,5 +32,18 @@
 <div class="small muted" id="geoprog" style="margin-top:8px"></div>
 {% endblock %}
 {% block scripts %}<script>
-fetch('{{ url_for("plan.route_progress") }}').then(r=>r.json()).then(d=>{ if(d.total) document.getElementById('geoprog').textContent = d.located + ' of ' + d.total + ' properties with an address have a map location.'; });
+(function poll(){
+  fetch('{{ url_for("plan.route_progress") }}').then(r=>r.json()).then(d=>{
+    if(!d.total) return;
+    const el = document.getElementById('geoprog'), j = d.job || {};
+    let t = d.located + ' of ' + d.total + ' properties with an address are on the map.';
+    if (j.running) t = '📍 Locating properties… ' + (j.done||0) + ' of ' + (j.todo||'?') + ' checked (' + (j.located||0) + ' found). ' + t;
+    else if (j.finished) t += ' Last run: ' + (j.located||0) + ' found, ' + (j.not_found||0) + ' not found.';
+    if (j.error) t += ' ⚠ ' + j.error;
+    el.innerHTML = '';
+    el.append(t);
+    if (d.not_found) { const a = document.createElement('a'); a.href = '{{ url_for("plan.unlocated") }}'; a.textContent = ' ' + d.not_found + ' addresses the map couldn\'t find - fix them'; el.append(a); }
+    if (j.running) setTimeout(poll, 4000);
+  });
+})();
 </script>{% endblock %}
