@@ -10,9 +10,9 @@ from .orders import today
 bp = Blueprint("photos", __name__)
 
 
-def _save_uploads(oid):
+def _save_uploads(oid, caption_field="caption"):
     n, bad = 0, []
-    caption = request.form.get("caption", "").strip()
+    caption = request.form.get(caption_field, "").strip()
     for f in request.files.getlist("photos"):
         if not f or not f.filename:
             continue
@@ -33,10 +33,22 @@ def upload(oid):
     n = _save_uploads(oid)
     if n:
         add_status_note(oid, f"{n} photo(s) added")
+        _refresh_pdf(oid)
         flash(f"Added {n} photo(s).", "ok")
     elif not request.files.getlist("photos"):
         flash("Choose or take at least one photo.", "error")
     return redirect(url_for("orders.view", oid=oid) + "#photos")
+
+
+def _refresh_pdf(oid):
+    """Order PDFs carry the photos - re-make an existing PDF so it matches."""
+    o = q("SELECT form_key, pdf_path FROM orders WHERE id=?", (oid,), one=True)
+    if o and o["form_key"] and o["pdf_path"] and os.path.exists(o["pdf_path"]):
+        try:
+            from .orders import _make_pdf
+            _make_pdf(oid)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def add_status_note(oid, note):
@@ -64,6 +76,7 @@ def delete(pid):
         os.remove(p["path"])
     except OSError:
         pass
+    _refresh_pdf(p["order_id"])
     flash("Photo removed.", "ok")
     return redirect(url_for("orders.view", oid=p["order_id"]) + "#photos")
 

@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.13.7"
+__version__ = "2.14.0"
 
 
 def _secret_key():
@@ -147,7 +147,8 @@ def create_app(db_path=None, testing=False, demo=None):
             except Exception:  # noqa: BLE001
                 pc = ed = 0
         from . import holds as _holds
-        return {"back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
+        from .people import POSITIONS as _positions
+        return {"positions": _positions, "back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username"), "hold_for": _holds.hold_for,
                 "holds_count": _holds.count() if session.get("uid") else 0}
 

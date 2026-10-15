@@ -238,12 +238,16 @@ def previous_for(customer_id, form_key, blocks=None, limit=60):
             size = _block_size(b)
             match = any((it and it == str(b.get("item_no") or "")) or (sz and size and _close(sz, size))
                         for it, sz in wants)
-            out.append({"date": o["order_date"] or (o["created"] or "")[:10], "invoice": f"Order #{o['id']}",
+            from .contact_log import _iso
+            out.append({"date": _iso(o["order_date"]) or (o["created"] or "")[:10], "invoice": f"Order #{o['id']}",
                         "order_id": o["id"], "type": o["status"], "item_no": b.get("item_no") or "",
                         "desc": describe_block(o["form_key"], b) + (f" *{b['unit']}" if b.get("unit") else ""),
                         "qty": _num(str(b.get("qty") or "1")) or 1, "price": None, "amount": None,
                         "category": cat, "source": "app", "match": bool(match), "size": size, "rep": ""})
-    out.sort(key=lambda r: (not r["match"], -(int((r["date"] or "0").replace("-", "")[:8] or 0))))
+    def _dkey(r):
+        digits = re.sub(r"\D", "", str(r["date"] or ""))[:8]
+        return int(digits) if digits else 0
+    out.sort(key=lambda r: (not r["match"], -_dkey(r)))
     return out[:limit]
 
 

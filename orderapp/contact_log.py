@@ -71,12 +71,13 @@ def sync_orders():
 
 
 def entries(frm=None, to=None, term="", how="", temp="", limit=1000):
-    sql = """SELECT a.*, c.name AS cname, c.city AS ccity FROM activities a LEFT JOIN customers c ON c.id=a.customer_id
+    sql = """SELECT a.*, c.name AS cname, c.city AS ccity, k.role AS role FROM activities a
+             LEFT JOIN customers c ON c.id=a.customer_id LEFT JOIN contacts k ON k.id=a.contact_id
              WHERE substr(a.occurred_at,1,10) BETWEEN ? AND ?"""
     args = [frm or "0000", to or "9999"]
     if term:
-        sql += " AND (c.name LIKE ? OR a.contact_name LIKE ? OR a.subject LIKE ? OR a.notes LIKE ?)"
-        args += [f"%{term}%"] * 4
+        sql += " AND (c.name LIKE ? OR a.contact_name LIKE ? OR a.subject LIKE ? OR a.notes LIKE ? OR k.role LIKE ?)"
+        args += [f"%{term}%"] * 5
     if how == "In person":
         sql += f" AND a.kind IN ({','.join('?' * len(IN_PERSON))})"
         args += list(IN_PERSON)

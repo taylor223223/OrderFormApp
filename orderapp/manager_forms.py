@@ -668,6 +668,8 @@ class RollerShades(Form):
         yc = choices(pg, k, CX, top - 4, [
             dict(title="ROOM:", opts=ROOMS, other=("Other",)),
             dict(title="COLOR:", opts=["White", "Champagne", "Tan", "Other"], other=("Other",)),
+            dict(title="FABRIC (SUN SCREEN OPENNESS):", opts=["Sun screen 1%", "Sun screen 3%", "Sun screen 5%",
+                                                            "Sun screen 10%", "Blackout", NOT_SURE], name="Fabric"),
             dict(title="SHADE GOES:", opts=["Inside the opening (most common)", "Outside / on the wall"], cols=1,
                  name="Mount"),
         ])

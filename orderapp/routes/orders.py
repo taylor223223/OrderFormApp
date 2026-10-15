@@ -58,6 +58,11 @@ def safe_name(s):
     return re.sub(r'[\\/:*?"<>|]+', "-", s).strip()[:150]
 
 
+def _photos_for(oid):
+    from ..photos import photos_for
+    return photos_for(oid)
+
+
 # ---------------- editor ----------------
 @bp.route("/orders/new")
 @login_required
@@ -115,7 +120,7 @@ def editor():
     return render_template("order_editor.html", spec=public_spec(form_key), form_key=form_key, order=order,
                            data=data, c=c, customers=customers, units=[dict(u) for u in units],
                            fps=[dict(f) for f in fps], sugg=suggestions(form_key, cid), forms=form_list(),
-                           last=last)
+                           last=last, photos=_photos_for(oid) if oid else [])
 
 
 @bp.route("/orders/save", methods=["POST"])
@@ -154,6 +159,11 @@ def save():
         email_id = request.form.get("email_id", type=int)
         if email_id:
             x("UPDATE email_messages SET status='ordered', order_id=? WHERE id=?", (oid, email_id))
+    from .photos import _save_uploads
+    new_photos = _save_uploads(oid, "photo_caption")
+    if new_photos:
+        add_status(oid, q("SELECT status FROM orders WHERE id=?", (oid,), one=True)["status"],
+                   f"{new_photos} photo(s) added")
     # customer info the order has that the customer record is missing -> review queue
     if cust is not None:
         pend = q("SELECT 1 FROM changes WHERE customer_id=? AND status='pending' AND kind='set_field'",
@@ -173,6 +183,10 @@ def save():
                    new=h["name"])
         flash_link(f"'{h['name']}' isn't a saved customer yet.", url_for("imports.review_batch", bid=b),
                    "Add them", "info")
+    if action not in ("pdf", "send") and new_photos:
+        o2 = q("SELECT pdf_path FROM orders WHERE id=?", (oid,), one=True)
+        if o2["pdf_path"] and os.path.exists(o2["pdf_path"]):
+            _make_pdf(oid)      # keep the saved PDF's photo pages current
     if action in ("pdf", "send"):
         path, warns = _make_pdf(oid)
         from ..holds import hold_for, hold_message
@@ -198,6 +212,11 @@ def _make_pdf(oid):
     data = loads(o["data"])
     pdf, warns = fill_form(o["form_key"], data)
     cust = o["cname"] or data.get("header", {}).get("name") or "Customer"
+    from ..photos import append_photo_pages
+    try:      # photo references go on their own pages at the end of the order
+        pdf = append_photo_pages(pdf, oid, f"{cust} - PO {o['po'] or '-'} - Order #{oid}")
+    except Exception as e:  # noqa: BLE001 - never lose the order form over a photo
+        warns = list(warns) + [f"Photos couldn't be added to the PDF: {e}"]
     day = _iso(o["order_date"])
     fname = safe_name(f"{day} - {cust} - {FORMS[o['form_key']]['title']} - PO {o['po'] or 'none'} - #{oid}.pdf")
     folder = ensure_dir(order_folder(cust, day))
@@ -282,7 +301,9 @@ def send_page(oid):
         flash("Add a photo or use an order form before emailing this order.", "error")
         return redirect(url_for("orders.view", oid=oid))
     data = loads(o["data"])
-    if has_form and not (o["pdf_path"] and os.path.exists(o["pdf_path"])):
+    stale = bool(has_form and photos and o["pdf_path"] and os.path.exists(o["pdf_path"]) and
+                 max(os.path.getmtime(p["path"]) for p in photos) > os.path.getmtime(o["pdf_path"]))
+    if has_form and (stale or not (o["pdf_path"] and os.path.exists(o["pdf_path"]))):
         _make_pdf(oid)
         o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
     cust = q("SELECT name FROM customers WHERE id=?", (o["customer_id"],), one=True) if o["customer_id"] else None
@@ -294,8 +315,8 @@ def send_page(oid):
             flash("Enter a To address.", "error")
             return redirect(url_for("orders.send_page", oid=oid))
         attachments = [o["pdf_path"]] if has_form else []
-        pmode = request.form.get("photos_mode", "pdf")
-        if photos and pmode == "pdf":
+        pmode = request.form.get("photos_mode", "inpdf" if has_form else "pdf")
+        if photos and pmode == "pdf" and not has_form:
             pp = photos_pdf(oid, os.path.join(folder, safe_name(f"{cname} - {o['title']} - photos - #{oid}.pdf")),
                             title=f"{cname} - PO {o['po'] or '-'}")
             if pp:

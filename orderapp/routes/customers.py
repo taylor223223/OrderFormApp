@@ -67,7 +67,8 @@ def new():
 @login_required
 def view(cid):
     c = _cust_or_404(cid)
-    contacts = q("SELECT * FROM contacts WHERE customer_id=? ORDER BY name", (cid,))
+    from ..people import people_at
+    contacts = people_at(cid)
     fps = q("""SELECT f.*, (SELECT COUNT(*) FROM units u WHERE u.floorplan_id=f.id) AS n_units,
                (SELECT COUNT(*) FROM measurements m WHERE m.floorplan_id=f.id AND m.unit_id IS NULL) AS n_meas
                FROM floorplans f WHERE customer_id=? ORDER BY name""", (cid,))
@@ -188,7 +189,9 @@ def check(cid):
 @login_required
 def contact_add(cid):
     _cust_or_404(cid)
+    from ..people import clean_role
     f = {k: request.form.get(k, "").strip() for k in ("name", "role", "email", "phone", "notes")}
+    f["role"] = clean_role(f["role"])
     if not any(f.values()):
         flash("Enter at least a name, email or phone.", "error")
     else:
@@ -201,7 +204,9 @@ def contact_add(cid):
 @login_required
 def contact_edit(kid):
     k = q("SELECT * FROM contacts WHERE id=?", (kid,), one=True) or abort(404)
+    from ..people import clean_role
     f = {k2: request.form.get(k2, "").strip() for k2 in ("name", "role", "email", "phone", "notes")}
+    f["role"] = clean_role(f["role"])
     x("UPDATE contacts SET name=?, role=?, email=?, phone=?, notes=? WHERE id=?",
       (f["name"], f["role"], f["email"], f["phone"], f["notes"], kid))
     return redirect(url_for("customers.view", cid=k["customer_id"], tab="info"))

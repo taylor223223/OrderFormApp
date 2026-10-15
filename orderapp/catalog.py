@@ -685,6 +685,18 @@ def _gc(key, label, names, **kw):
 
 _LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
 
+# Roller shade / sun screen fabrics - what AIS has invoiced (company sales history 2023-2026)
+SHADE_BRANDS = ["Vertilux (VX)", "Mermet", "Phifer (Sheerweave / Suntex)", "Coolaroo", "Other"]
+SHADE_FABRICS = ["VX Solar Screen 3000", "VX Solar 3101 (1%)", "VX Solar 3103 (3%)", "VX Solar 3105 (5%)",
+                 "VX Screen 3000 Blackout", "VX Nightfall Blackout", "VX Colorama (Solar 3000)", "VX Shantung",
+                 "Manchester LF (York Shadow / Burlap)", "Avilla Twilight Blackout", "Zora Twilight Blackout",
+                 "Mermet E-Screen", "Sheerweave 2410", "Sheerweave 7100 Blackout", "Capri Zebra",
+                 "Coolaroo exterior (Montecito / Outback)", "Phifer Suntex 97 exterior"]
+SHADE_OPENNESS = ["1% (most privacy)", "3%", "5%", "10% (most view-through)", "Blackout (0%)",
+                  "Light filtering"]
+SHADE_COLORS = ["White Pearl", "White/Linen", "Linen", "Ebony", "Grey", "Charcoal/Grey", "Taupe", "Ivory",
+                "Stone", "Coffee"]
+
 GENERATED = {
     "roller_shade": {   # mimics the company's Blind Order Form (Taylor's request)
         "title": "Roller Shade Order Form", "style": "blind", "form_title": "ROLLER SHADE ORDER FORM",
@@ -692,9 +704,13 @@ GENERATED = {
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
             _g("width", "Window Width (in)", measure=True), _g("length", "Window Length (in)", measure=True),
             _gc("chain_side", "Chain Side", ["Left", "Right"]),
+            # material / opacity / brand - lists come from the roller shades AIS has sold
+            _g("shade_brand", "Brand", suggest=SHADE_BRANDS, placeholder="Vertilux, Mermet..."),
+            _g("shade_fabric", "Material / Fabric", suggest=SHADE_FABRICS, placeholder="e.g. VX Solar Screen 3000"),
+            _g("openness", "Opacity (Openness)", suggest=SHADE_OPENNESS, placeholder="1%, 3%, 5%, Blackout..."),
             _gc("color", "Color", ["Champagne", "Tan", "White", "Other"], other_option="Other",
                 other_field="color_other"),
-            _g("color_other", "Color - Other", show_if=("color", ["Other"])),
+            _g("color_other", "Color - Other", show_if=("color", ["Other"]), suggest=SHADE_COLORS),
             _LINE_COMMENTS]],
         "products": ["roller_shade"],
     },

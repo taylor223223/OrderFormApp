@@ -82,13 +82,13 @@ def log():
     contact_name = f.get("contact_name", "").strip()
     contact_id = None
     if cid and contact_name:
-        k = q("SELECT id FROM contacts WHERE customer_id=? AND lower(name)=lower(?)", (cid, contact_name), one=True)
-        if k:
-            contact_id = k["id"]
-        elif f.get("save_contact"):
-            contact_id = x("INSERT INTO contacts(customer_id, name, role, phone, email) VALUES (?,?,?,?,?)",
-                           (cid, contact_name, f.get("contact_role", ""), f.get("contact_phone", ""),
-                            f.get("contact_email", "")))
+        from ..people import find_person, save_person
+        if f.get("save_contact") or f.get("contact_role"):
+            contact_id = save_person(cid, contact_name, f.get("contact_role", ""), f.get("contact_phone", ""),
+                                     f.get("contact_email", ""))
+        else:
+            k = find_person(cid, contact_name)
+            contact_id = k["id"] if k else None
     location = f.get("location", "").strip()
     if not location and cid and kind in ("In person", "Site visit", "Drop-in", "Meeting"):
         c = q("SELECT address, city FROM customers WHERE id=?", (cid,), one=True)
@@ -136,6 +136,8 @@ def contacts_log():
     """Rolling contact log - every property / person you were in touch with, newest first."""
     from .. import contact_log as CL
     added = CL.sync_orders()
+    from ..people import POSITIONS, sync_people
+    sync_people()
     a = request.args
     frm = a.get("from") or (date.today() - timedelta(days=30)).isoformat()
     to = a.get("to") or date.today().isoformat()
@@ -143,15 +145,15 @@ def contacts_log():
     if a.get("csv"):
         buf = io.StringIO()
         w = csv.writer(buf)
-        w.writerow(["Date", "Property", "Contact person", "How", "Warm/Cold", "What", "Notes", "Order #"])
+        w.writerow(["Date", "Property", "Contact person", "Position", "How", "Warm/Cold", "What", "Notes", "Order #"])
         for r in rows:
-            w.writerow([r["occurred_at"][:10], r["cname"] or "", r["contact_name"] or "", r["kind"], r["temp"] or "",
+            w.writerow([r["occurred_at"][:10], r["cname"] or "", r["contact_name"] or "", r["role"] or "", r["kind"], r["temp"] or "",
                         r["subject"] or "", (r["notes"] or "").replace("\n", " "), r["order_id"] or ""])
         from flask import Response
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f"attachment; filename=Contact log {frm} to {to}.csv"})
     return render_template("crm_contacts.html", rows=rows, frm=frm, to=to, how=CL.HOW, temps=CL.TEMPS,
-                           kinds=ACTIVITY_KINDS, args=a, added=added, week=CL.week_counts(),
+                           kinds=ACTIVITY_KINDS, args=a, added=added, week=CL.week_counts(), positions=POSITIONS,
                            customers=_customers(), now_local=datetime.now().strftime("%Y-%m-%dT%H:%M"))
 
 
@@ -168,17 +170,29 @@ def contact_edit(aid):
     temp = f.get("temp", r["temp"] or "")
     temp = temp if temp in ("Warm", "Cold") else None
     when = (f.get("date") or r["occurred_at"][:10]) + r["occurred_at"][10:]
-    x("UPDATE activities SET kind=?, temp=?, contact_name=?, occurred_at=? WHERE id=?",
-      (kind, temp, f.get("contact_name", r["contact_name"] or "").strip(), when, aid))
-    if f.get("contact_name", "").strip() and r["customer_id"] and f.get("save_contact"):
-        if not q("SELECT 1 FROM contacts WHERE customer_id=? AND lower(name)=lower(?)",
-                 (r["customer_id"], f["contact_name"].strip()), one=True):
-            x("INSERT INTO contacts(customer_id, name, role) VALUES (?,?,?)",
-              (r["customer_id"], f["contact_name"].strip(), f.get("role", "").strip()))
+    name = f.get("contact_name", r["contact_name"] or "").strip()
+    kid = r["contact_id"]
+    if name and r["customer_id"]:      # the person (and their position) goes on the property's profile
+        from ..people import save_person
+        kid = save_person(r["customer_id"], name, f.get("role", ""))
+    elif not name:
+        kid = None
+    x("UPDATE activities SET kind=?, temp=?, contact_name=?, contact_id=?, occurred_at=? WHERE id=?",
+      (kind, temp, name, kid, when, aid))
     if request.headers.get("X-Requested-With") == "fetch":
         return jsonify({"ok": True})
     flash("Saved.", "ok")
     return redirect(request.referrer or url_for("crm.contacts_log"))
+
+
+@bp.route("/crm/people/<int:cid>")
+@login_required
+def people_json(cid):
+    """People saved at a property (for name suggestions + their position)."""
+    from flask import jsonify
+    from ..people import people_at
+    return jsonify({"people": [{"name": r["name"], "role": r["role"] or "", "phone": r["phone"] or ""}
+                               for r in people_at(cid) if r["name"]]})
 
 
 @bp.route("/crm/contacts/add", methods=["POST"])
@@ -193,12 +207,17 @@ def contact_add():
     kind = f.get("kind") if f.get("kind") in ACTIVITY_KINDS else "In person"
     temp = f.get("temp") if f.get("temp") in ("Warm", "Cold") else ""
     when = (f.get("occurred_at") or datetime.now().strftime("%Y-%m-%dT%H:%M")).replace("T", " ")
-    names = [n.strip() for n in (f.get("people") or "").replace(";", ",").split(",") if n.strip()] or [""]
-    for nm in names:
-        k = q("SELECT id FROM contacts WHERE customer_id=? AND lower(name)=lower(?)", (cid, nm), one=True) if nm else None
-        log_activity(cid, kind, when, k["id"] if k else None, nm, subject=f.get("subject", "").strip(),
+    from ..people import save_person
+    people = [(n.strip(), r, p) for n, r, p in zip(f.getlist("person_name"), f.getlist("person_role"),
+                                                   f.getlist("person_phone") + [""] * 50) if n.strip()]
+    people += [(n.strip(), "", "") for n in (f.get("people") or "").replace(";", ",").split(",") if n.strip()]
+    for nm, role, phone in people or [("", "", "")]:
+        kid = save_person(cid, nm, role, phone) if nm else None
+        log_activity(cid, kind, when, kid, nm, subject=f.get("subject", "").strip(),
                      notes=f.get("notes", "").strip(), temp=temp)
-    flash(f"Logged {len(names)} contact(s).", "ok")
+    named = [p for p in people if p[0]]
+    flash(f"Logged {max(1, len(people))} contact(s)" + (f" - {len(named)} saved to the property's contacts." if named
+                                                       else "."), "ok")
     return redirect(url_for("crm.contacts_log"))
 
 

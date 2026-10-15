@@ -43,7 +43,7 @@
       <div class="ph"><a href="{{ url_for('photos.show', pid=p.id) }}" target="_blank"><img src="{{ url_for('photos.show', pid=p.id) }}" alt="{{ p.caption or p.filename }}" loading="lazy"></a>
       <div class="small muted">{{ p.caption or '' }}</div>
       <form method="post" action="{{ url_for('photos.delete', pid=p.id) }}" onsubmit="return confirm('Remove this photo?')"><button class="btn sm danger">Remove</button></form></div>
-    {% endfor %}</div>{% else %}<div class="muted small">No photos yet. Add pictures of a paper form, the opening, a damaged door, etc.</div>{% endif %}
+    {% endfor %}</div>{% else %}<div class="muted small">No photos yet. Add pictures of the opening, a damaged door, a paper form, etc. - on form orders they print as Photo reference pages at the end of the PDF.</div>{% endif %}
     <form method="post" action="{{ url_for('photos.upload', oid=o.id) }}" enctype="multipart/form-data" class="row" style="margin-top:10px">
       <input type="file" name="photos" accept="image/*" multiple style="max-width:280px">
       <input name="caption" placeholder="Caption (optional, e.g. Unit 204 bedroom)" style="max-width:280px">

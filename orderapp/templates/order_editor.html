@@ -11,7 +11,7 @@
     {% if last %}<a class="btn" href="{{ url_for('orders.editor', form=form_key, customer=c.id, copy=last.id) }}" title="Start from the last {{ spec.title }} for this customer">Copy last order{% if last.po %} (PO {{ last.po }}){% endif %}</a>{% endif %}
   </div>
 </div>
-<form method="post" action="{{ url_for('orders.save') }}" id="orderForm">
+<form method="post" action="{{ url_for('orders.save') }}" id="orderForm" enctype="multipart/form-data">
 <input type="hidden" name="form_key" value="{{ form_key }}">
 <input type="hidden" name="order_id" value="{{ order.id if order else '' }}">
 <input type="hidden" name="customer_id" id="customer_id" value="{{ c.id if c else '' }}">
@@ -48,6 +48,17 @@
 
 <div id="blocks"></div>
 <div class="row" style="margin-bottom:16px"><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
+
+<div class="card" id="photoRef"><h3 style="margin-top:0">📷 Photo reference <span class="small muted">(optional - printed on their own pages at the end of the order PDF)</span></h3>
+  {% if photos %}<div class="photogrid" style="margin-bottom:8px">{% for p in photos %}<div class="ph"><a href="{{ url_for('photos.show', pid=p.id) }}" target="_blank"><img src="{{ url_for('photos.show', pid=p.id) }}" alt="{{ p.caption or p.filename }}" loading="lazy"></a>{% if p.caption %}<div class="small">{{ p.caption }}</div>{% endif %}</div>{% endfor %}</div>
+  <div class="small muted" style="margin-bottom:6px">{{ photos|length }} photo(s) on this order. Remove them from the order page.</div>{% endif %}
+  <div class="row" style="gap:8px">
+    <input type="file" name="photos" id="photoInput" accept="image/*" multiple style="max-width:300px">
+    <input name="photo_caption" placeholder="Caption, e.g. Unit 214 bedroom door - hinge side" style="max-width:360px">
+  </div>
+  <div id="photoPreview" class="photogrid" style="margin-top:8px"></div>
+  <div class="small muted">Photos are kept at full detail (up to 3200 px) - no blurry copies. They're saved when you press Save.</div>
+</div>
 
 <div class="grid g2" id="helpPanels" style="margin-bottom:16px">
 <details class="card" id="prevCard"><summary><b>🕘 Previous orders</b> <span class="small muted" id="prevSum">pick a customer to see what they ordered before</span></summary>
@@ -284,6 +295,12 @@ $('#orderForm').addEventListener('submit', () => {
   $('#payload').value = JSON.stringify({header, blocks, comments: $('#comments').value.trim(),
                                         sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : ''});
   dirty = false;
+});
+$('#photoInput').addEventListener('change', e => {
+  const box = $('#photoPreview'); box.innerHTML = '';
+  [...e.target.files].forEach(f => { const d = document.createElement('div'); d.className = 'ph';
+    const im = document.createElement('img'); im.src = URL.createObjectURL(f); d.appendChild(im); box.appendChild(d); });
+  dirty = true;
 });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 

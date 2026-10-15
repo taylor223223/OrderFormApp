@@ -50,19 +50,20 @@
   </div>
   <div class="card"><h3 style="margin-top:0">Contacts</h3>
     {% for k in contacts %}
-    <details style="padding:6px 0;border-bottom:1px solid var(--line)"><summary>{{ k.name or k.email }} <span class="muted small">{{ k.role or '' }} {{ k.email or '' }} {{ k.phone or '' }}</span></summary>
+    <details style="padding:6px 0;border-bottom:1px solid var(--line)"><summary><b>{{ k.name or k.email }}</b>{% if k.role %} <span class="tag">{{ k.role }}</span>{% endif %} <span class="muted small">{{ k.phone or '' }} {{ k.email or '' }}{% if k.last_talk %} · last talked {{ k.last_talk[:10] }}{% endif %}</span></summary>
       <form method="post" action="{{ url_for('customers.contact_edit', kid=k.id) }}" class="grid g2" style="margin-top:8px">
-        <input name="name" value="{{ k.name or '' }}" placeholder="Name"><input name="role" value="{{ k.role or '' }}" placeholder="Role">
+        <input name="name" value="{{ k.name or '' }}" placeholder="Name"><input name="role" value="{{ k.role or '' }}" placeholder="Position" list="dl_positions">
         <input name="email" value="{{ k.email or '' }}" placeholder="Email"><input name="phone" value="{{ k.phone or '' }}" placeholder="Phone">
         <input name="notes" value="{{ k.notes or '' }}" placeholder="Notes" style="grid-column:1/-1">
         <div class="row"><button class="btn sm">Save</button></div>
       </form>
       <form method="post" action="{{ url_for('customers.contact_delete', kid=k.id) }}" onsubmit="return confirm('Delete contact?')"><button class="btn sm danger">Delete</button></form>
     </details>
-    {% else %}<div class="muted">No contacts yet.</div>{% endfor %}
+    {% else %}<div class="muted">No contacts yet. People you log in the CRM are added here with their position.</div>{% endfor %}
+    <datalist id="dl_positions">{% for p in positions %}<option value="{{ p }}">{% endfor %}</datalist>
     <h3>Add contact</h3>
     <form method="post" action="{{ url_for('customers.contact_add', cid=c.id) }}" class="grid g2">
-      <input name="name" placeholder="Name"><input name="role" placeholder="Role (Manager, Maintenance...)">
+      <input name="name" placeholder="Name"><input name="role" placeholder="Position (Maint. Super, Office...)" list="dl_positions">
       <input name="email" placeholder="Email"><input name="phone" placeholder="Phone">
       <div><button class="btn sm primary">Add contact</button></div>
     </form>

@@ -7,7 +7,8 @@
     <div><label>Type</label><select name="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
     <div><label>Warm / cold</label><select name="temp"><option value="">-</option><option>Warm</option><option>Cold</option></select></div>
     <div><label>When</label><input type="datetime-local" name="occurred_at" value="{{ now_local }}"></div>
-    <div><label>Who (contact)</label><input name="contact_name" list="ql_contacts" placeholder="Name"><datalist id="ql_contacts">{% for k in contacts or [] %}<option value="{{ k.name }}">{{ k.role or '' }}</option>{% endfor %}</datalist></div>
+    <div><label>Who you talked to</label><input name="contact_name" id="ql_who" list="ql_contacts" placeholder="Name" autocomplete="off"><datalist id="ql_contacts">{% for k in contacts or [] %}<option value="{{ k.name }}" data-role="{{ k.role or '' }}">{{ k.role or '' }}</option>{% endfor %}</datalist></div>
+    <div><label>Position</label><input name="contact_role" id="ql_role" list="ql_positions" placeholder="Maint. Super, Office..."></div>
     <div><label>Where</label><input name="location" placeholder="Leasing office, phone, trade show..."></div>
     <div style="grid-column:span 2"><label>About (short)</label><input name="subject" placeholder="e.g. Quote for 40 vertical blinds"></div>
     <div style="grid-column:1/-1"><label>Topics</label><div class="chips">{% for t in topics %}<label class="chip"><input type="checkbox" name="topics" value="{{ t }}"> {{ t }}</label>{% endfor %}</div></div>
@@ -17,7 +18,18 @@
     <div><label>Follow up on</label><input type="date" name="follow_up"></div>
     <div><label>Follow-up task</label><input name="follow_up_title" placeholder="Call back with pricing"></div>
     <div><label>Add a visit to my route</label><input type="date" name="route_day"></div>
-    <div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="save_contact" value="1" checked> Save new contact</label></div>
+    <div><label>&nbsp;</label><label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="save_contact" value="1" checked> Save the person to the property's contacts</label></div>
   </div>
   <button class="btn primary" style="margin-top:8px">Save</button>
 </form>
+<datalist id="ql_positions">{% for p in positions %}<option value="{{ p }}">{% endfor %}</datalist>
+<script>
+(function () {   // picking a saved person fills in their position
+  const who = document.getElementById('ql_who'), role = document.getElementById('ql_role');
+  if (!who) return;
+  who.addEventListener('change', () => {
+    const o = [...document.querySelectorAll('#ql_contacts option')].find(o => o.value.toLowerCase() === who.value.trim().toLowerCase());
+    if (o && o.dataset.role && !role.value) role.value = o.dataset.role;
+  });
+})();
+</script>
