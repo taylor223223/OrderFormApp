@@ -31,6 +31,8 @@ def route_points(day):
         sp = None
     if sp:
         pts.append(tuple(sp))
+    else:
+        return []          # without the start point "on the way" means nothing - the page says why
     for s in stops_for(day):
         if s["status"] == "Skipped":
             continue

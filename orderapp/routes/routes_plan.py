@@ -369,7 +369,44 @@ def day(day):
                            miles=round(res["total_m"] / 1609.34, 1), finish=finish, gmaps=gmaps,
                            points=points, start=res["start"], customers=customers, week_days=week_days,
                            has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"),
-                           items=ESTIMATE_ITEMS)
+                           items=ESTIMATE_ITEMS, check=route_check(day, res))
+
+
+def route_check(day, res):
+    """Plain report of every piece the drive times depend on - shown on the day page, easy to copy."""
+    from .. import __version__
+    rd = q("SELECT start_address FROM route_days WHERE day=?", (day,), one=True)
+    day_addr = (rd["start_address"] or "").strip() if rd else ""
+    key = _key()
+    stops = [s for s in stops_for(day) if s["status"] != "Skipped"]
+    missing = [s["label"] or s["cname"] or "?" for s in stops if s["id"] in res.get("missing", [])]
+    if res.get("legs") and not res.get("estimated"):
+        drive = "Real road times (OpenRouteService)"
+    elif res.get("legs"):
+        drive = "Estimated from straight-line distance" + (
+            f" - OpenRouteService failed: {geo.LAST.get('matrix')}" if key and geo.LAST.get("matrix") else
+            "" if key else " - no OpenRouteService key saved")
+    else:
+        drive = "Not calculated"
+    items = [
+        ("App version", __version__, True),
+        ("Start address", (res.get("start_address") or "(none)") +
+         (" - set for this day only" if day_addr else " - from Settings" if res.get("start_address") else ""),
+         bool(res.get("start_address"))),
+        ("Start found on the map", ("yes (%.4f, %.4f)" % tuple(res["start"])) if res.get("start") else "NO",
+         bool(res.get("start"))),
+        ("Stops found on the map", f"{len(stops) - len(missing)} of {len(stops)}" +
+         (f" - not found: {', '.join(missing)}" if missing else ""), not missing and bool(stops)),
+        ("Drive times", drive, bool(res.get("legs")) and not (key and res.get("estimated"))),
+        ("OpenRouteService key", f"saved (ends …{key[-6:]})" if key else "none", bool(key)),
+        ("Return to start", "yes" if res.get("round_trip") else "no", True),
+        ("Properties on the map", f"{q('SELECT COUNT(*) n FROM customers WHERE lat IS NOT NULL', one=True)['n']} of "
+         f"{q('SELECT COUNT(*) n FROM customers', one=True)['n']}", True),
+        ("Last map problem", setting("map_last_error") or "none", not setting("map_last_error")),
+    ]
+    for e in res.get("errors") or []:
+        items.append(("Error", e, False))
+    return {"items": items, "ok": all(ok for _, _, ok in items)}
 
 
 def day_timeline(day, legs=None):

@@ -1,6 +1,6 @@
 {% macro money(v) %}{{ '$' + '{:,.0f}'.format(v) if v else '—' }}{% endmacro %}
 {% if res.no_points %}
-<div class="small muted">Add at least one stop with an address on the map and a start point, and every property along the way shows up here.</div>
+<div class="small muted">Needs your start address found on the map plus at least one stop on the map - see <b>Route check</b> below for which one is missing.</div>
 {% else %}
 <form class="alongctl row" data-url="{{ url_for('plan.along', day=day) }}" style="gap:6px;margin-bottom:6px" onsubmit="return false">
   <label class="small row" style="gap:4px">Sort <select name="sort" style="width:auto">{% for k, l in sorts.items() %}<option value="{{ k }}" {{ 'selected' if k == res.sort }}>{{ l }}</option>{% endfor %}</select></label>

@@ -53,6 +53,9 @@
 </div>
 {% if rows %}<div class="card" id="alongcard"><div class="row" style="justify-content:space-between"><h3 style="margin:0">🧭 Along the way</h3><span class="small muted">Every property near this route - sort, flip through and add</span></div>
 <div id="along" style="margin-top:6px"><div class="small muted">Looking for properties along the route…</div></div></div>{% endif %}
+<details class="card" id="routecheck" {{ 'open' if not check.ok }}><summary><b>{{ '✅' if check.ok else '⚠️' }} Route check</b> <span class="small muted">- what the drive times depend on</span></summary>
+<table class="small" style="margin-top:6px">{% for name, val, ok in check["items"] %}<tr><td class="nowrap">{{ '✅' if ok else '❌' }} {{ name }}</td><td>{{ val }}</td></tr>{% endfor %}</table>
+<button type="button" class="btn sm" style="margin-top:6px" onclick="navigator.clipboard.writeText([...document.querySelectorAll('#routecheck tr')].map(t=>t.innerText.replace('\t',': ')).join('\n')).then(()=>this.textContent='Copied - paste it to Claude')">📋 Copy this report</button></details>
 <details class="card"><summary>Start point for this day</summary>
 <form method="post" action="{{ url_for('plan.day_settings', day=day) }}" class="grid g2" style="margin-top:8px">
 <div><label>Start address</label><input name="start_address" value="{{ res.start_address or '' }}"></div>

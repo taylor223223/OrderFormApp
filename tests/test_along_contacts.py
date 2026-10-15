@@ -256,3 +256,14 @@ def test_locate_all_marks_not_found_and_stops_on_daily_limit(app, c, monkeypatch
     d = c.get("/api/route_progress").get_json()
     assert d["not_found"] >= 1 and "job" in d
     assert "Loc B" in c.get("/routes/unlocated").data.decode()
+
+
+def test_route_check_panel(app, c):
+    html = c.get(f"/routes/day/{DAY}").data.decode()
+    assert "Route check" in html and "Start found on the map" in html and "Drive times" in html
+    with app.app_context():
+        from orderapp.db import set_setting
+        from orderapp import along as AL
+        set_setting("route_start_address", "")
+        assert AL.suggest(DAY)["no_points"]          # no start -> no "on the way" guesses
+        set_setting("route_start_address", "100 Home St, Phoenix AZ")
