@@ -305,3 +305,5 @@ a.stat{color:inherit;text-decoration:none}
 .kitsvg.elev{margin-top:10px}
 .kitrun h4{margin:12px 0 4px;font-size:14px}
 .runletter{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:2px solid #c2410c;color:#c2410c;font-weight:800;margin-right:4px}
+/* maps stay under the sticky top bar (Leaflet's own layers use z-index 400-1000) */
+.leaflet-container{position:relative;z-index:0;isolation:isolate}
