@@ -171,3 +171,21 @@ def test_map_connection_messages(app, c, monkeypatch):
         set_setting("net_proxy", "")
         set_setting("ors_api_key", "")
         set_setting("map_last_error", "")
+
+
+def test_road_line_failure_is_quiet(app, monkeypatch):
+    import urllib.error
+    from orderapp import geo
+    seen = {}
+
+    class Http406:
+        def open(self, req, timeout=None):
+            seen["accept"] = req.get_header("Accept")
+            raise urllib.error.HTTPError(req.full_url, 406, "Not Acceptable", {}, None)
+    monkeypatch.setattr(geo, "_opener", lambda: Http406())
+    with app.app_context():
+        from orderapp.db import set_setting, setting
+        set_setting("map_last_error", "")
+        assert geo.directions_geometry([(33.4, -112.0), (33.5, -111.9)], "k") is None
+        assert "geo+json" in seen["accept"]
+        assert setting("map_last_error") == ""        # a missing road line isn't reported as a map failure

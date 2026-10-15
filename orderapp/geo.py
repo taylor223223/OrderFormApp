@@ -95,8 +95,8 @@ def _note(err):
         pass
 
 
-def _http(url, data=None, headers=None, timeout=20):
-    h = {"User-Agent": UA, "Accept": "application/json"}
+def _http(url, data=None, headers=None, timeout=20, note=True):
+    h = {"User-Agent": UA, "Accept": "application/json, application/geo+json;q=0.9, */*;q=0.8"}
     h.update(headers or {})
     body = None
     if data is not None:
@@ -107,7 +107,8 @@ def _http(url, data=None, headers=None, timeout=20):
     try:
         with _opener().open(req, timeout=timeout) as r:
             out = json.loads(r.read().decode())
-        _note("")
+        if note:
+            _note("")
         return out
     except urllib.error.HTTPError as e:
         msg = e.read().decode(errors="ignore")[:200]
@@ -119,11 +120,13 @@ def _http(url, data=None, headers=None, timeout=20):
             err = "Map service daily limit reached - try again later."
         else:
             err = f"Map service error {e.code} from {host}: {msg}"
-        _note(err)
+        if note:
+            _note(err)
         raise GeoError(err) from e
     except (OSError, ssl.SSLError) as e:
         err = explain(e, host)
-        _note(err)
+        if note:
+            _note(err)
         raise GeoError(err) from e
 
 
@@ -179,6 +182,14 @@ def diagnose(key=None):
             s = d["durations"][0][1]
             return f"Drive time test: {round(s / 60)} min"
         check("OpenRouteService - drive times", ors_matrix)
+
+        def ors_line():
+            d = _http(f"{ORS}/v2/directions/driving-car/geojson",
+                      {"coordinates": [[-112.07, 33.45], [-111.93, 33.42]]},
+                      headers={"Authorization": key, "Accept": "application/geo+json, application/json, */*"},
+                      note=False)
+            return f"Road line test: {len(d['features'][0]['geometry']['coordinates'])} points"
+        check("OpenRouteService - road lines on the map", ors_line)
     else:
         out.append({"name": "OpenRouteService key", "ok": False,
                     "detail": "No key saved - addresses use OpenStreetMap and drive times are estimated."})
@@ -279,8 +290,10 @@ def directions_geometry(points, key=None):
     if not key or len(points) < 2:
         return None
     try:
+        # the road line is a nice-to-have: if it fails the map just draws straight lines, so don't flag it
         d = _http(f"{ORS}/v2/directions/driving-car/geojson",
-                  data={"coordinates": [[p[1], p[0]] for p in points]}, headers={"Authorization": key})
+                  data={"coordinates": [[p[1], p[0]] for p in points]},
+                  headers={"Authorization": key, "Accept": "application/geo+json, application/json, */*"}, note=False)
         coords = d["features"][0]["geometry"]["coordinates"]
         return [(c[1], c[0]) for c in coords]
     except (GeoError, KeyError, IndexError):
