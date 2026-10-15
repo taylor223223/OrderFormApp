@@ -139,11 +139,18 @@ def save():
     if oid:
         x("""UPDATE orders SET customer_id=?, form_key=?, title=?, po=?, order_date=?, data=?, updated=?,
              est_value=NULL WHERE id=?""", (cid, form_key, title, po, odate, dumps(data), now(), oid))
+        if cid:   # keep the auto contact-log entry on the right property
+            x("UPDATE activities SET customer_id=? WHERE order_id=? AND owner='auto'", (cid, oid))
     else:
         oid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, created,
                    updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?)""",
                 (cid, form_key, title, po, odate, dumps(data), request.form.get("source", "manual"), now(), now()))
         add_status(oid, "Draft", "Created")
+        try:   # every order puts its property on the CRM contact log
+            from ..contact_log import sync_orders
+            sync_orders()
+        except Exception:  # noqa: BLE001 - never block saving an order
+            pass
         email_id = request.form.get("email_id", type=int)
         if email_id:
             x("UPDATE email_messages SET status='ordered', order_id=? WHERE id=?", (oid, email_id))

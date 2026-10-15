@@ -1,0 +1,27 @@
+{% macro money(v) %}{{ '$' + '{:,.0f}'.format(v) if v else '-' }}{% endmacro %}
+{% if res.no_points %}
+<div class="small muted">Add at least one stop with an address on the map and a start point, and properties along the way show up here.</div>
+{% else %}
+<form method="post" action="{{ url_for('plan.along_add', day=day) }}">
+<div class="tablewrap"><table class="along">
+<tr><th></th><th>Property</th><th class="right">Extra</th><th class="right">Sales 12 mo</th><th>Last order</th><th>Last contact</th></tr>
+{% for r in res.rows %}{% set c = r.c %}{% set f = r.f %}<tr data-lat="{{ c.lat }}" data-lon="{{ c.lon }}" data-name="{{ c.name }}">
+<td><input type="checkbox" name="customer_id" value="{{ c.id }}"><input type="hidden" name="why_{{ c.id }}" value="{{ r.why[0] if r.why else 'On the way' }}"></td>
+<td><a href="{{ url_for('customers.view', cid=c.id, tab='crm') }}" target="_blank">{{ c.name }}</a><div class="small muted">{{ c.address or '' }}{% if c.city %}, {{ c.city }}{% endif %}</div>
+{% if r.why %}<div class="small">{{ r.why|join(' · ') }}</div>{% endif %}</td>
+<td class="right nowrap small">+{{ r.extra_min }} min<div class="muted">{{ r.extra_mi }} mi</div></td>
+<td class="right nowrap">{{ money(f.sales12) }}{% if f.sales_all and f.sales_all != f.sales12 %}<div class="small muted">{{ money(f.sales_all) }} all</div>{% endif %}</td>
+<td class="nowrap small">{{ f.last_order or 'never' }}</td>
+<td class="nowrap small">{% if f.last_contact %}{{ f.last_contact }}<div class="muted">{{ f.how }}{% if f.temp %} · {{ f.temp }}{% endif %}{% if f.who %} · {{ f.who }}{% endif %}</div>{% else %}never{% endif %}</td>
+</tr>{% else %}<tr><td colspan="6" class="empty small">No properties on the map within {{ 8 if wide else 3 }} miles of this route.{% if res.unmapped %} {{ res.unmapped }} properties aren't on the map yet - use "Find more nearby".{% endif %}</td></tr>{% endfor %}
+</table></div>
+<div class="row" style="margin-top:8px;gap:6px">
+{% if res.rows %}<button class="btn primary sm">+ Add ticked to this route</button>{% endif %}
+{% set shown = (skip + res.rows|map(attribute='c.id')|list)|join(',') %}
+{% if not wide %}<button type="button" class="btn sm" data-along="{{ url_for('plan.along', day=day, skip=shown) }}" title="Show different properties">🔄 Refresh</button>
+<button type="button" class="btn sm" data-along="{{ url_for('plan.along', day=day, wide=1) }}" title="Every property within 8 miles of the route">Check further out</button>
+{% else %}<button type="button" class="btn sm" data-along="{{ url_for('plan.along', day=day) }}">Back to top picks</button>{% endif %}
+<span class="small muted">{{ res.total or 0 }} on the way{% if res.more and not wide %} · {{ res.more }} more{% endif %}. "Extra" is a rough added drive.</span>
+</div></form>
+<form method="post" action="{{ url_for('plan.along_find', day=day) }}" style="margin-top:6px"><button class="btn sm" title="Look up map points for properties in the same cities / zips as today's stops">📍 Find more nearby{% if res.unmapped %} ({{ res.unmapped }} not on the map){% endif %}</button></form>
+{% endif %}

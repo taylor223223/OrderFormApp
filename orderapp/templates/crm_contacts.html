@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% block title %}Contact log{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('crm.home') }}">← CRM</a></div><h1>Contact log</h1>
+<div class="muted">Everyone you were in touch with, newest first. Every order you put in adds its property here on its own - set how you were in touch and whether it was warm or cold. Changes save as you pick them.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('crm.contacts_log', csv=1, **args.to_dict()) }}">Download CSV</a></div></div>
+{% if added %}<div class="flash ok">Added {{ added }} contact(s) from your orders.</div>{% endif %}
+<div class="card row" style="gap:6px">
+  <span class="small muted">This week:</span>
+  {% for k in how %}<span class="tag">{{ k }}: <b>{{ week[k] }}</b></span>{% endfor %}
+  <span class="tag ok">Warm: <b>{{ week.Warm }}</b></span><span class="tag warn">Cold: <b>{{ week.Cold }}</b></span>
+  <span class="tag">Total: <b>{{ week.total }}</b></span>
+</div>
+<details class="card"><summary><b>+ Log people you talked to</b></summary>
+<form method="post" action="{{ url_for('crm.contact_add') }}" class="grid g4" style="gap:8px;margin-top:8px">
+  <div style="grid-column:span 2">{% set picker_id='cl_cust' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
+  <div style="grid-column:span 2"><label>People (comma between names)</label><input name="people" placeholder="Drago, Roberto"></div>
+  <div><label>How</label><select name="kind">{% for k in how %}<option>{{ k }}</option>{% endfor %}</select></div>
+  <div><label>Warm / cold</label><select name="temp"><option value="">-</option>{% for t in temps %}<option>{{ t }}</option>{% endfor %}</select></div>
+  <div><label>When</label><input type="datetime-local" name="occurred_at" value="{{ now_local }}"></div>
+  <div><label>About</label><input name="subject" placeholder="Door estimate unit 276"></div>
+  <div style="grid-column:span 3"><input name="notes" placeholder="Notes"></div>
+  <div style="align-self:end"><button class="btn primary">Log</button></div>
+</form></details>
+<form class="card row" method="get" style="gap:6px">
+  <label class="row" style="gap:4px">From <input type="date" name="from" value="{{ frm }}" style="width:auto"></label>
+  <label class="row" style="gap:4px">to <input type="date" name="to" value="{{ to }}" style="width:auto"></label>
+  <input name="q" value="{{ args.get('q','') }}" placeholder="Property, person, notes" style="max-width:220px">
+  <select name="how" style="width:auto"><option value="">Any way</option>{% for k in how %}<option {{ 'selected' if args.get('how')==k }}>{{ k }}</option>{% endfor %}</select>
+  <select name="temp" style="width:auto"><option value="">Warm + cold</option>{% for t in temps %}<option {{ 'selected' if args.get('temp')==t }}>{{ t }}</option>{% endfor %}</select>
+  <button class="btn">Show</button></form>
+<div class="tablewrap"><table id="clog"><tr><th>Date</th><th>Property</th><th>Contact person</th><th>How</th><th>Warm / cold</th><th>What</th></tr>
+{% for r in rows %}<tr data-id="{{ r.id }}">
+<td><input type="date" name="date" value="{{ r.occurred_at[:10] }}" style="width:auto"></td>
+<td>{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id, tab='crm') }}">{{ r.cname }}</a>{% else %}<span class="muted">(no property)</span>{% endif %}<div class="small muted">{{ r.ccity or '' }}</div></td>
+<td><input name="contact_name" value="{{ r.contact_name or '' }}" placeholder="Who?" style="min-width:120px"></td>
+<td><select name="kind" style="width:auto">{% set opts = how if r.kind in how else [r.kind] + how %}{% for k in opts %}<option {{ 'selected' if k==r.kind }}>{{ k }}</option>{% endfor %}</select></td>
+<td><select name="temp" style="width:auto"><option value="">-</option>{% for t in temps %}<option {{ 'selected' if r.temp==t }}>{{ t }}</option>{% endfor %}</select></td>
+<td class="small">{% if r.order_id %}<a href="{{ url_for('orders.view', oid=r.order_id) }}">{{ r.subject or ('Order #%s' % r.order_id) }}</a>{% else %}<a href="{{ url_for('crm.activity', aid=r.id) }}">{{ r.subject or r.kind }}</a>{% endif %}{% if r.notes %}<div class="muted">{{ r.notes[:90] }}</div>{% endif %}<span class="saved small ok" hidden> ✓ saved</span></td>
+</tr>{% else %}<tr><td colspan="6" class="empty">Nothing in these dates. Orders you put in show up here automatically.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}
+{% block scripts %}<script>
+(function(){
+  const tok = document.querySelector('meta[name=csrf-token]')?.content || '{{ csrf_token() }}';
+  document.querySelectorAll('#clog tr[data-id]').forEach(tr => {
+    tr.querySelectorAll('input,select').forEach(el => el.addEventListener('change', () => {
+      const fd = new FormData();
+      tr.querySelectorAll('input,select').forEach(e => fd.append(e.name, e.value));
+      fd.append('csrf_token', tok);
+      fetch('{{ url_for("crm.contacts_log") }}/' + tr.dataset.id, {method: 'POST', body: fd, headers: {'X-Requested-With': 'fetch'}})
+        .then(r => r.ok && (tr.querySelector('.saved').hidden = false));
+    }));
+  });
+})();
+</script>{% endblock %}

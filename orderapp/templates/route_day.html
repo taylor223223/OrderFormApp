@@ -51,6 +51,8 @@
 {% else %}<div class="empty">No stops yet. Add properties above, or from the Routes week view.</div>{% endfor %}
 {% if res.back %}<div class="legline">↓ {{ (res.back.s/60)|round|int }} min back to start</div>{% endif %}
 </div>
+{% if rows %}<div class="card" id="alongcard"><div class="row" style="justify-content:space-between"><h3 style="margin:0">🧭 Along the way</h3><span class="small muted">Properties near this route you could add</span></div>
+<div id="along" style="margin-top:6px"><div class="small muted">Looking for properties along the route…</div></div></div>{% endif %}
 <details class="card"><summary>Start point for this day</summary>
 <form method="post" action="{{ url_for('plan.day_settings', day=day) }}" class="grid g2" style="margin-top:8px">
 <div><label>Start address</label><input name="start_address" value="{{ res.start_address or '' }}"></div>
@@ -66,7 +68,7 @@
   const pts = {{ points|tojson }}, start = {{ start|tojson }}, geom = {{ geometry|tojson }};
   const el = document.getElementById('map'); if (!window.L) { el.innerHTML = '<div class="empty">Map unavailable.</div>'; return; }
   L.Icon.Default.imagePath = '{{ url_for("static", filename="leaflet/images/") }}';
-  const map = L.map(el).setView(start || [33.39, -111.93], 11);
+  const map = L.map(el).setView(start || [33.39, -111.93], 11); window.routeMap = map;
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'}).addTo(map);
   const b = [];
   if (start) { L.circleMarker(start, {radius: 9, color: '#14213d', fillColor: '#fca311', fillOpacity: 1}).addTo(map).bindPopup('Start'); b.push(start); }
@@ -82,6 +84,29 @@
   if (geom) L.polyline(geom, {color: '#1565c0', weight: 4}).addTo(map);
   else if (line.length > 1) L.polyline(line, {color: '#1565c0', weight: 3, dashArray: '6 6'}).addTo(map);
   if (b.length > 1) map.fitBounds(b, {padding: [30, 30]});
+})();
+(function(){
+  const box = document.getElementById('along'); if (!box) return;
+  let layer = null;
+  function load(url) {
+    box.style.opacity = .5;
+    fetch(url).then(r => r.text()).then(html => {
+      box.innerHTML = html; box.style.opacity = 1;
+      box.querySelectorAll('form[method=post]').forEach(f => {
+        const i = document.createElement('input'); i.type = 'hidden'; i.name = 'csrf_token'; i.value = CSRF; f.appendChild(i);
+      });
+      box.querySelectorAll('[data-along]').forEach(b => b.addEventListener('click', () => load(b.dataset.along)));
+      if (window.routeMap && window.L) {
+        if (layer) layer.remove();
+        layer = L.layerGroup().addTo(window.routeMap);
+        box.querySelectorAll('tr[data-lat]').forEach(tr => {
+          L.circleMarker([+tr.dataset.lat, +tr.dataset.lon], {radius: 6, color: '#7c3aed', fillColor: '#ede9fe', fillOpacity: .9})
+            .addTo(layer).bindPopup(tr.dataset.name);
+        });
+      }
+    }).catch(() => { box.innerHTML = '<div class="small muted">Couldn\'t load suggestions.</div>'; });
+  }
+  load('{{ url_for("plan.along", day=day) }}');
 })();
 </script>
 {% endblock %}

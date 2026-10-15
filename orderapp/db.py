@@ -109,6 +109,8 @@ DEFAULT_SETTINGS = {
     # morning delivery list email
     "notice_subject_words": "Order Received, Order Confirmation, Order Acknowledgement, Acknowledgment, Order Entered",
     "notice_auto": "1",
+    "contact_default_how": "In person",
+    "along_count": "5",
     "reply_confirm": "1",
     "reply_confirm_words": "got it, got this, received, recieved, will do, on it, entered, placed, confirmed, done, thanks, thank you, ok, okay, 10-4, sounds good",
     "delivery_subject_word": "Deliver",
@@ -117,7 +119,7 @@ DEFAULT_SETTINGS = {
 
 STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
             "Installed", "Completed", "On Hold", "Cancelled"]
-ACTIVITY_KINDS = ["Call", "Text", "Email", "Site visit", "Drop-in", "Meeting", "Trade show", "Voicemail", "Other"]
+ACTIVITY_KINDS = ["In person", "Call", "Text", "Email", "Site visit", "Drop-in", "Meeting", "Trade show", "Voicemail", "Other"]
 CUSTOMER_STATUSES = ["Lead", "Prospect", "Active", "Inactive"]
 DEAL_STAGES = ["Lead", "Contacted", "Quote sent", "Negotiating", "Won", "Lost"]
 TOPICS = ["Doors", "Pre-hung doors", "Bi-pass doors", "Screen doors", "Window screens", "Vertical blinds",
@@ -194,6 +196,7 @@ MIGRATIONS = {
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
     "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
+    "activities": {"order_id": "INTEGER", "temp": "TEXT"},
 }
 
 # quick picks for "what am I estimating" on a route stop

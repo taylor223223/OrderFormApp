@@ -82,7 +82,7 @@
   </div>
   <div><h2>Recent activity</h2>
     <div class="tablewrap"><table>
-      {% for o in recent %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }} {{ o.customer or '(no customer)' }}</a><div class="small muted">{{ o.title }}{% if o.po %} - PO {{ o.po }}{% endif %}</div></td><td><span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span></td><td class="small muted nowrap">{{ o.updated[:16] }}</td></tr>
+      {% for o in recent %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }} {{ o.customer or '(no customer)' }}</a><div class="small muted">{{ o.title }}{% if o.po %} - PO {{ o.po }}{% endif %}</div></td><td><span class="tag st-{{ o.status.split()[0] }}">{{ o.status }}</span></td><td class="small muted nowrap">{{ (o.updated or o.created or '')[:16] }}</td></tr>
       {% else %}<tr><td class="empty">No orders yet.</td></tr>{% endfor %}
     </table></div>
   </div>

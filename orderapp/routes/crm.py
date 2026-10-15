@@ -38,11 +38,11 @@ def _contact_options():
 
 
 def log_activity(customer_id, kind, when, contact_id=None, contact_name="", location="", subject="",
-                 topics="", notes="", outcome=""):
+                 topics="", notes="", outcome="", temp=""):
     return x("""INSERT INTO activities(customer_id, contact_id, contact_name, kind, occurred_at, location, subject,
-                topics, notes, outcome, owner, created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                topics, notes, outcome, owner, created, temp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
              (customer_id, contact_id, contact_name, kind, when, location, subject, topics, notes, outcome,
-              session.get("username"), now()))
+              session.get("username"), now(), temp or None))
 
 
 # ---------------------------------------------------------------- dashboard
@@ -90,14 +90,15 @@ def log():
                            (cid, contact_name, f.get("contact_role", ""), f.get("contact_phone", ""),
                             f.get("contact_email", "")))
     location = f.get("location", "").strip()
-    if not location and cid and kind in ("Site visit", "Drop-in", "Meeting"):
+    if not location and cid and kind in ("In person", "Site visit", "Drop-in", "Meeting"):
         c = q("SELECT address, city FROM customers WHERE id=?", (cid,), one=True)
         location = ", ".join(v for v in [c["address"], c["city"]] if v) if c else ""
     topics = ", ".join(f.getlist("topics"))
+    temp = f.get("temp") if f.get("temp") in ("Warm", "Cold") else ""
     aid = log_activity(cid, kind, when, contact_id, contact_name, location, f.get("subject", "").strip(), topics,
-                       f.get("notes", "").strip(), f.get("outcome", "").strip())
+                       f.get("notes", "").strip(), f.get("outcome", "").strip(), temp)
     # logging a visit at a property that's on today's route checks that stop off
-    if cid and kind in ("Site visit", "Drop-in", "Meeting"):
+    if cid and kind in ("In person", "Site visit", "Drop-in", "Meeting"):
         st = q("""SELECT * FROM route_stops WHERE customer_id=? AND day=? AND status='Planned'
                   ORDER BY position LIMIT 1""", (cid, date.today().isoformat()), one=True)
         if st:
@@ -126,6 +127,79 @@ def log():
         flash(" ".join(msgs), "ok")
     nxt = f.get("next") or ""
     return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("crm.home"))
+
+
+# ---------------------------------------------------------------- contact log
+@bp.route("/crm/contacts")
+@login_required
+def contacts_log():
+    """Rolling contact log - every property / person you were in touch with, newest first."""
+    from .. import contact_log as CL
+    added = CL.sync_orders()
+    a = request.args
+    frm = a.get("from") or (date.today() - timedelta(days=30)).isoformat()
+    to = a.get("to") or date.today().isoformat()
+    rows = CL.entries(frm, to, a.get("q", "").strip(), a.get("how", ""), a.get("temp", ""))
+    if a.get("csv"):
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Date", "Property", "Contact person", "How", "Warm/Cold", "What", "Notes", "Order #"])
+        for r in rows:
+            w.writerow([r["occurred_at"][:10], r["cname"] or "", r["contact_name"] or "", r["kind"], r["temp"] or "",
+                        r["subject"] or "", (r["notes"] or "").replace("\n", " "), r["order_id"] or ""])
+        from flask import Response
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=Contact log {frm} to {to}.csv"})
+    return render_template("crm_contacts.html", rows=rows, frm=frm, to=to, how=CL.HOW, temps=CL.TEMPS,
+                           kinds=ACTIVITY_KINDS, args=a, added=added, week=CL.week_counts(),
+                           customers=_customers(), now_local=datetime.now().strftime("%Y-%m-%dT%H:%M"))
+
+
+@bp.route("/crm/contacts/<int:aid>", methods=["POST"])
+@login_required
+def contact_edit(aid):
+    """Inline edit from the contact log (how, warm/cold, who, date). Answers JSON for the auto-save."""
+    from flask import jsonify
+    r = q("SELECT * FROM activities WHERE id=?", (aid,), one=True) or abort(404)
+    f = request.form
+    kind = f.get("kind", r["kind"])
+    if kind not in ACTIVITY_KINDS:
+        kind = r["kind"]
+    temp = f.get("temp", r["temp"] or "")
+    temp = temp if temp in ("Warm", "Cold") else None
+    when = (f.get("date") or r["occurred_at"][:10]) + r["occurred_at"][10:]
+    x("UPDATE activities SET kind=?, temp=?, contact_name=?, occurred_at=? WHERE id=?",
+      (kind, temp, f.get("contact_name", r["contact_name"] or "").strip(), when, aid))
+    if f.get("contact_name", "").strip() and r["customer_id"] and f.get("save_contact"):
+        if not q("SELECT 1 FROM contacts WHERE customer_id=? AND lower(name)=lower(?)",
+                 (r["customer_id"], f["contact_name"].strip()), one=True):
+            x("INSERT INTO contacts(customer_id, name, role) VALUES (?,?,?)",
+              (r["customer_id"], f["contact_name"].strip(), f.get("role", "").strip()))
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True})
+    flash("Saved.", "ok")
+    return redirect(request.referrer or url_for("crm.contacts_log"))
+
+
+@bp.route("/crm/contacts/add", methods=["POST"])
+@login_required
+def contact_add():
+    """Add one or more people at a property in one go (one log entry per person)."""
+    f = request.form
+    cid = f.get("customer_id", type=int)
+    if not cid:
+        flash("Pick a property.", "error")
+        return redirect(url_for("crm.contacts_log"))
+    kind = f.get("kind") if f.get("kind") in ACTIVITY_KINDS else "In person"
+    temp = f.get("temp") if f.get("temp") in ("Warm", "Cold") else ""
+    when = (f.get("occurred_at") or datetime.now().strftime("%Y-%m-%dT%H:%M")).replace("T", " ")
+    names = [n.strip() for n in (f.get("people") or "").replace(";", ",").split(",") if n.strip()] or [""]
+    for nm in names:
+        k = q("SELECT id FROM contacts WHERE customer_id=? AND lower(name)=lower(?)", (cid, nm), one=True) if nm else None
+        log_activity(cid, kind, when, k["id"] if k else None, nm, subject=f.get("subject", "").strip(),
+                     notes=f.get("notes", "").strip(), temp=temp)
+    flash(f"Logged {len(names)} contact(s).", "ok")
+    return redirect(url_for("crm.contacts_log"))
 
 
 # ---------------------------------------------------------------- activities

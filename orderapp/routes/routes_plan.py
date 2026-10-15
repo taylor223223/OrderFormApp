@@ -490,6 +490,70 @@ def stop_action(sid):
     return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.day", day=day))
 
 
+@bp.route("/routes/day/<day>/along")
+@login_required
+def along(day):
+    """Suggested stops along the way (HTML piece loaded into the route page). ?skip=ids for Refresh, ?wide=1."""
+    from .. import along as AL
+    _day(day) or abort(404)
+    skip = [int(v) for v in (request.args.get("skip") or "").split(",") if v.strip().isdigit()]
+    res = AL.suggest(day, skip=skip, wide=bool(request.args.get("wide")))
+    return render_template("_along.html", day=day, res=res, skip=skip, wide=bool(request.args.get("wide")))
+
+
+@bp.route("/routes/day/<day>/along/add", methods=["POST"])
+@login_required
+def along_add(day):
+    _day(day) or abort(404)
+    ids = [int(v) for v in request.form.getlist("customer_id") if v.isdigit()]
+    if not ids:
+        flash("Tick the properties you want to add.", "error")
+        return redirect(url_for("plan.day", day=day))
+    for cid in ids:
+        add_stop(day, customer_id=cid, purpose=request.form.get(f"why_{cid}", "") or "On the way",
+                 source="Along the way")
+    try:
+        plan_day(day)
+    except geo.GeoError:
+        pass
+    flash(f"Added {len(ids)} stop(s), each slotted in where it adds the least driving.", "ok")
+    return redirect(url_for("plan.day", day=day))
+
+
+@bp.route("/routes/day/<day>/along/find", methods=["POST"])
+@login_required
+def along_find(day):
+    """Look up map points for properties in the same cities / zips as today's stops (background)."""
+    import threading
+    from flask import current_app
+    from .. import along as AL
+    _day(day) or abort(404)
+    cities, zips = AL.cities_on_route(day)
+    rows = [c for c in q("SELECT * FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''")
+            if (c["city"] or "").strip().lower() in cities or (c["zip"] or "")[:5] in zips]
+    if not rows:
+        flash("Every property in these areas is already on the map - try 'Check further out'.", "info")
+        return redirect(url_for("plan.day", day=day))
+    app = current_app._get_current_object()
+    ids = [c["id"] for c in rows[:150]]
+
+    def work():
+        with app.app_context():
+            for cid in ids:
+                c = q("SELECT * FROM customers WHERE id=?", (cid,), one=True)
+                try:
+                    pt = geo.geocode(geo.full_address(c), _key(), get_db())
+                except geo.GeoError:
+                    break
+                if pt:
+                    x("UPDATE customers SET lat=?, lon=?, geo_address=? WHERE id=?",
+                      (pt[0], pt[1], geo.full_address(c), c["id"]))
+    threading.Thread(target=work, daemon=True).start()
+    flash(f"Finding map locations for {len(ids)} more properties near this route (about 1 a second). "
+          "Click Refresh on the suggestions in a minute or two.", "ok")
+    return redirect(url_for("plan.day", day=day))
+
+
 @bp.route("/routes/geocode_all", methods=["POST"])
 @login_required
 def geocode_all():

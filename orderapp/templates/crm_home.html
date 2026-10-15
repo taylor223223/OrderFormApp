@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}CRM{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>CRM</h1><div class="muted">Who you talked to, where and about what, plus follow-ups and deals.</div></div>
-<div class="row"><a class="btn" href="{{ url_for('crm.activities') }}">All activity</a><a class="btn" href="{{ url_for('crm.tasks') }}">Tasks</a><a class="btn" href="{{ url_for('crm.pipeline') }}">Pipeline</a><a class="btn primary" href="{{ url_for('crm.report') }}">Weekly report</a></div></div>
+<div class="row"><a class="btn primary" href="{{ url_for('crm.contacts_log') }}">📒 Contact log</a><a class="btn" href="{{ url_for('crm.activities') }}">All activity</a><a class="btn" href="{{ url_for('crm.tasks') }}">Tasks</a><a class="btn" href="{{ url_for('crm.pipeline') }}">Pipeline</a><a class="btn" href="{{ url_for('crm.report') }}">Weekly report</a></div></div>
 {% set next_url = url_for('crm.home') %}{% include '_quick_log.html' %}
 <div class="grid g2">
   <div>
