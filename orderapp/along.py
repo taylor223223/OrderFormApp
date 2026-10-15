@@ -129,47 +129,63 @@ def why(f):
     return out
 
 
-def suggest(day, n=None, skip=(), wide=False):
-    """Up to n properties along the day's route, best first. skip = ids already shown (for Refresh).
-    Returns {"rows": [...], "more": int, "no_points": bool, "mapped": int, "unmapped": int}."""
-    n = n or int(setting("along_count") or 5)
+SORTS = {"best": "Best fit", "closest": "Closest to route", "sales": "Sales (12 mo)",
+         "last_contact": "Longest since contact", "last_order": "Longest since order", "name": "Name"}
+RADII = [1, 3, 5, 10]
+
+
+def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None):
+    """Every property near the day's route (within `radius` extra miles), with its sales, last order and last
+    contact as information - nothing is left out for missing data. Sorted by `sort`, `n` per page.
+    Returns {"rows", "page", "pages", "total", "no_points", "mapped", "unmapped", ...}."""
+    n = n or int(setting("along_count") or 10)
+    radius = float(radius) if radius else (WIDE_MI if wide else NORMAL_MI)
     pts = route_points(day)
     on_route = {r["customer_id"] for r in q("SELECT customer_id FROM route_stops WHERE day=?", (day,))
                 if r["customer_id"]}
     mapped = q("""SELECT id, name, address, city, lat, lon, status FROM customers WHERE lat IS NOT NULL
                   AND coalesce(status,'') NOT IN ('Lost','Inactive','Do not contact')""")
     unmapped = q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''", one=True)["n"]
+    base = {"rows": [], "page": 1, "pages": 0, "total": 0, "more": 0, "mapped": len(mapped), "unmapped": unmapped,
+            "sort": sort, "radius": radius}
     if len(pts) < 2:     # need the start point + at least one stop to know the way
-        return {"rows": [], "more": 0, "no_points": True, "mapped": len(mapped), "unmapped": unmapped}
-    limit = WIDE_MI if wide else NORMAL_MI
+        return dict(base, no_points=True)
     near = []
     for c in mapped:
         if c["id"] in on_route:
             continue
         extra, leg = detour(pts, (c["lat"], c["lon"]))
-        if extra <= limit:
+        if extra <= radius:
             near.append((extra, leg, c))
     near.sort(key=lambda t: t[0])
-    near = near[:200]
+    near = near[:600]
     fx = facts([c for _, _, c in near])
     rows = []
     for extra, leg, c in near:
         f = fx[c["id"]]
         ds = _days_since(f["last_contact"])
-        # rank: closer is better; good accounts and ones you haven't seen in a while move up
+        # "best fit": closer is better; good accounts and ones you haven't seen in a while move up
         value = min(f["sales12"] / 1500.0, 4.0) + (1.5 if ds is None else min(ds / 30.0, 3.0))
         if f["temp"] == "Cold" and not f["sales_all"]:
             value += 0.5
-        score = extra - value * 0.8
         rows.append({"c": c, "extra_mi": round(extra, 1), "extra_min": max(1, round(extra / MPH * 60)),
-                     "leg": leg, "f": f, "why": why(f), "score": score})
-    rows.sort(key=lambda r: r["score"])
-    fresh = [r for r in rows if r["c"]["id"] not in set(skip)]
-    if not fresh and rows:          # went through them all - start over
-        fresh = rows
-    show = fresh if wide else fresh[:n]
-    return {"rows": show[:40] if wide else show, "more": max(0, len(fresh) - len(show)), "no_points": False,
-            "mapped": len(mapped), "unmapped": unmapped, "total": len(rows)}
+                     "leg": leg, "f": f, "why": why(f), "score": extra - value * 0.8, "days": ds,
+                     "order_days": _days_since(f["last_order"])})
+    big = 10 ** 6
+    keys = {"best": lambda r: r["score"], "closest": lambda r: r["extra_mi"],
+            "sales": lambda r: (-r["f"]["sales12"], -r["f"]["sales_all"], r["extra_mi"]),
+            "last_contact": lambda r: (-(big if r["days"] is None else r["days"]), r["extra_mi"]),
+            "last_order": lambda r: (-(big if r["order_days"] is None else r["order_days"]), r["extra_mi"]),
+            "name": lambda r: r["c"]["name"].lower()}
+    rows.sort(key=keys.get(sort, keys["best"]))
+    if skip:                      # older "Refresh" links: show the ones not seen yet first
+        rows = [r for r in rows if r["c"]["id"] not in set(skip)] + [r for r in rows if r["c"]["id"] in set(skip)]
+    pages = max(1, -(-len(rows) // n))
+    page = min(max(1, int(page or 1)), pages)
+    show = rows[(page - 1) * n: page * n]
+    return dict(base, rows=show, page=page, pages=pages, total=len(rows), no_points=False,
+                more=max(0, len(rows) - page * n), first=(page - 1) * n + 1 if show else 0,
+                last=(page - 1) * n + len(show))
 
 
 def cities_on_route(day):

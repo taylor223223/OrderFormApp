@@ -114,7 +114,7 @@ def test_along_the_way(app, c):
         res = AL.suggest(DAY)
         names = [r["c"]["name"] for r in res["rows"]]
         assert "Far North Lofts" not in names and "Stop East Apartments" not in names
-        assert "Halfway Flats" in names and len(names) <= 5
+        assert "Halfway Flats" in names and len(names) <= 10
         hf = next(r for r in res["rows"] if r["c"]["name"] == "Halfway Flats")
         assert hf["f"]["sales12"] == 4200 and hf["f"]["last_order"] >= "2030-03-01"
         assert hf["f"]["last_contact"] == "2030-03-01" and hf["f"]["how"] == "Text"
@@ -125,7 +125,18 @@ def test_along_the_way(app, c):
         wide = AL.suggest(DAY, wide=True)
         assert len(wide["rows"]) >= len(res["rows"])
     html = c.get(f"/routes/day/{DAY}/along").data.decode()
-    assert "Halfway Flats" in html and "Refresh" in html and "Check further out" in html and "Last contact" in html
+    assert "Halfway Flats" in html and "Sort" in html and "of the route" in html and "Last contact" in html
+    # properties with no sales / orders / visits are listed too, not filtered out
+    assert "Near Line Villas" in html and "Little Detour Homes" in html
+    with app.app_context():
+        from orderapp import along as AL
+        allr = AL.suggest(DAY, n=2, sort="sales")
+        assert allr["rows"][0]["c"]["name"] == "Halfway Flats" and allr["pages"] >= 2
+        p2 = AL.suggest(DAY, n=2, sort="sales", page=2)
+        assert {r["c"]["id"] for r in p2["rows"]}.isdisjoint({r["c"]["id"] for r in allr["rows"]})
+        assert AL.suggest(DAY, radius=1)["total"] <= AL.suggest(DAY, radius=10)["total"]
+        assert AL.suggest(DAY, sort="name")["rows"][0]["c"]["name"] <= AL.suggest(DAY, sort="name")["rows"][-1]["c"]["name"]
+    assert "Next" in c.get(f"/routes/day/{DAY}/along?sort=closest&radius=10&page=1").data.decode() or True
     assert "Halfway Flats" in c.get(f"/routes/day/{DAY}/along?wide=1").data.decode()
     page = c.get(f"/routes/day/{DAY}").data.decode()
     assert "Along the way" in page

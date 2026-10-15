@@ -507,8 +507,10 @@ def along(day):
     from .. import along as AL
     _day(day) or abort(404)
     skip = [int(v) for v in (request.args.get("skip") or "").split(",") if v.strip().isdigit()]
-    res = AL.suggest(day, skip=skip, wide=bool(request.args.get("wide")))
-    return render_template("_along.html", day=day, res=res, skip=skip, wide=bool(request.args.get("wide")))
+    a = request.args
+    res = AL.suggest(day, skip=skip, wide=bool(a.get("wide")), sort=a.get("sort", "best"),
+                     page=a.get("page", 1, type=int), radius=a.get("radius", type=float))
+    return render_template("_along.html", day=day, res=res, sorts=AL.SORTS, radii=AL.RADII)
 
 
 @bp.route("/routes/day/<day>/along/add", methods=["POST"])
