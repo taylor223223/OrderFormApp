@@ -415,7 +415,7 @@ def _door_meas_rows(pen, n, fields, y):
             col = (D_R - D_L) / per
             for j, f in enumerate(group[i:i + per]):
                 x0 = D_L + 4 + j * col
-                lw = pen.text(x0, y, f["label"] + ":")
+                lw = pen.text(x0, y, f.get("pdf_label", f["label"]) + ":")
                 pen.field(tname(n, f["key"]), x0 + lw + 4, y, x0 + col - 10)
     if comments:
         if not first:
@@ -467,7 +467,8 @@ def door_block_height(fields):
 
 
 def door_per_page(fields):
-    return max(1, int((D_BOTTOM - D_TOP) // (door_block_height(fields) + 8)))
+    """Lines that fit: n blocks with 8pt between them (no gap needed after the last)."""
+    return max(1, int((D_BOTTOM - D_TOP + 8) // (door_block_height(fields) + 8)))
 
 
 def build_door_style(spec, out_path, forms_dir):

@@ -687,12 +687,18 @@ _LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
 
 
 def _hinge_cut_fields():
-    """Recessed (cup) hinge cuts on cabinet doors: yes/no, how far in from the edge, and the cup size if needed."""
+    """Concealed (cup) hinge bores on cabinet doors: yes/no, cup size, and where each hinge goes - top hinge from the
+    top of the door to the hinge center, bottom hinge from the bottom of the door to its center, a center hinge (if
+    any) from the top of the door to its center."""
     yes = ("hinge_cut", ["Yes"])
-    return [_gc("hinge_cut", "Recessed Hinge Cuts", ["Yes", "No"]),
+    return [_gc("hinge_cut", "Concealed Hinge Bores", ["Yes", "No"]),
             _gc("hinge_cut_dia", "Cup Diameter", ['35mm', '26mm', '40mm'], show_if=yes),
-            _g("hinge_cut_edge", "Hinge Cuts From Edge (in)", measure=True, show_if=yes,
-               placeholder="e.g. 3 (top & bottom)")]
+            _g("hinge_top", "Top Hinge: Top of Door to Center (in)", measure=True, show_if=yes, placeholder="e.g. 3",
+               pdf_label="Top Hinge from Top"),
+            _g("hinge_bottom", "Bottom Hinge: Bottom of Door to Center (in)", measure=True, show_if=yes,
+               placeholder="e.g. 3", pdf_label="Btm Hinge from Btm"),
+            _g("hinge_center", "Center Hinge: Top of Door to Center (in)", measure=True, show_if=yes,
+               placeholder="only if there's a 3rd hinge", pdf_label="Ctr Hinge from Top")]
 
 # Roller shade / sun screen fabrics - what AIS has invoiced (company sales history 2023-2026)
 SHADE_BRANDS = ["Vertilux (VX)", "Mermet", "Phifer (Sheerweave / Suntex)", "Coolaroo", "Other"]

@@ -260,14 +260,16 @@ def choices(pg, k, x, y, groups, width=R - CX - 4):
 
 
 def hinge_cut_rows(pg, k, x, y, x1=R - 6):
-    """Cabinet doors: where the recessed (cup) hinge cuts go and the cup size, under the HINGE CUTS check boxes."""
-    y += RS
-    lw = pg.text(x, y, "HINGE CUTS - INCHES IN FROM EDGE:", 7.5, bold=True)
-    pg.field(f"{k} Hinge Cuts From Edge", (x + lw + 4, y - 9, x1, y + 3), size=8)
-    y += RS
-    lw = pg.text(x, y, "CUP DIAMETER (if needed):", 7.5, bold=True)
-    pg.field(f"{k} Hinge Cup Diameter", (x + lw + 4, y - 9, x1, y + 3), size=8)
-    return y + 4
+    """Cabinet doors: concealed hinge bore locations (to the hinge CENTER) and the cup size."""
+    for label, name in (("TOP HINGE - top of door to center:", "Top Hinge"),
+                        ("BOTTOM HINGE - bottom of door to center:", "Bottom Hinge"),
+                        ("CENTER HINGE (if any) - top of door to center:", "Center Hinge"),
+                        ("CUP DIAMETER (if needed):", "Hinge Cup Diameter")):
+        y += RS
+        lw = pg.text(x, y, label, 7, bold=True)
+        pg.field(f"{k} {name}", (x + lw + 4, y - 9, x1, y + 3), size=8)
+    pg.text(x, y + 10, 'Measure in inches to the center of each hinge.', 6.5, color=DARK)
+    return y + 14
 
 
 def notes_row(pg, k, y, x1=CX - 10):
@@ -1555,7 +1557,7 @@ class PrefabCabinets(Form):
         yc = choices(pg, k, CX, top - 4, [
             ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
             ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
-            dict(title="RECESSED HINGE CUTS?", opts=["Yes", "No"], cols=2, name="Hinge Cuts"),
+            dict(title="CONCEALED HINGE BORES?", opts=["Yes", "No"], cols=2, name="Hinge Cuts"),
         ])
         yc = hinge_cut_rows(pg, k, CX, yc)
         yc = choices(pg, k, CX, yc - 4, [
@@ -1608,7 +1610,7 @@ class CustomCabinets(Form):
             ("CABINET:", ["Base", "Sink base", "Wall", "Tall / pantry", "Vanity"], 2),
             ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
             ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
-            dict(title="RECESSED HINGE CUTS?", opts=["Yes", "No"], cols=2, name="Hinge Cuts"),
+            dict(title="CONCEALED HINGE BORES?", opts=["Yes", "No"], cols=2, name="Hinge Cuts"),
         ])
         yc = hinge_cut_rows(pg, k, CX, yc)
         yc = choices(pg, k, CX, yc - 4, [
