@@ -1030,7 +1030,9 @@ def door_card(pg, k, n, y, item, exterior):
     yc = visual_options(pg, k, "Swing", CX + 8, yc + 6, 180,
                         [("Hinges LEFT", lambda pg, r: swing_icon(pg, r.x0 - 2, r.y0, True)),
                          ("Hinges RIGHT", lambda pg, r: swing_icon(pg, r.x0 - 2, r.y0, False))], icon_h=42)
-    groups = [("DOOR THICKNESS:", ['1-3/8" (most inside doors)', '1-3/4" (most outside doors)'], 1)]
+    groups = [("DOOR THICKNESS:", ['1-3/8" (inside)', '1-3/4" (outside)'], 2),
+              dict(title="DOOR EDGE (long side):", cols=3, name="Edge",
+                   opts=["Beveled", "Square", "Not sure"])]
     if exterior:
         groups += [("DOOR OPENS:", ["In (into the unit)", "Out"], 2)]
     else:
@@ -1038,7 +1040,7 @@ def door_card(pg, k, n, y, item, exterior):
     groups += [("NEED THE FRAME TOO (pre-hung)?", ["No - door only", "Yes - door + frame"], 2),
                ("HARDWARE:", (["None", "Entry knob", "Deadbolt", "Peephole"] if exterior
                               else ["None", "Passage (no lock)", "Privacy (lock)"]), 2),
-               dict(title='HINGE SIZE (how tall):', opts=['3-1/2"', '4"', "Not sure", "Other"], cols=2,
+               dict(title='HINGE SIZE (how tall):', opts=['3-1/2"', '4"', "Not sure", "Other"], cols=4,
                     other=("Other",))]
     yc = choices(pg, k, CX, yc - 4, groups)
     # hinge corners, with a little picture of each

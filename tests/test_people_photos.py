@@ -292,3 +292,33 @@ def test_cabinet_hinge_cuts(app):
     assert {"3-1/2", "3", "15-1/2"} <= set(vals.values())
     on = [n for n, v in vals.items() if v in ("Yes", True, "On") and "hinge_cut" in n.lower()]
     assert "L0.hinge_cut.yes" in on and "L0.hinge_cut_dia.35mm" in on, on
+
+
+def test_door_edge_full_book_vs_beveled(app, c):
+    from orderapp.door_edge import BEVELED, FULL_BOOK, guess, standard_size
+    assert guess("30", "80") == FULL_BOOK and guess("36", "80") == FULL_BOOK
+    assert guess("29-3/4", "79-1/2") == BEVELED and guess("35 3/4", "79 1/2") == BEVELED
+    assert guess("31", "78") == "" and standard_size("30", "80") == "29-3/4 x 79-1/2"
+    from orderapp.catalog import FORMS
+    for fk in ("door", "new_door", "prehung"):
+        keys = [f["key"] for f in FORMS[fk]["blocks"][0]]
+        assert keys.index("door_edge") == keys.index("height") + 1, fk
+    # saving fills the edge from the size when it wasn't picked; a picked one is kept
+    payload = {"header": {"name": "Mesa Ridge Homes", "po": "E-1"}, "blocks": [
+        {"qty": "1", "unit": "11", "width": "30", "height": "80"},
+        {"qty": "1", "unit": "12", "width": "35-3/4", "height": "79-1/2"},
+        {"qty": "1", "unit": "13", "width": "30", "height": "80", "door_edge": BEVELED}]}
+    r = c.post("/orders/save", data={"csrf_token": c.t, "form_key": "door", "customer_id": app.cid2,
+                                     "payload": json.dumps(payload), "action": "pdf"})
+    oid = int(r.headers["Location"].rsplit("/", 1)[1])
+    with app.app_context():
+        from orderapp.db import loads, q
+        o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+        blocks = loads(o["data"])["blocks"]
+    assert [b["door_edge"] for b in blocks] == [FULL_BOOK, BEVELED, BEVELED]
+    import pymupdf as fitz
+    txt = " ".join(str(w.field_value) for p in fitz.open(o["pdf_path"]) for w in (p.widgets() or []))
+    txt += " ".join(p.get_text() for p in fitz.open(o["pdf_path"]))
+    assert "Full Book" in txt and "Beveled" in txt
+    ed = c.get(f"/orders/editor?form=door&customer={app.cid2}").get_data(as_text=True)
+    assert "function doorEdge" in ed and "Full Book size" in ed

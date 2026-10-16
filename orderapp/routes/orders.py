@@ -131,6 +131,9 @@ def save():
     if form_key not in FORMS:
         abort(400)
     data = loads(request.form.get("payload"), {})
+    if any(f["key"] == "door_edge" for f in FORMS[form_key]["blocks"][0]):
+        from ..door_edge import fill_blocks
+        fill_blocks(data.get("blocks"))      # 30 x 80 -> Full Book, 29-3/4 x 79-1/2 -> Beveled (if not picked)
     oid = request.form.get("order_id", type=int)
     cid = request.form.get("customer_id", type=int)
     action = request.form.get("action", "save")

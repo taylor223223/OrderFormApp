@@ -158,6 +158,35 @@ function refreshBlock(el){
 }
 document.addEventListener('click', e => { const b = e.target.closest('.opt-photo'); if (b) b.classList.toggle('big'); });
 
+// Door edge: 30 x 80 / 36 x 80 = Full Book (square edge); 29-3/4 x 79-1/2 = standard Beveled edge
+const EDGE_BEV = 'Beveled Edge (standard)', EDGE_FULL = 'Full Book (square edge)';
+function inchesOf(v){
+  const s = String(v || '').replace(/["]/g, '').replace(/½/g, ' 1/2').replace(/¼/g, ' 1/4').replace(/¾/g, ' 3/4').trim();
+  const m = s.match(/^(\d+(?:\.\d+)?)(?:\s*[- ]\s*(\d+)\/(\d+))?$/);
+  return m ? parseFloat(m[1]) + (m[2] ? m[2] / m[3] : 0) : null;
+}
+function fracOf(v){ const w = Math.floor(v), r = Math.round((v - w) * 8) / 8;
+  const n = {0.125:'1/8',0.25:'1/4',0.375:'3/8',0.5:'1/2',0.625:'5/8',0.75:'3/4',0.875:'7/8'}[r]; return w + (n ? '-' + n : ''); }
+function doorEdge(el, target){
+  const sel = el.querySelector('[data-k="door_edge"]');
+  if (!sel) return;
+  if (target === sel) { sel.dataset.auto = ''; }
+  const w = inchesOf((el.querySelector('[data-k="width"]') || {}).value), h = inchesOf((el.querySelector('[data-k="height"]') || {}).value);
+  let guess = '', hint = '';
+  if (w && h && w === Math.floor(w) && [80, 84, 96].includes(h)) {
+    guess = EDGE_FULL;
+    hint = `${fracOf(w)} x ${fracOf(h)} is a Full Book size. The standard beveled-edge door is ${fracOf(w - 0.25)} x ${fracOf(h - 0.5)}.`;
+  } else if (w && h && [79.5, 83.5, 95.5].includes(h)) {
+    guess = EDGE_BEV;
+    hint = `${fracOf(w)} x ${fracOf(h)} is a standard beveled-edge door size.`;
+  }
+  if (guess && (!sel.value || sel.dataset.auto === '1') && target !== sel) { sel.value = guess; sel.dataset.auto = '1'; }
+  const wrap = sel.closest('[data-f]');
+  let tip = wrap.querySelector('.edgehint');
+  if (!tip) { tip = document.createElement('div'); tip.className = 'edgehint small'; tip.style.color = '#92400e'; wrap.appendChild(tip); }
+  tip.textContent = hint;
+}
+
 let blockCount = 0;
 function addBlock(values, predictedKeys){
   const bi = blockCount++;
@@ -172,8 +201,8 @@ function addBlock(values, predictedKeys){
      <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit').map(f => fieldHTML(f, bi)).join('')}</div>`;
   $('#blocks').appendChild(el);
   setBlock(el, values || {}, predictedKeys);
-  el.addEventListener('input', ev => { onUserEdit(el, ev.target); refreshBlock(el); });
-  el.addEventListener('change', ev => { onUserEdit(el, ev.target); refreshBlock(el); });
+  el.addEventListener('input', ev => { onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); });
+  el.addEventListener('change', ev => { onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); });
   el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
   el.querySelector('[data-act=clear]').onclick = () => { setBlock(el, {}, null, true); dirty = true; };
   el.querySelector('[data-act=dup]').onclick = () => { const v = getBlock(el); const n = addBlock(v); el.after(n); renumber(); dirty = true; };
@@ -291,6 +320,7 @@ $('#custSel').onchange = async e => {
 const initial = (DATA.blocks && DATA.blocks.length) ? DATA.blocks : [];
 const fromEmail = {{ 'true' if order and order.source == 'email' and order.status == 'Draft' else 'false' }};
 initial.forEach(b => addBlock(b, fromEmail ? Object.keys(b) : null));
+document.querySelectorAll('#blocks .blk').forEach(el => doorEdge(el, null));
 for (let i = initial.length; i < SPEC.blocks_per_page; i++) addBlock({});
 
 document.querySelectorAll('[data-h], #comments, #sales_rep').forEach(i => i.addEventListener('input', () => dirty = true));

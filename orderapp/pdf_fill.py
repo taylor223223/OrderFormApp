@@ -218,6 +218,9 @@ def _fill_block(page, idx, fields, block, notes, line_no):
                 notes.append(f"Line {line_no} {f['label']}: {val}")
                 continue
             target = dict((o[0], o[1]) for o in f["options"])[opt]
+            if target is None and f.get("overlay"):     # no check box on this form: print it at a set spot
+                _overlay_text(page, f, f"{f['label']}: {opt}")
+                continue
             if f.get("note_always") or target is None:
                 notes.append(f"Line {line_no} {f['label']}: {val if target is None else opt}")
             if target is None:

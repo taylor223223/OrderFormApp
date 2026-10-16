@@ -611,6 +611,17 @@ def _prehung_fields():
     ]
 
 
+def _door_edge_field():
+    """Beveled (standard, e.g. 29-3/4 x 79-1/2) or Full Book (square, e.g. 30 x 80). Printed in the line's comments."""
+    from .door_edge import EDGES
+    return _x("door_edge", "Door Edge", "choice", [(e, None) for e in EDGES], edge_hint=True)
+
+
+def _after_height(block, extra):
+    i = next((n for n, f in enumerate(block) if f["key"] == "height"), len(block) - 1)
+    return block[:i + 1] + extra + block[i + 1:]
+
+
 def _boxed(fields, names):
     """Give app-only fields their boxes on a company form that now has them (see form_patches)."""
     out = []
@@ -644,6 +655,11 @@ FORMS["door"]["blocks"] = [b + _boxed(_prehung_fields() + _door_hardware_fields(
                            for b in FORMS["door"]["blocks"]]
 FORMS["new_door"]["blocks"] = [b + _prehung_fields() + _door_hardware_fields() for b in FORMS["new_door"]["blocks"]]
 FORMS["prehung"]["blocks"] = [b + _boxed(_door_hardware_fields(), _door_names) for b in FORMS["prehung"]["blocks"]]
+for _fk in ("door", "new_door", "prehung"):   # full book vs beveled edge (from the size)
+    FORMS[_fk]["blocks"] = [_after_height(b, [_door_edge_field()]) for b in FORMS[_fk]["blocks"]]
+# the New Door form has no comments box: print the edge under the Width box
+FORMS["new_door"]["blocks"] = [[dict(f, **_ov(48, 670, 215, 9.5)) if f["key"] == "door_edge" else f for f in b]
+                               for b in FORMS["new_door"]["blocks"]]
 def _shift_overlays(fields, y_from, dy):
     """Things the app writes at fixed spots (no box on the form) move with the form's lower half."""
     for f in fields:
