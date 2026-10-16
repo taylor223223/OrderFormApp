@@ -42,7 +42,7 @@ def import_report():
     if f and f.filename:
         raw = f.read()
         text += "\n" + (raw.decode("utf-8-sig", errors="replace"))
-    rows = H.parse_report(text)
+    rows = H.parse_report(text.strip())     # a picked CSV must start at its header row
     if not rows:
         flash("Couldn't find any accounts in that. Paste the rows like: Name  1,234.56  TA  ACCOUNT HOLD", "error")
         return redirect(url_for("holds.index"))

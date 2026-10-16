@@ -261,3 +261,15 @@ def test_estimate_toggle_and_status_taps(app, c):
     c.post(f"/orders/{oid}/status", data={"csrf_token": c.t, "tap": "Delivered"})
     trk = c.get("/tracking?status=all").get_data(as_text=True)
     assert 'value="Delivered" class="on"' in trk and 'value="Order sent"' in trk
+
+
+def test_holds_csv_file_upload(app, c):
+    """Picking the hold CSV (no pasted text) used to read nothing - the header row wasn't first."""
+    csv_text = ("Customer,Balance,Rep,Terms,Current,31-60,61-90,Over 90\n"
+                "Mesa Ridge Homes,\"1,206.05\",SS,ACCOUNT HOLD,0.00,844.83,361.22,0.00\n")
+    c.post("/holds/import", data={"csrf_token": c.t, "file": (io.BytesIO(("﻿" + csv_text).encode()), "holds.csv")},
+           content_type="multipart/form-data")
+    with app.app_context():
+        from orderapp.db import q
+        h = q("SELECT * FROM account_holds WHERE name='Mesa Ridge Homes'", one=True)
+    assert h and h["balance"] == 1206.05 and h["customer_id"] == app.cid2
