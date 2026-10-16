@@ -259,6 +259,17 @@ def choices(pg, k, x, y, groups, width=R - CX - 4):
     return y
 
 
+def hinge_cut_rows(pg, k, x, y, x1=R - 6):
+    """Cabinet doors: where the recessed (cup) hinge cuts go and the cup size, under the HINGE CUTS check boxes."""
+    y += RS
+    lw = pg.text(x, y, "HINGE CUTS - INCHES IN FROM EDGE:", 7.5, bold=True)
+    pg.field(f"{k} Hinge Cuts From Edge", (x + lw + 4, y - 9, x1, y + 3), size=8)
+    y += RS
+    lw = pg.text(x, y, "CUP DIAMETER (if needed):", 7.5, bold=True)
+    pg.field(f"{k} Hinge Cup Diameter", (x + lw + 4, y - 9, x1, y + 3), size=8)
+    return y + 4
+
+
 def notes_row(pg, k, y, x1=CX - 10):
     pg.text(L + 8, y + 3, "NOTES:", 8.5, bold=True)
     pg.field(f"{k} Notes", (L + 46, y - 7, x1, y + 7), size=8.5)
@@ -1544,6 +1555,10 @@ class PrefabCabinets(Form):
         yc = choices(pg, k, CX, top - 4, [
             ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
             ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
+            dict(title="RECESSED HINGE CUTS?", opts=["Yes", "No"], cols=2, name="Hinge Cuts"),
+        ])
+        yc = hinge_cut_rows(pg, k, CX, yc)
+        yc = choices(pg, k, CX, yc - 4, [
             ("DRAWERS INCLUDED:", ["Yes", "No"], 2),
             ("DOORS ONLY (keep the box)?", ["Yes", "No"], 2),
         ])
@@ -1593,6 +1608,10 @@ class CustomCabinets(Form):
             ("CABINET:", ["Base", "Sink base", "Wall", "Tall / pantry", "Vanity"], 2),
             ("DOOR STYLE:", CABINET_STYLES + [NOT_SURE], 2),
             ("DOOR HINGES ON:", ["Left", "Right", "Pair (2 doors)"], 3),
+            dict(title="RECESSED HINGE CUTS?", opts=["Yes", "No"], cols=2, name="Hinge Cuts"),
+        ])
+        yc = hinge_cut_rows(pg, k, CX, yc)
+        yc = choices(pg, k, CX, yc - 4, [
             dict(title="REFACE EXISTING (THERMOFOIL)?", opts=["Yes", "No"], cols=2, name="Refacing"),
         ])
         pg.text(CX, yc + 10, "Refacing: we'll bring thermofoil color samples.", 7, color=DARK)

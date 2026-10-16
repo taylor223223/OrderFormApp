@@ -273,3 +273,22 @@ def test_holds_csv_file_upload(app, c):
         from orderapp.db import q
         h = q("SELECT * FROM account_holds WHERE name='Mesa Ridge Homes'", one=True)
     assert h and h["balance"] == 1206.05 and h["customer_id"] == app.cid2
+
+
+def test_cabinet_hinge_cuts(app):
+    from orderapp.catalog import FORMS
+    for fk in ("cabinet", "cabinet_custom", "cabinet_prefab"):
+        keys = [f["key"] for f in FORMS[fk]["blocks"][0]]
+        assert {"hinge_cut", "hinge_cut_edge", "hinge_cut_dia"} <= set(keys), fk
+        assert len(FORMS[fk]["blocks"]) == 2                    # still two cabinets per page
+    with app.app_context():
+        from orderapp.pdf_fill import fill_form
+        pdf, _ = fill_form("cabinet_custom", {"header": {"name": "Test Place"}, "blocks": [
+            {"qty": "1", "unit": "7", "cab_kind": "Wall", "width": "30", "height": "30", "depth": "12",
+             "hinge_cut": "Yes", "hinge_cut_edge": "3-1/2", "hinge_cut_dia": "35mm"}]})
+    import pymupdf as fitz
+    doc = fitz.open(stream=pdf, filetype="pdf")
+    vals = {w.field_name: w.field_value for p in doc for w in p.widgets() or []}
+    assert "3-1/2" in vals.values()
+    on = [n for n, v in vals.items() if v in ("Yes", True, "On") and "hinge_cut" in n.lower()]
+    assert "L0.hinge_cut.yes" in on and "L0.hinge_cut_dia.35mm" in on, on

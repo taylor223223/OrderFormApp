@@ -685,6 +685,15 @@ def _gc(key, label, names, **kw):
 
 _LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
 
+
+def _hinge_cut_fields():
+    """Recessed (cup) hinge cuts on cabinet doors: yes/no, how far in from the edge, and the cup size if needed."""
+    yes = ("hinge_cut", ["Yes"])
+    return [_gc("hinge_cut", "Recessed Hinge Cuts", ["Yes", "No"]),
+            _gc("hinge_cut_dia", "Cup Diameter", ['35mm', '26mm', '40mm'], show_if=yes),
+            _g("hinge_cut_edge", "Hinge Cuts From Edge (in)", measure=True, show_if=yes,
+               placeholder="e.g. 3 (top & bottom)")]
+
 # Roller shade / sun screen fabrics - what AIS has invoiced (company sales history 2023-2026)
 SHADE_BRANDS = ["Vertilux (VX)", "Mermet", "Phifer (Sheerweave / Suntex)", "Coolaroo", "Other"]
 SHADE_FABRICS = ["VX Solar Screen 3000", "VX Solar 3101 (1%)", "VX Solar 3103 (3%)", "VX Solar 3105 (5%)",
@@ -755,6 +764,7 @@ GENERATED = {
             _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
             _g("height", "Height (in)", measure=True),
             _gc("drawers", "Drawers Included", ["Yes", "No"]),
+            *_hinge_cut_fields(),
             _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
             _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
             _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
@@ -811,6 +821,7 @@ GENERATED = {
             _g("height", "Height (in)", measure=True),
             _gc("hinge_side", "Door Hinge Side", ["Left", "Right", "Pair"]),
             _gc("drawers", "Drawers Included", ["Yes", "No"]),
+            *_hinge_cut_fields(),
             _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
             _LINE_COMMENTS]],
         "products": ["cabinet", "cabinet_door"],
@@ -829,6 +840,7 @@ GENERATED = {
             _g("height", "Height (in)", measure=True),
             _g("doors_qty", "Number of Doors", w=4), _g("drawers_qty", "Number of Drawers", w=4),
             _gc("hinge_side", "Door Hinge Side", ["Left", "Right", "Pair"]),
+            *_hinge_cut_fields(),
             _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
             _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
             _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),

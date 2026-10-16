@@ -355,21 +355,23 @@ def _door_info_rows(pen, n, fields, y, x_max):
         pen.field(tname(n, f["key"]), x + lw + 4, y, min(x + widths[f["key"]] - 8, x_max - 4))
         x += widths[f["key"]]
     # short Yes/No-type questions share a row; longer lists get their own row(s)
-    rows, cur, cur_w = [], [], 0
+    # first fit: a short question goes on the first earlier short row it fits on
+    rows, room = [], []
     for f in choices:
         small = len(_opts(f)) <= 3 and not f.get("other_field")
         fw = pen.w(f["label"] + ":") + 8 + sum(pen.box + pen.gap + pen.w(o) + 10 for o in _opts(f)) + 14
-        if small and cur and cur_w + fw <= x_max - D_L - 8:
-            cur.append(f)
-            cur_w += fw
-            continue
-        if cur:
-            rows.append(cur)
-        cur, cur_w = ([f], fw) if small else ([], 0)
         if not small:
             rows.append([f])
-    if cur:
-        rows.append(cur)
+            room.append(None)
+            continue
+        for i, left in enumerate(room):
+            if left is not None and fw <= left:
+                rows[i].append(f)
+                room[i] = left - fw
+                break
+        else:
+            rows.append([f])
+            room.append(x_max - D_L - 8 - fw)
     for row in rows:
         pen.line(y + 3.5, x_max)
         y += D_ROW
