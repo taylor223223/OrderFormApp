@@ -6,9 +6,6 @@ name and position always land on the property's Contacts list without a separate
 from .db import q, x
 
 POSITIONS = ["Maint. Super", "Maintenance", "Property Manager", "Office"]
-# people at contractors / management companies / vendors (offered in the same lists, after the property ones)
-COMPANY_POSITIONS = ["Owner", "Project Manager", "Superintendent", "Estimator", "Purchasing", "Regional Manager",
-                     "Asset Manager", "Sales Rep"]
 
 
 def clean_role(role):
@@ -21,8 +18,6 @@ def clean_role(role):
         "maint": "Maintenance", "maintenance": "Maintenance", "maintenance tech": "Maintenance", "tech": "Maintenance",
         "pm": "Property Manager", "manager": "Property Manager", "property manager": "Property Manager",
         "community manager": "Property Manager",
-        "superintendent": "Superintendent", "project manager": "Project Manager", "estimator": "Estimator",
-        "owner": "Owner", "regional": "Regional Manager", "regional manager": "Regional Manager",
         "office": "Office", "leasing": "Office", "leasing office": "Office", "front office": "Office",
     }
     return aliases.get(low, r)

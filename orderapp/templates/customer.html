@@ -64,7 +64,7 @@
     <datalist id="dl_positions">{% for p in positions %}<option value="{{ p }}">{% endfor %}</datalist>
     <h3>Add contact</h3>
     <form method="post" action="{{ url_for('customers.contact_add', cid=c.id) }}" class="grid g2">
-      <input name="name" placeholder="Name"><input name="role" placeholder="Position (Maint. Super, Office...)" list="dl_positions">
+      <input name="name" placeholder="Name">{% if acct.type == 'Property' %}<input name="role" placeholder="Position (Maint. Super, Office...)" list="dl_positions">{% else %}<input name="role" placeholder="Title (optional)">{% endif %}
       <input name="email" placeholder="Email"><input name="phone" placeholder="Phone">
       <div><button class="btn sm primary">Add contact</button></div>
     </form>
