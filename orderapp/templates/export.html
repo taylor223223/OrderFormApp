@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}Export{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Export data</h1>
+<div class="muted">Download anything in the app for Excel. Excel files have bold headers and filters; CSV opens anywhere.</div></div>
+<div class="row"><a class="btn primary" href="{{ url_for('exports.download', name='everything', fmt='xlsx') }}">⬇ Everything (one Excel file, a tab per list)</a></div></div>
+
+<div class="card" style="margin-bottom:12px">
+<h3 style="margin-top:0">Customer list</h3>
+<div class="muted small">{{ counts.customers }} customers · {{ counts.no_address }} missing an address · {{ counts.no_mgmt }} missing a mgmt co.
+ The columns match Import CSV - fill in the blanks in Excel, then Import CSV &gt; Review &gt; Apply to save them.</div>
+<form class="row" style="margin-top:10px" method="get" id="custForm">
+<select name="missing" style="width:auto"><option value="">All customers</option>
+<option value="address">Only ones missing an address</option><option value="mgmt">Only ones missing a mgmt co.</option>
+<option value="any">Missing address or mgmt co.</option></select>
+<select name="type" style="width:auto"><option value="">All account types</option>{% for t in acct_types %}<option>{{ t }}</option>{% endfor %}</select>
+<select name="status" style="width:auto"><option value="">Any status</option>{% for s in statuses %}<option>{{ s }}</option>{% endfor %}</select>
+<button class="btn primary" formaction="{{ url_for('exports.download', name='customers', fmt='xlsx') }}">⬇ Excel</button>
+<button class="btn" formaction="{{ url_for('exports.download', name='customers', fmt='csv') }}">⬇ CSV</button>
+</form></div>
+
+<div class="tablewrap"><table>
+<thead><tr><th>List</th><th>What's in it</th><th></th></tr></thead>
+<tbody>{% for key, d in datasets.items() if key != 'customers' %}<tr>
+<td><b>{{ d[0] }}</b></td><td class="small">{{ d[1] }}</td>
+<td class="nowrap"><a class="btn" href="{{ url_for('exports.download', name=key, fmt='xlsx') }}">⬇ Excel</a>
+<a class="btn" href="{{ url_for('exports.download', name=key, fmt='csv') }}">CSV</a></td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -6,6 +6,7 @@ from datetime import date, datetime
 from flask import (Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request,
                    send_file, url_for)
 
+from .. import reorder as RO
 from ..catalog import FORMS, form_list, public_spec
 from ..changes import add_change, new_batch, propose_contact, propose_customer_fields
 from ..db import (OPEN_STATUSES, STATUSES, add_status, dumps, find_customer, loads, now, q, setting, x)
@@ -222,8 +223,11 @@ def _make_pdf(oid):
     o = q("SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?",
           (oid,), one=True)
     data = loads(o["data"])
-    pdf, warns = fill_form(o["form_key"], data)
     cust = o["cname"] or data.get("header", {}).get("name") or "Customer"
+    if o["form_key"] == RO.FORM_KEY:
+        pdf, warns = RO.render(o, data, cust), []
+    else:
+        pdf, warns = fill_form(o["form_key"], data)
     from ..order_kind import is_quote, kind_title, stamp_quote
     if is_quote(o):
         pdf = stamp_quote(pdf)
@@ -233,7 +237,8 @@ def _make_pdf(oid):
     except Exception as e:  # noqa: BLE001 - never lose the order form over a photo
         warns = list(warns) + [f"Photos couldn't be added to the PDF: {e}"]
     day = _iso(o["order_date"])
-    fname = safe_name(f"{day} - {cust} - {kind_title(FORMS[o['form_key']]['title'], o['kind'])} - "
+    ftitle = RO.TITLE if o["form_key"] == RO.FORM_KEY else FORMS[o["form_key"]]["title"]
+    fname = safe_name(f"{day} - {cust} - {kind_title(ftitle, o['kind'])} - "
                       f"PO {o['po'] or 'none'} - #{oid}.pdf")
     folder = ensure_dir(order_folder(cust, day))
     path = os.path.join(folder, fname)
@@ -266,6 +271,7 @@ def view(oid):
     products_lbl = {k: v["label"] for k, v in _P.items()}
     from ..photos import photos_for
     return render_template("order_view.html", o=o, data=data, hist=hist, spec=spec, labels=labels, miss=miss,
+                           is_reorder=o["form_key"] == RO.FORM_KEY,
                            photos=photos_for(oid), products_lbl=products_lbl,
                            statuses=STATUSES, pdf_exists=bool(o["pdf_path"] and os.path.exists(o["pdf_path"])))
 
@@ -274,7 +280,7 @@ def view(oid):
 @login_required
 def pdf(oid):
     o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
-    if o["form_key"] not in FORMS:
+    if o["form_key"] not in FORMS and o["form_key"] != RO.FORM_KEY:
         abort(404)
     if request.args.get("regen") or not (o["pdf_path"] and os.path.exists(o["pdf_path"])):
         _make_pdf(oid)
@@ -311,7 +317,7 @@ def _fmt(tmpl, o, data):
 def send_page(oid):
     from ..photos import photos_for, photos_pdf
     o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
-    has_form = o["form_key"] in FORMS
+    has_form = o["form_key"] in FORMS or o["form_key"] == RO.FORM_KEY
     photos = photos_for(oid)
     if not has_form and not photos:
         flash("Add a photo or use an order form before emailing this order.", "error")
@@ -633,3 +639,29 @@ def contact_from_email(oid):
     propose_contact(b, c, {"name": request.form.get("name"), "email": request.form.get("email"),
                            "phone": request.form.get("phone")})
     return redirect(url_for("imports.review_batch", bid=b))
+
+
+@bp.route("/orders/<int:oid>/reorder_lines", methods=["GET", "POST"])
+@login_required
+def reorder_lines(oid):
+    """Edit a reorder request's lines (qty, item, description, size, for, PO, comments) and re-make the PDF."""
+    o = q("SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?",
+          (oid,), one=True) or abort(404)
+    if o["form_key"] != RO.FORM_KEY:
+        abort(404)
+    data = loads(o["data"]) or {}
+    if request.method == "POST":
+        f = request.form
+        n = f.get("n", type=int) or 0
+        lines = [{k: f.get(f"{k}_{i}", "") for k in ("qty", "item_no", "desc", "size", "for", "invoice",
+                                                      "last_date", "last_price", "notes")} for i in range(n + 5)]
+        data["lines"] = RO.clean_lines(lines)
+        data["comments"] = f.get("comments", "").strip()
+        data["contact"] = f.get("contact", "").strip()
+        po = f.get("po", "").strip()
+        data.setdefault("header", {})["po"] = po
+        x("UPDATE orders SET data=?, po=?, updated=? WHERE id=?", (dumps(data), po, now(), oid))
+        _make_pdf(oid)
+        flash(f"Saved - {len(data['lines'])} line(s). PDF updated.", "ok")
+        return redirect(url_for("orders.view", oid=oid))
+    return render_template("reorder_lines.html", o=o, data=data, lines=data.get("lines") or [])

@@ -8,8 +8,8 @@
     {% if o.po %} · PO {{ o.po }}{% endif %}{% if o.order_date %} · {{ o.order_date }}{% endif %} · <span class="tag st-{{ o.status.split()[0] }}">{{ status_label(o.status, o.kind) }}</span> <span class="small">({{ o.source }})</span></div></div>
   <div class="row">
     {% if not spec and photos %}<a class="btn primary" href="{{ url_for('orders.send_page', oid=o.id) }}">Email it</a>{% endif %}
-    {% if spec %}
-    <a class="btn" href="{{ url_for('orders.editor', order=o.id) }}">Edit</a>
+    {% if spec or is_reorder %}
+    <a class="btn" href="{{ url_for('orders.reorder_lines', oid=o.id) if is_reorder else url_for('orders.editor', order=o.id) }}">Edit</a>
     <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, regen=1) }}" target="_blank">View PDF</a>
     <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, dl=1) }}">Download</a>
     <a class="btn primary" href="{{ url_for('orders.send_page', oid=o.id) }}">Email it</a>
@@ -19,7 +19,19 @@
 {% if miss %}<div class="miss" style="margin-bottom:14px"><b>Still empty:</b> {{ miss|join(', ') }}</div>{% endif %}
 <div class="grid g2">
 <div>
-  {% if spec or (data.blocks and o.source != 'photo') %}
+  {% if is_reorder %}
+  <div class="card"><h3 style="margin-top:0">Reorder lines · {{ (data.lines or [])|length }}</h3>
+    <div class="tablewrap"><table><tr><th class="right">Qty</th><th>Item #</th><th>Description</th><th>Size</th><th>For</th><th>Invoice #</th><th>Last bought</th><th class="right">Last $</th></tr>
+    {% for l in data.lines or [] %}<tr><td class="right"><b>{{ l.qty }}</b></td><td class="small">{{ l.item_no }}</td><td>{{ l.desc }}</td><td class="nowrap">{{ l.size }}</td><td class="small">{{ l['for'] }}</td><td class="small">{{ l.invoice or '' }}</td><td class="small nowrap">{{ l.last_date }}</td><td class="right">{{ l.last_price }}</td></tr>
+    {% else %}<tr><td colspan="8" class="empty">No lines.</td></tr>{% endfor %}</table></div>
+    {% if data.contact %}<p><span class="muted">Requested by:</span> {{ data.contact }}</p>{% endif %}
+    {% if data.comments %}<p><span class="muted">Comments:</span> {{ data.comments }}</p>{% endif %}
+    <div class="row" style="margin-top:10px"><a class="btn sm" href="{{ url_for('orders.reorder_lines', oid=o.id) }}">Edit lines / PO</a>
+    {% if o.customer_id %}<a class="btn sm" href="{{ url_for('customers.view', cid=o.customer_id, tab='products') }}">Pick more from purchase history</a>{% endif %}
+    {% if pdf_exists and not cloud %}<form method="post" action="{{ url_for('orders.open_folder', oid=o.id) }}"><button class="btn sm">Open PDF folder</button></form>{% endif %}</div>
+    {% if o.pdf_path and not cloud %}<div class="small muted" style="margin-top:6px">PDF: {{ o.pdf_path }}</div>{% endif %}
+  </div>
+  {% elif spec or (data.blocks and o.source != 'photo') %}
   <div class="card"><h3 style="margin-top:0">Line items</h3>
     {% for b in data.blocks or [] %}
       <div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>Line {{ loop.index }}</b>{% if b.unit %} · Unit {{ b.unit }}{% endif %}{% if b._room %} · {{ b._room }}{% endif %}

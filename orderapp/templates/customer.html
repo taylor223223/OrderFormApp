@@ -2,7 +2,7 @@
 {% block body %}
 {% set hold = hold_for(c.id) %}{% if hold %}{% include '_hold_banner.html' %}{% endif %}
 <div class="pagehead">
-  <div><h1>{{ c.name }}{% if c.status %} <span class="tag" style="vertical-align:middle">{{ c.status }}</span>{% endif %}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{{ c.mgmt or '' }}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
+  <div><h1>{{ c.name }}{% if acct.type != 'Property' %} <span class="tag" style="vertical-align:middle">{{ acct.icons[acct.type] }} {{ acct.type }}</span>{% endif %}{% if c.status %} <span class="tag" style="vertical-align:middle">{{ c.status }}</span>{% endif %}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{% if acct.mgmt_acct %}<a href="{{ url_for('customers.view', cid=acct.mgmt_acct.id) }}">{{ c.mgmt }}</a>{% else %}{{ c.mgmt or '' }}{% endif %}{% if c.services %}{{ ' · ' if c.mgmt }}{{ c.services }}{% endif %}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
   <div class="row">
     <a class="btn primary" href="{{ url_for('orders.new', customer=c.id) }}">+ New order</a>
     <a class="btn" href="{{ url_for('customers.view', cid=c.id, tab='crm') }}#quicklog">Log call/visit</a>
@@ -35,7 +35,7 @@
 {% for p in top_products %}<a class="chip" href="{{ url_for('customers.view', cid=c.id, tab='products', category=p.category) }}" title="{{ p.orders }} order(s), last {{ p.last }}">{{ p.desc[:48] }} · {{ '%g' % p.qty }}</a>{% endfor %}
 <a class="btn sm" style="margin-left:auto" href="{{ url_for('customers.view', cid=c.id, tab='products') }}">All products bought</a></div>{% endif %}
 <div class="tabs">
-  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('products','Products & Sizes Bought','#2a78d6'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] %}
+  {% for k, l, col in [('info','Info & Contacts','#f59e0b'),('layouts','Floorplans & Measurements','#ea580c'),('units','Units','#d97706'),('orders','Orders','#0d9488'),('products','Products & Sizes Bought','#2a78d6'),('history','Purchase History','#c2410c'),('crm','CRM','#db2777')] if acct.type == 'Property' or k not in ('layouts','units') or fps or units or tab == k %}
   <a href="{{ url_for('customers.view', cid=c.id, tab=k) }}" class="{{ 'on' if tab==k }}" style="--c:{{ col }}">{{ l }}</a>{% endfor %}
 </div>
 
@@ -45,7 +45,8 @@
     <div class="kv">
       <div>Address</div><div>{{ c.address or '-' }}<br>{{ c.city or '' }} {{ c.state or '' }} {{ c.zip or '' }}</div>
       <div>Phone</div><div>{{ c.phone or '-' }}</div><div>Email</div><div>{{ c.email or '-' }}</div>
-      <div>Mgmt Co.</div><div>{{ c.mgmt or '-' }}</div><div>Notes</div><div style="white-space:pre-wrap">{{ c.notes or '-' }}</div>
+      <div>Type</div><div>{{ acct.type }}{% if c.services %} · {{ c.services }}{% endif %}</div>
+      {% if acct.type in ('Property', 'Contractor') or c.mgmt %}<div>Mgmt Co.</div><div>{% if acct.mgmt_acct %}<a href="{{ url_for('customers.view', cid=acct.mgmt_acct.id) }}">{{ c.mgmt }}</a>{% else %}{{ c.mgmt or '-' }}{% endif %}</div>{% endif %}<div>Notes</div><div style="white-space:pre-wrap">{{ c.notes or '-' }}</div>
     </div>
   </div>
   <div class="card"><h3 style="margin-top:0">Contacts</h3>
@@ -69,7 +70,25 @@
     </form>
   </div>
 </div>
-<details class="card"><summary>Delete this customer</summary>
+{% if acct.type == 'Management Company' %}
+<div class="card" style="margin-top:12px"><h3 style="margin-top:0">🏢 Properties they manage · {{ acct.managed|length }}</h3>
+<div class="small muted">Every property whose Mgmt Co. is "{{ c.name }}".</div>
+{% if acct.managed %}<div class="tablewrap" style="margin-top:6px"><table><tr><th>Property</th><th>City</th><th>Status</th></tr>
+{% for r in acct.managed %}<tr><td><a href="{{ url_for('customers.view', cid=r.id) }}">{{ r.name }}</a></td><td>{{ r.city or '' }}</td><td>{{ r.status or '' }}</td></tr>{% endfor %}</table></div>
+{% else %}<div class="muted" style="margin-top:6px">None yet - set the Mgmt Co. on a property to this exact name.</div>{% endif %}</div>
+{% endif %}
+<div class="card" style="margin-top:12px"><h3 style="margin-top:0">🤝 Works with</h3>
+<div class="small muted">{% if acct.type == 'Property' %}Contractors, vendors and companies that work at this property.{% else %}Properties and companies {{ c.name }} works with.{% endif %}</div>
+{% for l in acct.links %}<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><span>{{ acct.icons.get(l.acct_type or 'Property', '') }} <a href="{{ url_for('customers.view', cid=l.cid) }}"><b>{{ l.name }}</b></a> <span class="small muted">{{ l.acct_type or 'Property' }}{% if l.city %} · {{ l.city }}{% endif %}{% if l.phone %} · {{ l.phone }}{% endif %}{% if l.note %} · {{ l.note }}{% endif %}</span></span><span class="spacer"></span>
+<form method="post" action="{{ url_for('customers.links', cid=c.id) }}"><input type="hidden" name="remove" value="{{ l.id }}"><button class="btn sm" title="Remove link">✕</button></form></div>
+{% else %}<div class="muted" style="margin:6px 0">No links yet.</div>{% endfor %}
+<form method="post" action="{{ url_for('customers.links', cid=c.id) }}" class="row" style="margin-top:8px;flex-wrap:wrap">
+<input name="other_name" list="dl_link_accts" placeholder="{{ 'Contractor or company...' if acct.type == 'Property' else 'Property or company...' }}" style="max-width:300px">
+<datalist id="dl_link_accts">{% for o in acct.link_options %}<option value="{{ o.name }}">{{ o.acct_type or 'Property' }}</option>{% endfor %}</datalist>
+<input name="note" placeholder="Note (e.g. does their turns)" style="max-width:240px"><button class="btn sm primary">Link</button>
+<a class="btn sm" href="{{ url_for('customers.new', type='Contractor' if acct.type == 'Property' else 'Property', link_to=c.id) }}">+ New {{ 'contractor' if acct.type == 'Property' else 'property' }} &amp; link</a></form>
+</div>
+<details class="card"><summary>Delete this account</summary>
   <form method="post" action="{{ url_for('customers.delete', cid=c.id) }}" class="row" style="margin-top:10px">
     <input name="confirm_name" placeholder="Type the name to confirm" style="max-width:320px"><button class="btn danger">Delete customer and all their units & measurements</button></form>
 </details>
@@ -118,20 +137,75 @@
   {% if co_key %}<a class="btn sm" style="margin-left:auto" href="{{ url_for('company.account', key=co_key) }}">Company profile &amp; charts</a>{% endif %}
 </div>
 {% if not prod_rows %}<div class="card empty">No invoice lines for this account yet. Import the company reports (Sales → Import company reports) and they show up here.</div>
-{% elif prod_view == 'products' %}
-<p class="small muted">Everything this account has bought, from the company invoices. The same product and size ordered more than once is one line with the total quantity. Notes after * on the invoices (unit numbers, rooms) are listed under each line.</p>
-<div class="tablewrap"><table><tr><th>Product</th><th>Item #</th><th>Size (W x H)</th><th class="right">Total qty</th><th class="right">Orders</th><th>First</th><th>Last</th><th class="right">Last price</th></tr>
-{% set ns = namespace(cat='') %}
-{% for r in prod_rows %}{% if r.category != ns.cat %}{% set ns.cat = r.category %}<tr><td colspan="8" style="background:var(--brand-soft,#fff7ed)"><b>{{ r.category }}</b></td></tr>{% endif %}
-<tr><td>{{ r.desc }}{% if r.notes %}<div class="small muted">{{ r.notes[:8]|join(' · ') }}{% if r.notes|length > 8 %} · +{{ r.notes|length - 8 }} more{% endif %}</div>{% endif %}</td>
-<td class="small">{{ r.item_no }}{% if r.stock_desc and r.stock_desc|lower != r.desc|lower %}<div class="muted" title="Stock item it's made from">{{ r.stock_desc[:40] }}</div>{% endif %}</td>
-<td class="nowrap">{% if r.width %}{{ fmt_in(r.width) }} x {{ fmt_in(r.height) }}{% endif %}</td>
-<td class="right"><b>{{ '%g' % r.qty }}</b></td><td class="right">{{ r.orders }}</td><td class="small nowrap">{{ r.first }}</td><td class="small nowrap">{{ r.last }}</td>
-<td class="right">{{ '$%.2f' % r.last_price if r.last_price else '' }}</td></tr>{% endfor %}</table></div>
 {% else %}
-<div class="tablewrap"><table><tr><th>Date</th><th>Invoice</th><th>Item #</th><th>Description</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Amount</th><th>Rep</th></tr>
-{% for r in prod_rows %}<tr><td class="small nowrap">{{ r.date }}</td><td class="small">{{ r.invoice }}{% if r.type and r.type != 'Invoice' %}<div class="muted">{{ r.type }}</div>{% endif %}</td><td class="small">{{ r.item_no }}</td><td>{{ r.desc }}</td>
-<td class="right">{{ '%g' % r.qty if r.qty is not none else '' }}</td><td class="right">{{ '%.2f' % r.price if r.price is not none else '' }}</td><td class="right">{{ '{:,.2f}'.format(r.amount or 0) }}</td><td class="small">{{ r.rep }}</td></tr>{% endfor %}</table></div>
+<p class="small muted">{% if prod_view == 'products' %}Everything this account has bought, from the company invoices. The same product and size ordered more than once is one line with the total quantity; its invoice numbers are listed.{% else %}Every invoice line, newest first.{% endif %}
+<b>To reorder:</b> find items by product, item #, invoice # or size, tick them, set quantities, then <b>Make reorder form</b>.</p>
+<form method="post" action="{{ url_for('customers.reorder_pick', cid=c.id) }}" id="reorderForm">
+<div class="row" style="gap:8px;margin-bottom:8px;flex-wrap:wrap">
+<input id="roFind" placeholder="Find: product, item #, invoice #, size..." style="max-width:340px" autocomplete="off">
+<button type="button" class="btn sm" id="roTickShown">Tick all shown</button><button type="button" class="btn sm" id="roClear">Clear ticks</button>
+<span class="small muted" id="roShown"></span></div>
+<div class="tablewrap"><table>
+{% if prod_view == 'products' %}
+<tr><th style="width:28px"><input type="checkbox" id="roAll" title="Select all"></th><th style="width:70px">Reorder qty</th><th>Product</th><th>Item #</th><th>Size (W x H)</th><th>Invoice #s</th><th class="right">Total qty</th><th class="right">Orders</th><th>Last</th><th class="right">Last price</th></tr>
+{% set ns = namespace(cat='') %}
+{% for r in prod_rows %}{% set i = loop.index0 %}{% set dq = ('%g' % ((r.qty / r.orders)|round(0, 'ceil'))) if r.orders else '1' %}{% set size = (fmt_in(r.width) ~ ' x ' ~ fmt_in(r.height)) if r.width else '' %}
+{% if r.category != ns.cat %}{% set ns.cat = r.category %}<tr class="roHead" data-cat="{{ r.category }}"><td><input type="checkbox" class="roCat" data-cat="{{ r.category }}" title="Select all {{ r.category }}"></td><td colspan="9" style="background:var(--brand-soft,#fff7ed)"><b>{{ r.category }}</b></td></tr>{% endif %}
+<tr class="roRow" data-cat="{{ r.category }}" data-find="{{ (r.desc ~ ' ' ~ (r.item_no or '') ~ ' ' ~ (r.stock_desc or '') ~ ' ' ~ size ~ ' ' ~ r.invoices|join(' ') ~ ' ' ~ r.category)|lower }}">
+<td><input type="checkbox" name="sel" value="{{ i }}" class="roSel" data-cat="{{ r.category }}"></td>
+<td><input name="qty_{{ i }}" class="roQty" inputmode="decimal" style="width:58px" placeholder="{{ dq }}" data-def="{{ dq }}">
+<input type="hidden" name="desc_{{ i }}" value="{{ r.desc }}"><input type="hidden" name="item_{{ i }}" value="{{ r.item_no or '' }}"><input type="hidden" name="size_{{ i }}" value="{{ size }}">
+<input type="hidden" name="inv_{{ i }}" value="{{ r.invoices[0] if r.invoices else '' }}"><input type="hidden" name="last_{{ i }}" value="{{ r.last or '' }}"><input type="hidden" name="price_{{ i }}" value="{{ '%.2f' % r.last_price if r.last_price else '' }}"></td>
+<td>{{ r.desc }}{% if r.notes %}<div class="small muted">{{ r.notes[:8]|join(' · ') }}{% if r.notes|length > 8 %} · +{{ r.notes|length - 8 }} more{% endif %}</div>{% endif %}</td>
+<td class="small">{{ r.item_no }}{% if r.stock_desc and r.stock_desc|lower != r.desc|lower %}<div class="muted" title="Stock item it's made from">{{ r.stock_desc[:40] }}</div>{% endif %}</td>
+<td class="nowrap">{{ size }}</td>
+<td class="small">{{ r.invoices[:3]|join(', ') }}{% if r.invoices|length > 3 %} <span class="muted" title="{{ r.invoices|join(', ') }}">+{{ r.invoices|length - 3 }}</span>{% endif %}</td>
+<td class="right"><b>{{ '%g' % r.qty }}</b></td><td class="right">{{ r.orders }}</td><td class="small nowrap">{{ r.last }}</td>
+<td class="right">{{ '$%.2f' % r.last_price if r.last_price else '' }}</td></tr>{% endfor %}
+{% else %}
+<tr><th style="width:28px"><input type="checkbox" id="roAll" title="Select all"></th><th style="width:70px">Reorder qty</th><th>Date</th><th>Invoice</th><th>Item #</th><th>Description</th><th class="right">Qty</th><th class="right">Price</th><th class="right">Amount</th><th>Rep</th></tr>
+{% for r in prod_rows %}{% set i = loop.index0 %}{% set dq = ('%g' % r.qty) if r.qty and r.qty > 0 else '1' %}
+<tr class="roRow" data-cat="{{ r.invoice }}" data-find="{{ (r.desc ~ ' ' ~ (r.item_no or '') ~ ' ' ~ (r.invoice or '') ~ ' ' ~ (r.date or '') ~ ' ' ~ (r.category or ''))|lower }}">
+<td><input type="checkbox" name="sel" value="{{ i }}" class="roSel" data-cat="{{ r.invoice }}"></td>
+<td><input name="qty_{{ i }}" class="roQty" inputmode="decimal" style="width:58px" placeholder="{{ dq }}" data-def="{{ dq }}">
+<input type="hidden" name="desc_{{ i }}" value="{{ r.desc }}"><input type="hidden" name="item_{{ i }}" value="{{ r.item_no or '' }}"><input type="hidden" name="size_{{ i }}" value="">
+<input type="hidden" name="inv_{{ i }}" value="{{ r.invoice or '' }}"><input type="hidden" name="last_{{ i }}" value="{{ r.date or '' }}"><input type="hidden" name="price_{{ i }}" value="{{ '%.2f' % r.price if r.price is not none else '' }}"></td>
+<td class="small nowrap">{{ r.date }}</td><td class="small"><a href="#" class="roInv" data-inv="{{ r.invoice }}" title="Tick every line on this invoice">{{ r.invoice }}</a>{% if r.type and r.type != 'Invoice' %}<div class="muted">{{ r.type }}</div>{% endif %}</td><td class="small">{{ r.item_no }}</td><td>{{ r.desc }}</td>
+<td class="right">{{ '%g' % r.qty if r.qty is not none else '' }}</td><td class="right">{{ '%.2f' % r.price if r.price is not none else '' }}</td><td class="right">{{ '{:,.2f}'.format(r.amount or 0) }}</td><td class="small">{{ r.rep }}</td></tr>{% endfor %}
+{% endif %}
+</table></div>
+<div class="card row" id="roBar" style="position:sticky;bottom:0;z-index:5;margin-top:8px;flex-wrap:wrap;gap:8px;box-shadow:0 -4px 12px rgba(0,0,0,.08)">
+<b><span id="roN">0</span> selected</b>
+<input name="po" placeholder="PO # (optional)" style="max-width:140px">
+<input name="contact" placeholder="Requested by (e.g. Mike - Maint. Super)" style="max-width:260px" list="dl_ro_people"><datalist id="dl_ro_people">{% for k in contacts %}<option value="{{ k.name }}{% if k.role %} - {{ k.role }}{% endif %}">{% endfor %}</datalist>
+<input name="comments" placeholder="Comments for the office" style="max-width:280px">
+<button class="btn primary" id="roGo" disabled>↻ Make reorder form</button>
+</div>
+</form>
+<script>
+(function(){
+  const f=document.getElementById('reorderForm'); if(!f) return;
+  const rows=[...f.querySelectorAll('.roRow')], sels=rows.map(r=>r.querySelector('.roSel'));
+  const n=document.getElementById('roN'), go=document.getElementById('roGo'), shown=document.getElementById('roShown');
+  const qtyOf=cb=>cb.closest('tr').querySelector('.roQty');
+  function upd(){const k=sels.filter(s=>s.checked).length;n.textContent=k;go.disabled=!k;
+    sels.forEach(s=>{const q=qtyOf(s);if(s.checked&&!q.value)q.value=q.dataset.def;if(!s.checked&&q.value===q.dataset.def)q.value='';});}
+  const visible=()=>rows.filter(r=>r.style.display!=='none');
+  sels.forEach(s=>s.addEventListener('change',upd));
+  f.querySelectorAll('.roQty').forEach(q=>q.addEventListener('input',()=>{const s=q.closest('tr').querySelector('.roSel');s.checked=!!q.value&&q.value!=='0';upd();}));
+  document.getElementById('roAll').addEventListener('change',e=>{visible().forEach(r=>r.querySelector('.roSel').checked=e.target.checked);upd();});
+  f.querySelectorAll('.roCat').forEach(c=>c.addEventListener('change',()=>{visible().filter(r=>r.dataset.cat===c.dataset.cat).forEach(r=>r.querySelector('.roSel').checked=c.checked);upd();}));
+  f.querySelectorAll('.roInv').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();const on=!rows.filter(r=>r.dataset.cat===a.dataset.inv).every(r=>r.querySelector('.roSel').checked);
+    rows.filter(r=>r.dataset.cat===a.dataset.inv).forEach(r=>r.querySelector('.roSel').checked=on);upd();}));
+  document.getElementById('roTickShown').addEventListener('click',()=>{visible().forEach(r=>r.querySelector('.roSel').checked=true);upd();});
+  document.getElementById('roClear').addEventListener('click',()=>{sels.forEach(s=>s.checked=false);upd();});
+  const find=document.getElementById('roFind');
+  find.addEventListener('input',()=>{const words=find.value.toLowerCase().split(/\s+/).filter(Boolean);
+    rows.forEach(r=>r.style.display=words.every(w=>r.dataset.find.includes(w))?'':'none');
+    f.querySelectorAll('.roHead').forEach(h=>h.style.display=rows.some(r=>r.dataset.cat===h.dataset.cat&&r.style.display!=='none')?'':'none');
+    shown.textContent=words.length?visible().length+' shown':'';});
+})();
+</script>
 {% endif %}
 {% elif tab == 'history' %}
 {% set rows = hist %}{% set show_customer = False %}{% include '_history_table.html' %}

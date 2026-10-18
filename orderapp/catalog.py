@@ -145,7 +145,7 @@ def _bypass_block(i):
             ("Two-Panel Embossed (Classique)", f"TwoPanEmb{s}"),
             ("Four-Panel Embossed (Carmelle)", f"FourPanEmb{s}"),
             ("Three-Panel Embossed (Clermont)", f"ThreePanEmb{s}"),
-            ("Other", f"Other{s}")], other_option="Other", other_field="style_other"),
+            ("Other", f"Other{s}")], other_option="Other", other_field="style_other", photos="door_style"),
         _t("style_other", "Style - Other", f"OtherStyInfo{s}"),
         _c("core", "Core Type", [("Hollow Core", f"HC{s}"), ("Solid Core", f"SC{s}")]),
         _c("door_location", "Door Location", [("Interior", f"Interior{s}")]),
@@ -254,7 +254,7 @@ def _new_door_block():
             ("Camden", "Style Camden"),
             ("Riverside (5-Panel)", "Style Riverside (5-Panel)"),
             ("Colonist (6-Panel)", "Style Colonist (6-Panel)"),
-            ("Steel Door", "Style Steel Door")]),
+            ("Steel Door", "Style Steel Door")], photos="door_style"),
         _c("finish", "Finish", [("Primecoat", "Finish Primecoat"),
                                 ("Embossed Primecoat", "Finish Embossed Primecoat"),
                                 ("Oak Legacy", "Finish Oak Legacy"), ("Other", "Finish Other")],
@@ -894,7 +894,8 @@ GENERATED = {
                 other_field="frame_finish_other", show_if=("closet_type", WARDROBE_TYPES[:2])),
             _g("frame_finish_other", "Mirror Frame Finish - Other", show_if=("frame_finish", ["Other"])),
             _gc("style", "Door Style", ["Smooth", "Shaker", "Colonist", "Camden", "Carrara", "Riverside", "Mirrored",
-                                        "Other"], other_option="Other", other_field="style_other"),
+                                        "Other"], other_option="Other", other_field="style_other",
+                photos="door_style"),
             _g("style_other", "Style - Other", show_if=("style", ["Other"])),
             _gc("panels", "Panels (design)", ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]),
             _gc("leaves", "Number of Doors (leaves)", ["1", "2", "3", "4"]),
@@ -1147,6 +1148,8 @@ def door_photo(blk):
         cands.append("HC Primecoat")
     if pn and st:
         cands.append(f"{pn} {st}")
+    if pn and (blk.get("door_top") or "").startswith("Arch") and "arch" not in st.lower():
+        cands.append(f"{pn} Arch")     # Panel Top = Arched Top
     cands += [c for c in (st, pn) if c]
     for c in cands:
         p = option_photos.find("door_style", c)

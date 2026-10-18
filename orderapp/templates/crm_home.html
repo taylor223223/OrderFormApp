@@ -1,7 +1,11 @@
 {% extends "base.html" %}{% block title %}CRM{% endblock %}
 {% block body %}
-<div class="pagehead"><div><h1>CRM</h1><div class="muted">Who you talked to, where and about what, plus follow-ups and deals.</div></div>
+<div class="pagehead"><div><h1>CRM</h1><div class="muted">Properties, contractors, management companies and vendors you work with - who you talked to, follow-ups and deals.</div></div>
 <div class="row"><a class="btn primary" href="{{ url_for('crm.contacts_log') }}">📒 Contact log</a><a class="btn" href="{{ url_for('crm.activities') }}">All activity</a><a class="btn" href="{{ url_for('crm.tasks') }}">Tasks</a><a class="btn" href="{{ url_for('crm.pipeline') }}">Pipeline</a><a class="btn" href="{{ url_for('crm.report') }}">Weekly report</a></div></div>
+<div class="card" style="margin-bottom:12px"><div class="row" style="flex-wrap:wrap;gap:6px"><b>Accounts:</b>
+{% for t, n in acct_counts %}<a class="btn sm" href="{{ url_for('customers.index', type=t) }}">{{ acct_icons[t] }} {{ acct_plural[t] }} · {{ n }}</a>{% endfor %}
+<span class="spacer"></span><a class="btn sm primary" href="{{ url_for('customers.new', type='Contractor') }}">+ Contractor</a><a class="btn sm" href="{{ url_for('customers.new', type='Management Company') }}">+ Mgmt company</a><a class="btn sm" href="{{ url_for('customers.new', type='Vendor / Supplier') }}">+ Vendor</a><a class="btn sm" href="{{ url_for('customers.new', type='Other') }}">+ Other company</a></div>
+{% if partners %}<div class="small" style="margin-top:8px">{% for p in partners %}<a class="chip" href="{{ url_for('customers.view', cid=p.id) }}" title="{{ p.acct_type }}{% if p.services %} · {{ p.services }}{% endif %}">{{ acct_icons[p.acct_type] }} {{ p.name }}{% if p.last %} · {{ p.last[:10] }}{% endif %}</a> {% endfor %}</div>{% endif %}</div>
 {% set next_url = url_for('crm.home') %}{% include '_quick_log.html' %}
 <div class="grid g2">
   <div>

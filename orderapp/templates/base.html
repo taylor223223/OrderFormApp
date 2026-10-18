@@ -38,6 +38,7 @@
     <a href="{{ url_for('holds.index') }}" class="{{ 'on' if ep.startswith('holds.') }}" style="--c:#b91c1c"><span class="ic">⛔</span>Account Holds{% if holds_count %}<span class="badge" title="Accounts on hold - no purchases until brought current">{{ holds_count }}</span>{% endif %}</a>
     <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email{% if email_drafts %}<span class="badge" title="Order emails turned into drafts, waiting for review">{{ email_drafts }}</span>{% endif %}</a>
     <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') }}" style="--c:#a16207"><span class="ic">📥</span>Import CSV</a>
+    <a href="{{ url_for('exports.index') }}" class="{{ 'on' if ep.startswith('exports.') }}" style="--c:#15803d"><span class="ic">📤</span>Export</a>
     <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}" style="--c:#b45309"><span class="ic">✅</span>Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>
     <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}" style="--c:#78716c"><span class="ic">⚙️</span>Settings</a>
   </nav>

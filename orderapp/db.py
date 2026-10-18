@@ -70,7 +70,8 @@ CREATE INDEX IF NOT EXISTS ix_meas_cust ON measurements(customer_id);
 CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders(customer_id);
 """
 
-CUSTOMER_FIELDS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email", "notes"]
+CUSTOMER_FIELDS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email", "notes", "acct_type",
+                   "services"]
 
 DEFAULT_SETTINGS = {
     "email_order_word": "Order",      # only emails with this in the subject are read automatically
@@ -144,6 +145,10 @@ def connect(path=None):
 
 
 CRM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS account_links (
+    id INTEGER PRIMARY KEY, a_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    b_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE, note TEXT, created TEXT
+);
 CREATE TABLE IF NOT EXISTS activities (
     id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
     contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL, contact_name TEXT,
@@ -189,7 +194,7 @@ CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
 # columns added to existing tables after v1.1 (added in place, data kept)
 MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
-                  "owner": "TEXT"},
+                  "owner": "TEXT", "acct_type": "TEXT", "services": "TEXT"},
     "route_stops": {"products": "TEXT", "done_at": "TEXT", "expected": "REAL"},
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
@@ -402,6 +407,11 @@ def _data_migrations(con):
             if changed:
                 con.execute("UPDATE floorplans SET plan=? WHERE id=?", (json.dumps(plan), fid))
         con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_door_split', '1')")
+    if "dm_acct_types" not in done:    # v2.19: contractors / mgmt cos. / vendors live in the CRM too
+        from .accounts import guess_type
+        for cid, name in con.execute("SELECT id, name FROM customers WHERE coalesce(acct_type,'')=''").fetchall():
+            con.execute("UPDATE customers SET acct_type=? WHERE id=?", (guess_type(name), cid))
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_acct_types', '1')")
     if "dm_closet_leaves" not in done:
         from .catalog import split_closet
         for oid, raw in con.execute("SELECT id, data FROM orders WHERE form_key='closet_bifold'").fetchall():

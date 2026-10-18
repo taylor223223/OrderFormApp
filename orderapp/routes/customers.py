@@ -17,8 +17,23 @@ def _cust_or_404(cid):
     return c
 
 
+def _form_vals():
+    from ..accounts import PROPERTY, clean_type
+    vals = {f: request.form.get(f, "").strip() for f in CUSTOMER_FIELDS}
+    vals["acct_type"] = clean_type(vals.get("acct_type")) or PROPERTY
+    return vals
+
+
+def _form_ctx():
+    from ..accounts import ACCOUNT_TYPES, TRADES
+    return {"acct_types": ACCOUNT_TYPES, "trades": TRADES}
+
+
 def missing_customer_info(c, contacts):
-    miss = [f for f in ("acct", "address", "city", "state", "zip", "mgmt", "phone") if not c[f]]
+    from ..accounts import PROPERTY, type_of
+    want = ("acct", "address", "city", "state", "zip", "mgmt", "phone") if type_of(c) == PROPERTY else \
+        ("address", "city", "state", "zip", "phone")
+    miss = [f for f in want if not c[f]]
     if not c["email"] and not any(k["email"] for k in contacts):
         miss.append("email")
     return miss
@@ -29,6 +44,8 @@ def missing_customer_info(c, contacts):
 def index():
     s = request.args.get("q", "").strip()
     st = request.args.get("status", "").strip()
+    from ..accounts import ACCOUNT_TYPES, ICON, PLURAL, counts, clean_type
+    typ = clean_type(request.args.get("type", ""))
     sql = """SELECT c.*, (SELECT MAX(a.occurred_at) FROM activities a WHERE a.customer_id=c.id) AS last_touch, (SELECT COUNT(*) FROM units u WHERE u.customer_id=c.id) AS n_units,
              (SELECT COUNT(*) FROM orders o WHERE o.customer_id=c.id) AS n_orders,
              (SELECT MAX(o.order_date) FROM orders o WHERE o.customer_id=c.id) AS last_order
@@ -37,30 +54,45 @@ def index():
     if s:
         like = f"%{s}%"
         sql += """ WHERE c.name LIKE ? OR c.acct LIKE ? OR c.mgmt LIKE ? OR c.city LIKE ? OR c.address LIKE ?
+                   OR c.services LIKE ?
                    OR c.id IN (SELECT customer_id FROM contacts WHERE name LIKE ? OR email LIKE ?)"""
-        args = (like,) * 7
-    if st:
-        sql = f"SELECT * FROM ({sql}) WHERE coalesce(status,'')=?"
-        args = tuple(args) + (st if st != "(none)" else "",)
-    sql += " ORDER BY name COLLATE NOCASE" if st else " ORDER BY c.name COLLATE NOCASE"
+        args = (like,) * 8
+    if st or typ:
+        conds, extra = [], ()
+        if st:
+            conds.append("coalesce(status,'')=?")
+            extra += (st if st != "(none)" else "",)
+        if typ:
+            conds.append("coalesce(nullif(acct_type,''),'Property')=?")
+            extra += (typ,)
+        sql = f"SELECT * FROM ({sql}) WHERE " + " AND ".join(conds)
+        args = tuple(args) + extra
+    sql += " ORDER BY name COLLATE NOCASE" if (st or typ) else " ORDER BY c.name COLLATE NOCASE"
     from ..db import CUSTOMER_STATUSES
-    return render_template("customers.html", customers=q(sql, args), search=s, status=st, statuses=CUSTOMER_STATUSES)
+    return render_template("customers.html", customers=q(sql, args), search=s, status=st, statuses=CUSTOMER_STATUSES,
+                           typ=typ, type_counts=counts(), plural=PLURAL, icons=ICON, acct_types=ACCOUNT_TYPES)
 
 
 @bp.route("/customers/new", methods=["GET", "POST"])
 @login_required
 def new():
     if request.method == "POST":
-        vals = {f: request.form.get(f, "").strip() for f in CUSTOMER_FIELDS}
+        vals = _form_vals()
         if not vals["name"]:
             flash("Name is required.", "error")
-            return render_template("customer_form.html", c=vals, new=True)
+            return render_template("customer_form.html", c=vals, new=True, **_form_ctx())
         cid = x(f"INSERT INTO customers({','.join(CUSTOMER_FIELDS)}, created, updated) "
                 f"VALUES ({','.join('?' * len(CUSTOMER_FIELDS))}, ?, ?)",
                 [vals[f] for f in CUSTOMER_FIELDS] + [now(), now()])
-        flash("Customer added.", "ok")
+        link_to = request.form.get("link_to", type=int)
+        if link_to:
+            from ..accounts import link
+            link(cid, link_to)
+        flash(f"{vals['acct_type']} added.", "ok")
         return redirect(url_for("customers.view", cid=cid))
-    return render_template("customer_form.html", c={}, new=True)
+    from ..accounts import clean_type
+    return render_template("customer_form.html", c={"acct_type": clean_type(request.args.get("type")) or "Property"},
+                           new=True, link_to=request.args.get("link_to", type=int), **_form_ctx())
 
 
 @bp.route("/customers/<int:cid>")
@@ -114,7 +146,13 @@ def view(cid):
     if today_stop:
         ids = [r["id"] for r in q("SELECT id FROM route_stops WHERE day=? ORDER BY position, id", (today_stop["day"],))]
         stop_no = (ids.index(today_stop["id"]) + 1, len(ids))
-    return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders,
+    from .. import accounts as A
+    acct = dict(type=A.type_of(c), links=A.links_for(cid), icons=A.ICON, types=A.ACCOUNT_TYPES,
+                managed=A.managed_by(c) if A.type_of(c) == A.MGMT else [],
+                mgmt_acct=A.mgmt_account_for(c) if A.type_of(c) == A.PROPERTY else None,
+                link_options=q("SELECT id, name, acct_type FROM customers WHERE id<>? ORDER BY name COLLATE NOCASE",
+                               (cid,)))
+    return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders, acct=acct,
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
                            tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid),
@@ -147,17 +185,17 @@ def _sales_summary(cid):
 def edit(cid):
     c = _cust_or_404(cid)
     if request.method == "POST":
-        vals = {f: request.form.get(f, "").strip() for f in CUSTOMER_FIELDS}
+        vals = _form_vals()
         if not vals["name"]:
             flash("Name is required.", "error")
-            return render_template("customer_form.html", c=vals, new=False, cid=cid)
+            return render_template("customer_form.html", c=vals, new=False, cid=cid, **_form_ctx())
         x(f"UPDATE customers SET {', '.join(f + '=?' for f in CUSTOMER_FIELDS)}, updated=? WHERE id=?",
           [vals[f] for f in CUSTOMER_FIELDS] + [now(), cid])
         if any((vals.get(k) or "") != (c[k] or "") for k in ("address", "city", "state", "zip")):
             x("UPDATE customers SET lat=NULL, lon=NULL WHERE id=?", (cid,))   # re-locate on the map
         flash("Saved.", "ok")
         return redirect(url_for("customers.view", cid=cid))
-    return render_template("customer_form.html", c=c, new=False, cid=cid)
+    return render_template("customer_form.html", c=c, new=False, cid=cid, **_form_ctx())
 
 
 @bp.route("/customers/<int:cid>/delete", methods=["POST"])
@@ -497,3 +535,47 @@ def history_onfile(cid):
     flash(f"Saved as the on-file {PRODUCTS.get(product, {}).get('label', product).lower()} for {where}. "
           "New orders will fill it in.", "ok")
     return redirect(url_for("customers.view", cid=cid, tab="history"))
+
+
+@bp.route("/customers/<int:cid>/links", methods=["POST"])
+@login_required
+def links(cid):
+    _cust_or_404(cid)
+    from ..accounts import link, unlink
+    if request.form.get("remove"):
+        unlink(request.form.get("remove", type=int))
+        flash("Link removed.", "ok")
+    else:
+        other = request.form.get("other", type=int)
+        if not other:
+            name = request.form.get("other_name", "").strip()
+            r = q("SELECT id FROM customers WHERE name=? COLLATE NOCASE", (name,), one=True) if name else None
+            other = r["id"] if r else None
+        if other:
+            link(cid, other, request.form.get("note", "").strip())
+            flash("Linked.", "ok")
+        else:
+            flash("Pick an account from the list (or add it first).", "error")
+    return redirect(url_for("customers.view", cid=cid))
+
+
+@bp.route("/customers/<int:cid>/reorder", methods=["POST"])
+@login_required
+def reorder_pick(cid):
+    """Products tab: the ticked items -> a Reorder Request (saved as an order + PDF for the office)."""
+    _cust_or_404(cid)
+    from .. import reorder as RO
+    lines = RO.clean_lines(RO.picked_from_form(request.form))
+    if not lines:
+        flash("Tick at least one item (with a quantity) to reorder.", "error")
+        return redirect(url_for("customers.view", cid=cid, tab="products"))
+    f = request.form
+    oid = RO.create(cid, lines, f.get("po", "").strip(), f.get("comments", "").strip(), f.get("contact", "").strip())
+    from .orders import _make_pdf
+    _make_pdf(oid)
+    from ..holds import hold_for, hold_message
+    hd = hold_for(cid)
+    if hd:
+        flash(hold_message(hd), "error")
+    flash(f"Reorder Request #{oid} is ready - {len(lines)} item(s). Check it, then Email it to the office.", "ok")
+    return redirect(url_for("orders.view", oid=oid))

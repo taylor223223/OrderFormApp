@@ -28,7 +28,7 @@ def week_bounds(any_day=None):
 
 
 def _customers():
-    return q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
+    return q("SELECT id, name, acct_type FROM customers ORDER BY name COLLATE NOCASE")
 
 
 def _contact_options():
@@ -65,7 +65,13 @@ def home():
                  WHERE coalesce(c.status,'') IN ('Active','Prospect')
                  GROUP BY c.id HAVING last IS NULL OR last < ? ORDER BY last LIMIT 12""",
               ((date.today() - timedelta(days=30)).isoformat(),))
-    return render_template("crm_home.html", tasks=tasks, recent=recent, pipe=pipe, stages=DEAL_STAGES,
+    from ..accounts import ICON, PLURAL, counts
+    return render_template("crm_home.html", acct_counts=counts(), acct_icons=ICON, acct_plural=PLURAL,
+                           partners=q("""SELECT c.id, c.name, c.acct_type, c.services, c.city, c.phone,
+                                         (SELECT MAX(a.occurred_at) FROM activities a WHERE a.customer_id=c.id) last
+                                         FROM customers c WHERE coalesce(c.acct_type,'Property')<>'Property'
+                                         ORDER BY last IS NULL, last DESC, c.name COLLATE NOCASE LIMIT 12"""),
+                           tasks=tasks, recent=recent, pipe=pipe, stages=DEAL_STAGES,
                            week=week, stale=stale, today=today, customers=_customers(),
                            contacts=_contact_options(), kinds=ACTIVITY_KINDS, topics=TOPICS,
                            statuses=CUSTOMER_STATUSES, pre_customer=request.args.get("customer", type=int),

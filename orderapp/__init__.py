@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.17.0"
+__version__ = "2.19.0"
 
 
 def _secret_key():
@@ -153,17 +153,17 @@ def create_app(db_path=None, testing=False, demo=None):
             except Exception:  # noqa: BLE001
                 pc = ed = 0
         from . import holds as _holds
-        from .people import POSITIONS as _positions
+        from .people import COMPANY_POSITIONS as _cpos, POSITIONS as _positions
         from . import order_kind as _ok
-        return {"positions": _positions, "status_label": _ok.status_label, "tap_labels": _ok.TAP_LABELS,
+        return {"positions": _positions + _cpos, "status_label": _ok.status_label, "tap_labels": _ok.TAP_LABELS,
                 "tap_for": _ok.tap_for, "back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username"), "hold_for": _holds.hold_for,
                 "holds_count": _holds.count() if session.get("uid") else 0}
 
     from .routes import (auth, crm, customers, emails, forms_lib, holds, imports, main, orders, photos, routes_plan,
-                         quotes, sales, settings, company, kitchen)
+                         quotes, sales, settings, company, kitchen, exports)
     for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
-               holds.bp, forms_lib.bp, sales.bp, quotes.bp, company.bp, kitchen.bp):
+               holds.bp, forms_lib.bp, sales.bp, quotes.bp, company.bp, kitchen.bp, exports.bp):
         app.register_blueprint(bp)
     if not testing and not app.config["DEMO"]:
         _start_email_watcher(app)

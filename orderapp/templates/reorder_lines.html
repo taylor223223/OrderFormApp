@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}Edit reorder #{{ o.id }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Edit reorder #{{ o.id }}</h1><div class="muted">{{ o.cname or '' }} · set quantities, add a line, or blank the quantity to drop a line.</div></div>
+<div class="row"><a class="btn" href="{{ url_for('orders.view', oid=o.id) }}">Cancel</a></div></div>
+<form method="post" class="card">
+<div class="grid g3" style="margin-bottom:10px">
+<div><label>PO #</label><input name="po" value="{{ o.po or '' }}"></div>
+<div><label>Requested by</label><input name="contact" value="{{ data.contact or '' }}" placeholder="Name - position"></div>
+<div><label>Comments for the office</label><input name="comments" value="{{ data.comments or '' }}" placeholder="Deliver to maintenance shop..."></div>
+</div>
+<input type="hidden" name="n" value="{{ lines|length }}">
+<div class="tablewrap"><table><tr><th style="width:70px">Qty</th><th>Item #</th><th>Description</th><th>Size</th><th>For (unit / room)</th><th>Invoice #</th><th>Last bought</th><th>Last $</th></tr>
+{% for l in lines + [{}, {}, {}, {}, {}] %}{% set i = loop.index0 %}<tr>
+<td><input name="qty_{{ i }}" value="{{ l.qty or '' }}" inputmode="decimal" style="width:60px"></td>
+<td><input name="item_no_{{ i }}" value="{{ l.item_no or '' }}"></td>
+<td><input name="desc_{{ i }}" value="{{ l.desc or '' }}" style="min-width:240px"></td>
+<td><input name="size_{{ i }}" value="{{ l.size or '' }}" style="width:110px"></td>
+<td><input name="for_{{ i }}" value="{{ l['for'] or '' }}"></td>
+<td><input name="invoice_{{ i }}" value="{{ l.invoice or '' }}" style="width:90px"></td>
+<td><input name="last_date_{{ i }}" value="{{ l.last_date or '' }}" style="width:100px"></td>
+<td><input name="last_price_{{ i }}" value="{{ l.last_price or '' }}" style="width:80px"><input type="hidden" name="notes_{{ i }}" value="{{ l.notes or '' }}"></td></tr>{% endfor %}
+</table></div>
+<button class="btn primary" style="margin-top:10px">Save &amp; update PDF</button>
+</form>
+{% endblock %}

@@ -3,7 +3,7 @@
   <input type="hidden" name="next" value="{{ next_url or request.full_path }}">
   <h3 style="margin-top:0">Log an interaction</h3>
   <div class="grid g4">
-    <div style="grid-column:span 2"><label>Property</label>{% set picker_id='ql_cust' %}{% include '_cust_picker.html' %}</div>
+    <div style="grid-column:span 2"><label>Property / company</label>{% set picker_id='ql_cust' %}{% include '_cust_picker.html' %}</div>
     <div><label>Type</label><select name="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
     <div><label>Warm / cold</label><select name="temp"><option value="">-</option><option>Warm</option><option>Cold</option></select></div>
     <div><label>When</label><input type="datetime-local" name="occurred_at" value="{{ now_local }}"></div>

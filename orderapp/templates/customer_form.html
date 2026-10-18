@@ -1,19 +1,31 @@
-{% extends "base.html" %}{% block title %}{{ 'Add customer' if new else 'Edit customer' }}{% endblock %}
+{% extends "base.html" %}{% block title %}{{ 'Add account' if new else 'Edit account' }}<script>
+(function(){const t=document.getElementById('acctType');function f(){const p=t.value==='Property';
+document.getElementById('servicesBox').style.display=p?'none':'';document.getElementById('mgmtBox').style.display=(p||t.value==='Contractor')?'':'none';}
+t.addEventListener('change',f);f();})();
+</script>
+{% endblock %}
 {% block body %}
-<h1>{{ 'Add customer' if new else 'Edit ' ~ c.name }}</h1>
-<form method="post" class="card" style="margin-top:12px">
+<h1>{{ 'Add account' if new else 'Edit ' ~ c.name }}</h1>
+<form method="post" class="card" style="margin-top:12px">{% if link_to %}<input type="hidden" name="link_to" value="{{ link_to }}">{% endif %}
   <div class="grid g3">
-    <div class="field" style="grid-column:span 2"><label>Customer / property name *</label><input name="name" value="{{ c.name or '' }}" required></div>
+    <div class="field"><label>Account type</label><select name="acct_type" id="acctType">{% for t in acct_types %}<option {{ 'selected' if (c.acct_type or 'Property') == t }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="field" style="grid-column:span 2"><label>Name (property, contractor or company) *</label><input name="name" value="{{ c.name or '' }}" required></div>
+    <div class="field" style="grid-column:1/-1" id="servicesBox"><label>What they do (trade / services)</label><input name="services" value="{{ c.services or '' }}" list="dl_trades" placeholder="e.g. Make-ready / turns, Paint, Flooring"><datalist id="dl_trades">{% for t in trades %}<option value="{{ t }}">{% endfor %}</datalist></div>
     <div class="field"><label>Acct #</label><input name="acct" value="{{ c.acct or '' }}"></div>
     <div class="field" style="grid-column:1/-1"><label>Address</label><input name="address" value="{{ c.address or '' }}"></div>
     <div class="field"><label>City</label><input name="city" value="{{ c.city or '' }}"></div>
     <div class="field"><label>State</label><input name="state" value="{{ c.state or '' }}"></div>
     <div class="field"><label>Zip</label><input name="zip" value="{{ c.zip or '' }}"></div>
-    <div class="field"><label>Mgmt Co.</label><input name="mgmt" value="{{ c.mgmt or '' }}"></div>
+    <div class="field" id="mgmtBox"><label>Mgmt Co.</label><input name="mgmt" value="{{ c.mgmt or '' }}"></div>
     <div class="field"><label>Phone</label><input name="phone" value="{{ c.phone or '' }}"></div>
     <div class="field"><label>Main email</label><input name="email" value="{{ c.email or '' }}"></div>
     <div class="field" style="grid-column:1/-1"><label>Notes (delivery instructions, gate code, preferences...)</label><textarea name="notes">{{ c.notes or '' }}</textarea></div>
   </div>
   <button class="btn primary">Save</button> <a class="btn" href="{{ url_for('customers.view', cid=cid) if cid else url_for('customers.index') }}">Cancel</a>
 </form>
+<script>
+(function(){const t=document.getElementById('acctType');function f(){const p=t.value==='Property';
+document.getElementById('servicesBox').style.display=p?'none':'';document.getElementById('mgmtBox').style.display=(p||t.value==='Contractor')?'':'none';}
+t.addEventListener('change',f);f();})();
+</script>
 {% endblock %}

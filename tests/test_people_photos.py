@@ -322,3 +322,125 @@ def test_door_edge_full_book_vs_beveled(app, c):
     assert "Full Book" in txt and "Beveled" in txt
     ed = c.get(f"/orders/editor?form=door&customer={app.cid2}").get_data(as_text=True)
     assert "function doorEdge" in ed and "Full Book size" in ed
+
+
+def test_every_door_style_has_a_picture():
+    from orderapp import catalog, option_photos
+    for key, f in catalog.FORMS.items():
+        for blk in f["blocks"][:1]:
+            for fd in blk:
+                if fd.get("photos") != "door_style":
+                    continue
+                for opt in fd["options"]:
+                    label = opt[0] if isinstance(opt, (tuple, list)) else opt
+                    if label == "Other":
+                        continue
+                    assert option_photos.find("door_style", label), (key, label)
+    for pn in catalog.DOOR_PANELS:
+        assert option_photos.find("door_style", pn) or pn == "Flush", pn
+    # panels + design together
+    assert catalog.door_photo({"panels": "4 Panel", "style": "Shaker"}).endswith("4-panel-shaker.jpg")
+    assert catalog.door_photo({"panels": "6 Panel", "style": "Colonial", "door_top": "Arched Top"}).endswith(
+        "6-panel-colonial.jpg")
+    assert catalog.door_photo({"panels": "2 Panel", "style": "", "door_top": "Arched Top"}).endswith(
+        "2-panel-arch.jpg")
+
+
+def test_export_page_and_files(c):
+    from openpyxl import load_workbook
+    r = c.get("/export")
+    assert r.status_code == 200 and b"Customer list" in r.data
+    r = c.get("/export/customers.csv?missing=address")
+    txt = r.get_data(as_text=True)
+    assert "Mesa Ridge Homes" in txt and "Cactus Bloom" not in txt
+    assert txt.lstrip("﻿").startswith("Property,Account Type,Services,Acct #,Address,City,State,Zip,Mgmt Co")
+    for name in ("customers", "contacts", "sizes", "orders", "sales", "activities", "tasks", "deals", "items", "holds"):
+        r = c.get(f"/export/{name}.xlsx")
+        assert r.status_code == 200, name
+        load_workbook(io.BytesIO(r.data))
+    wb = load_workbook(io.BytesIO(c.get("/export/everything.xlsx").data))
+    assert len(wb.sheetnames) == 10
+    assert c.get("/export/nope.csv").status_code == 404
+
+
+def test_account_types_links_and_mgmt(app, c):
+    from orderapp import accounts as A
+    assert A.guess_type("Kinella Construction") == A.CONTRACTOR
+    assert A.guess_type("Desert Bloom (Renovations)") == A.PROPERTY
+    assert A.guess_type("Sundial Property Management") == A.MGMT
+    assert A.guess_type("Painted Trails") == A.PROPERTY
+    assert A.clean_type("Apartment Community") == A.PROPERTY and A.clean_type("vendor") == A.VENDOR
+    # add a contractor and a mgmt company from the form, linked from a property
+    r = c.post("/customers/new", data={"csrf_token": c.t, "name": "Sonoran Turn Crew LLC", "acct_type": "Contractor",
+                                       "services": "Make-ready / turns", "link_to": str(app.cid)})
+    assert r.status_code == 302
+    r = c.post("/customers/new", data={"csrf_token": c.t, "name": "Saguaro Living Group", "acct_type": "Management Company"})
+    with app.app_context():
+        from orderapp.db import q, x
+        crew = q("SELECT * FROM customers WHERE name='Sonoran Turn Crew LLC'", one=True)
+        assert crew["acct_type"] == "Contractor" and crew["services"] == "Make-ready / turns"
+        assert [l["name"] for l in A.links_for(app.cid)] == ["Sonoran Turn Crew LLC"]
+        x("UPDATE customers SET mgmt='Saguaro Living Group' WHERE id=?", (app.cid,))
+        mg = q("SELECT * FROM customers WHERE name='Saguaro Living Group'", one=True)
+        assert [m["name"] for m in A.managed_by(mg)] == ["Cactus Bloom Apartments"]
+    page = c.get(f"/customers/{crew['id']}").get_data(as_text=True)
+    assert "Works with" in page and "Cactus Bloom Apartments" in page and "Floorplans" not in page
+    assert "Properties they manage" in c.get(f"/customers/{mg['id']}").get_data(as_text=True)
+    lst = c.get("/customers?type=Contractor").get_data(as_text=True)
+    assert "Sonoran Turn Crew" in lst and "Mesa Ridge Homes" not in lst
+    assert "+ Contractor" in c.get("/crm").get_data(as_text=True)
+    # link by name, then remove
+    r = c.post(f"/customers/{app.cid2}/links", data={"csrf_token": c.t, "other_name": "Sonoran Turn Crew LLC",
+                                                     "note": "does their turns"})
+    with app.app_context():
+        assert len(A.links_for(crew["id"])) == 2
+        lid = A.links_for(app.cid2)[0]["id"]
+    c.post(f"/customers/{app.cid2}/links", data={"csrf_token": c.t, "remove": str(lid)})
+    with app.app_context():
+        assert len(A.links_for(crew["id"])) == 1
+    txt = c.get("/export/customers.csv?type=Contractor").get_data(as_text=True)
+    assert "Sonoran Turn Crew LLC,Contractor,Make-ready / turns" in txt and "Cactus" not in txt
+
+
+def test_reorder_from_purchase_history(app, c):
+    import fitz
+    with app.app_context():
+        from orderapp.db import q, x
+        sid = x("INSERT INTO sales(invoice_no, invoice_date, customer_id, customer_name, total) VALUES "
+                "('90001', '2026-08-10', ?, 'Cactus Bloom Apartments', 300)", (app.cid,))
+        x("INSERT INTO sales_lines(sale_id, category, item_no, description, qty, unit_price, amount) VALUES "
+          "(?, 'Horizontal Blinds', 'HB-2', '2\" Faux wood blind 35 x 48', 4, 30, 120)", (sid,))
+        x("INSERT INTO sales_lines(sale_id, category, item_no, description, qty, unit_price, amount) VALUES "
+          "(?, 'Doors', 'D-30', '30x80 HC Colonist LH', 2, 90, 180)", (sid,))
+    page = c.get(f"/customers/{app.cid}?tab=products").get_data(as_text=True)
+    assert "Make reorder form" in page and 'name="sel"' in page and "90001" in page
+    lines_view = c.get(f"/customers/{app.cid}?tab=products&view=lines").get_data(as_text=True)
+    assert 'name="inv_0" value="90001"' in lines_view and "Tick every line on this invoice" in lines_view
+    # nothing ticked -> back with a message
+    r = c.post(f"/customers/{app.cid}/reorder", data={"csrf_token": c.t})
+    assert r.status_code == 302 and "tab=products" in r.headers["Location"]
+    r = c.post(f"/customers/{app.cid}/reorder", data={
+        "csrf_token": c.t, "sel": ["0", "1"], "qty_0": "4", "desc_0": '2" Faux wood blind 35 x 48', "item_0": "HB-2", "inv_0": "90001",
+        "size_0": "35 x 48", "last_0": "2026-08-10", "price_0": "30.00", "qty_1": "1", "desc_1": "30x80 HC Colonist LH",
+        "item_1": "D-30", "po": "PO-77", "contact": "Pat - Maint. Super", "comments": "Deliver to the shop"})
+    assert r.status_code == 302
+    oid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+    with app.app_context():
+        o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+        assert o["form_key"] == "reorder" and o["status"] == "Ready" and o["po"] == "PO-77"
+        txt = "".join(p.get_text() for p in fitz.open(o["pdf_path"]))
+    assert "#90001" in txt and "REORDER REQUEST" in txt and "HB-2" in txt and "Faux wood" in txt and "PO-77" in txt and "Pat - Maint. Super" in txt
+    view = c.get(f"/orders/{oid}").get_data(as_text=True)
+    assert "Reorder lines" in view and "Email it" in view
+    assert c.get(f"/orders/{oid}/pdf").status_code == 200
+    assert c.get(f"/orders/{oid}/send").status_code == 200
+    # edit: drop the door, add a line
+    r = c.post(f"/orders/{oid}/reorder_lines", data={
+        "csrf_token": c.t, "n": "2", "po": "PO-78", "qty_0": "6", "desc_0": '2" Faux wood blind 35 x 48', "item_no_0": "HB-2",
+        "qty_1": "", "desc_1": "30x80 HC Colonist LH", "qty_2": "3", "desc_2": "Door stop", "item_no_2": "DS-1"})
+    assert r.status_code == 302
+    with app.app_context():
+        from orderapp.db import loads
+        d = loads(q("SELECT data FROM orders WHERE id=?", (oid,), one=True)["data"])
+    assert [(l["qty"], l["item_no"]) for l in d["lines"]] == [("6", "HB-2"), ("3", "DS-1")] and d["header"]["po"] == "PO-78"
+    assert "Reorder Request" in c.get("/tracking").get_data(as_text=True)

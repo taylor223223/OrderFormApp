@@ -1,8 +1,8 @@
 {# usage: {% set picker_id='x' %}{% include '_cust_picker.html' %} ; needs `customers` and optional `pre_customer` #}
 <input type="hidden" name="customer_id" id="{{ picker_id }}_id" value="{{ pre_customer or '' }}">
-<input id="{{ picker_id }}" list="{{ picker_id }}_list" placeholder="Start typing a property..." autocomplete="off"
+<input id="{{ picker_id }}" list="{{ picker_id }}_list" placeholder="Start typing a property or company..." autocomplete="off"
   value="{% for c in customers if pre_customer and c.id == pre_customer %}{{ c.name }}{% endfor %}">
-<datalist id="{{ picker_id }}_list">{% for c in customers %}<option value="{{ c.name }}" data-id="{{ c.id }}">{% endfor %}</datalist>
+<datalist id="{{ picker_id }}_list">{% for c in customers %}<option value="{{ c.name }}" data-id="{{ c.id }}">{% if c.acct_type and c.acct_type != 'Property' %}{{ c.acct_type }}{% endif %}</option>{% endfor %}</datalist>
 <script>
 (function(){ const i = document.getElementById('{{ picker_id }}'), h = document.getElementById('{{ picker_id }}_id'),
   l = document.getElementById('{{ picker_id }}_list');

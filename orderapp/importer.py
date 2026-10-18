@@ -20,6 +20,8 @@ SYNONYMS = {
     "mgmt": ["mgmt", "mgmtco", "management", "managementcompany", "mgmtcompany", "pmc", "owner"],
     "phone": ["phone", "phonenumber", "officephone", "tel", "telephone", "propertyphone"],
     "email": ["email", "emailaddress", "propertyemail", "officeemail"],
+    "acct_type": ["accounttype", "accttype", "companytype", "customertype", "accountkind"],
+    "services": ["services", "trade", "trades", "specialty", "whattheydo"],
     "contact_name": ["contact", "contactname", "manager", "propertymanager", "maintenancesupervisor",
                      "supervisor", "orderedby", "requestedby"],
     "contact_email": ["contactemail", "manageremail", "supervisoremail"],
@@ -57,7 +59,7 @@ SYNONYMS = {
     "notes": ["notes", "note", "comments", "comment", "memo"],
     "verified": ["verified", "preverified", "confirmed"],
 }
-CUSTOMER_TARGETS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email"]
+CUSTOMER_TARGETS = ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "email", "acct_type", "services"]
 CONTACT_TARGETS = ["contact_name", "contact_email", "contact_phone", "contact_role"]
 META_TARGETS = ["unit", "building", "floorplan", "product", "description", "room", "po", "invoice", "order_date",
                 "status", "price", "amount", "notes", "verified"]
@@ -304,6 +306,9 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
             if target and row.get(col, "") != "":
                 v[target] = (v[target] + " " + row[col]) if target == "notes" and v.get(target) else row[col]
         cust_fields = {k: v[k] for k in CUSTOMER_TARGETS if v.get(k)}
+        if cust_fields.get("acct_type"):
+            from .accounts import clean_type
+            cust_fields["acct_type"] = clean_type(cust_fields["acct_type"])
         ck = (cust_fields.get("name"), cust_fields.get("acct"), cust_fields.get("email"))
         if ck not in _cache:
             _cache[ck] = find_customer(*ck)
@@ -437,7 +442,7 @@ def build_batch(rows, mapping, filename, default_customer_id=None):
             prod = o["products"][0] if len(prods) == 1 else None
             fk = (forms_for_product(prod) or [None])[0] if prod else None
             header = {k: g["fields"].get(k, "") or ((cust[k] or "") if cust is not None else "")
-                      for k in CUSTOMER_TARGETS if k != "email"}
+                      for k in CUSTOMER_TARGETS if k not in ("email", "acct_type", "services")}
             header.update({"po": po, "date": odate})
             title = FORMS[fk]["title"] if fk else (", ".join(sorted(PRODUCTS.get(p, {}).get("label", p) for p in prods))
                                                    if prods else "Imported order")[:120]

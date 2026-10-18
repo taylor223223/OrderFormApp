@@ -149,7 +149,9 @@ function refreshBlock(el){
       const pn = (el.querySelector('[data-k="panels"]') || {}).value || '', st = sel.value || '';
       const sl = t => t.split(' (')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const have = new Set(SPEC.door_photo_slugs || []);
-      const cands = [pn === 'Flush' ? 'hc-primecoat' : '', pn && st ? sl(pn + ' ' + st) : '', st ? sl(st) : '', pn ? sl(pn) : ''];
+      const top = (el.querySelector('[data-k="door_top"]') || {}).value || '';
+      const archTop = pn && top.startsWith('Arch') && !/arch/i.test(st) ? sl(pn + ' Arch') : '';
+      const cands = [pn === 'Flush' ? 'hc-primecoat' : '', pn && st ? sl(pn + ' ' + st) : '', archTop, st ? sl(st) : '', pn ? sl(pn) : ''];
       slug = cands.find(c => c && have.has(c)) || slug;
     }
     box.style.display = slug ? 'block' : 'none';
