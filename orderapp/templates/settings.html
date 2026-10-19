@@ -68,6 +68,7 @@
     <div><label>CC</label><input name="report_cc" value="{{ v.report_cc }}"></div>
   </div>
   <h3>Route planner</h3>
+  <p class="small"><a class="btn sm" href="{{ url_for('settings.territory') }}">🗺️ Territory - which ZIPs are mine (and the other reps')</a></p>
   <div class="grid g2">
     <div><label>Start each day from</label><input name="route_start_address" value="{{ v.route_start_address }}"></div>
     <div><label>Leave at</label><input type="time" name="route_start_time" value="{{ v.route_start_time }}"></div>

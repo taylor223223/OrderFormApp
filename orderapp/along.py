@@ -147,6 +147,10 @@ def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None):
                 if r["customer_id"]}
     mapped = q("""SELECT id, name, address, city, lat, lon, status FROM customers WHERE lat IS NOT NULL
                   AND coalesce(status,'') NOT IN ('Lost','Inactive','Do not contact')""")
+    from .territory import enabled, my_ids
+    if enabled():
+        mine = my_ids()
+        mapped = [c for c in mapped if c["id"] in mine]
     unmapped = q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''", one=True)["n"]
     base = {"rows": [], "page": 1, "pages": 0, "total": 0, "more": 0, "mapped": len(mapped), "unmapped": unmapped,
             "sort": sort, "radius": radius}

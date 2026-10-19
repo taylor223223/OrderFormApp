@@ -138,12 +138,16 @@ def nearest(pt, pts):
     return best
 
 
-def near_accounts(center, radius=SUGGEST_MI, exclude=(), limit=None, sort="best"):
+def near_accounts(center, radius=SUGGEST_MI, exclude=(), limit=None, sort="best", everyone=False):
     """Mapped accounts within `radius` miles of center, with sales / last order / last contact facts."""
     from .along import _days_since, facts, why
     rows = q("""SELECT id, name, address, city, zip, lat, lon, status, acct_type FROM customers WHERE lat IS NOT NULL
                 AND coalesce(status,'') NOT IN ('Lost','Inactive','Do not contact')
                 AND coalesce(nullif(acct_type,''),'Property')='Property'""")
+    from .territory import enabled, my_ids
+    if enabled() and not everyone:
+        mine = my_ids()
+        rows = [c for c in rows if c["id"] in mine]
     near = [(mi(center, (c["lat"], c["lon"])), c) for c in rows if c["id"] not in set(exclude)]
     near = [(d, c) for d, c in near if d <= radius]
     near.sort(key=lambda t: t[0])

@@ -46,6 +46,7 @@ def index():
     st = request.args.get("status", "").strip()
     from ..accounts import ACCOUNT_TYPES, ICON, PLURAL, counts, clean_type
     typ = clean_type(request.args.get("type", ""))
+    terr = request.args.get("terr", "")
     sql = """SELECT c.*, (SELECT MAX(a.occurred_at) FROM activities a WHERE a.customer_id=c.id) AS last_touch, (SELECT COUNT(*) FROM units u WHERE u.customer_id=c.id) AS n_units,
              (SELECT COUNT(*) FROM orders o WHERE o.customer_id=c.id) AS n_orders,
              (SELECT MAX(o.order_date) FROM orders o WHERE o.customer_id=c.id) AS last_order
@@ -69,7 +70,17 @@ def index():
         args = tuple(args) + extra
     sql += " ORDER BY name COLLATE NOCASE" if (st or typ) else " ORDER BY c.name COLLATE NOCASE"
     from ..db import CUSTOMER_STATUSES
-    return render_template("customers.html", customers=q(sql, args), search=s, status=st, statuses=CUSTOMER_STATUSES,
+    rows = q(sql, args)
+    if terr in ("mine", "other", "unknown"):
+        from .. import territory as T
+        from ..db import norm_name  # noqa: F401
+        mine, partial, others = T.my_zips(), T.partial_zips(), T.other_zips()
+        try:
+            billed = T.billed_rep_map()
+        except Exception:   # noqa: BLE001
+            billed = {}
+        rows = [c for c in rows if T.classify(c, mine, partial, others, billed) == terr]
+    return render_template("customers.html", customers=rows, search=s, status=st, statuses=CUSTOMER_STATUSES, terr=terr,
                            typ=typ, type_counts=counts(), plural=PLURAL, icons=ICON, acct_types=ACCOUNT_TYPES)
 
 

@@ -25,6 +25,7 @@ def app():
         set_setting("route_start_address", "100 Home St, Phoenix AZ")
         set_setting("route_return_to_start", "1")
         set_setting("ors_api_key", "")
+        set_setting("territory_only", "0")   # made-up ZIPs here - territory filtering is tested elsewhere
         db = get_db()
         db.execute("INSERT INTO geocache(address, lat, lon, provider, updated) VALUES (?,?,?,?,?)",
                    ("100 home st, phoenix az", 33.45, -112.07, "test", "x"))

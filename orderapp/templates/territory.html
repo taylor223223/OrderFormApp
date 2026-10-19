@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Territory{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Territory</h1>
+<div class="muted">Which ZIP codes belong to each rep. Plan my week, Routes ("along the way") and "accounts around" only suggest accounts in <b>your</b> territory.</div></div>
+<div class="row"><a class="btn sm" href="{{ url_for('settings.index') }}">← Settings</a></div></div>
+
+<div class="grid g3" style="margin-bottom:12px">
+<a class="stat" href="{{ url_for('customers.index', terr='mine') }}"><div class="l">In my territory</div><div class="n">{{ counts.mine }}</div><div class="small muted">properties</div></a>
+<a class="stat" href="{{ url_for('customers.index', terr='other') }}"><div class="l">Other reps / outside</div><div class="n">{{ counts.other }}</div><div class="small muted">hidden from my planners</div></a>
+<a class="stat" href="{{ url_for('customers.index', terr='unknown') }}"><div class="l">No ZIP yet</div><div class="n">{{ counts.unknown }}</div><div class="small muted">add an address to place them</div></a>
+</div>
+
+<form method="post" class="card">
+<label style="font-weight:400;color:var(--ink)"><input type="checkbox" name="only" value="1" {{ 'checked' if only }}> <b>Only show accounts in my territory</b> in Plan my week, Routes and "accounts around"</label>
+<label style="font-weight:400;color:var(--ink);margin-top:6px"><input type="checkbox" name="include_billed" value="1" {{ 'checked' if include_billed }}> Also count accounts the company reports bill to me ({{ me }}) when their ZIP isn't in another rep's list</label>
+<div class="field" style="margin-top:8px"><label>Partly mine (only north of the Loop 202, about latitude {{ north }})</label><input name="partial" value="{{ partial }}" placeholder="85281 85288"></div>
+
+<h3>ZIP codes by rep</h3>
+<p class="small muted">Paste ZIPs separated by spaces, commas or new lines. Your list is pre-filled from your central Phoenix territory ZIP list. Adding the other reps' ZIPs keeps their accounts out of your suggestions even if one of them once ordered through you.</p>
+{% for rep, zips in reps %}<div class="field"><label>{{ rep }}{% if rep == me %} <span class="tag">me</span>{% endif %} <span class="muted small">({{ zips.split()|length }} ZIPs)</span></label>
+<textarea name="zips_{{ loop.index0 }}" rows="{{ 3 if zips else 1 }}" placeholder="ZIP codes for {{ rep }}">{{ zips }}</textarea></div>{% endfor %}
+<button class="btn primary">Save territory</button>
+</form>
+{% endblock %}

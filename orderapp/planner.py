@@ -184,6 +184,10 @@ def recommendations(days=7, today=None):
                 r["address"] = ", ".join(x for x in (ac["address"], ac["city"], ac["state"]) if x)
                 r["city"] = r["city"] or ac["city"] or ""
         out.append(r)
+    from .territory import enabled, my_ids
+    if enabled():                 # only accounts in my territory (Settings > Territory)
+        mine = my_ids()
+        out = [r for r in out if not r["customer_id"] or r["customer_id"] in mine]
     out.sort(key=lambda r: -r["score"])
     _suggest_days(out, today, days)
     return out

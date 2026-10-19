@@ -273,3 +273,22 @@ def product_photos():
               for lab in labs])
             for g, labs in groups.items()]
     return render_template("product_photos.html", rows=rows)
+
+
+@bp.route("/settings/territory", methods=["GET", "POST"])
+@login_required
+def territory():
+    """Which ZIPs are mine (and the other reps'), so the planners only suggest accounts in my territory."""
+    from .. import territory as T
+    if request.method == "POST":
+        f = request.form
+        for i, rep in enumerate(T.reps()):
+            if f"zips_{i}" in f:
+                T.save_rep_zips(rep, f.get(f"zips_{i}", ""))
+        T.set_options(bool(f.get("only")), bool(f.get("include_billed")), f.get("partial", ""))
+        flash("Territory saved. Plan my week, Routes and 'accounts around' now use it.", "ok")
+        return redirect(url_for("settings.territory"))
+    return render_template("territory.html", me=T.me(), reps=[(r, " ".join(T.rep_zips(r))) for r in T.reps()],
+                           only=T.enabled(), include_billed=setting("territory_include_billed") != "0",
+                           partial=" ".join(sorted(T.partial_zips())), counts=T.counts(),
+                           north=T.NORTH_OF_202_LAT)

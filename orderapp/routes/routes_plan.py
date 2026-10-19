@@ -762,7 +762,8 @@ def overview():
         areas = sorted({(r["city"] or "").strip().title() for r in q("SELECT DISTINCT city FROM customers") if r["city"]}
                        | {k.title() for k in PF.AREAS})
     proj = PL.projection(today)
-    return render_template("plan.html", view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
+    from .. import territory as T
+    return render_template("plan.html", terr_on=T.enabled(), terr_n=len(T.my_ids()) if T.enabled() else 0, view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
                            prev=prev_m, nxt=next_m, today=today.isoformat(), monday=today.weekday() == 0,
                            areas=areas, start=request.args.get("start", ""),
                            customers=q("SELECT id, name, acct_type FROM customers ORDER BY name COLLATE NOCASE"))
@@ -825,11 +826,13 @@ def plan_near():
             center, label = (r[0], r[1]), r[2]
     radius = a.get("radius", type=float) or 3.0
     sort = a.get("sort", "best")
-    rows = PF.near_accounts(center, radius, exclude=[c["id"]] if c else [], sort=sort) if center else []
+    everyone = bool(a.get("everyone"))
+    rows = PF.near_accounts(center, radius, exclude=[c["id"]] if c else [], sort=sort, everyone=everyone) if center else []
+    from .. import territory as T
     unplaced = bool(c and c["lat"] is None)
     return render_template("plan_near.html", rows=rows[:150], total=len(rows), label=label, acct=acct, area=area,
                            radius=radius, sort=sort, day=a.get("day") or date.today().isoformat(), unplaced=unplaced,
-                           searched=bool(acct or area), center=center,
+                           searched=bool(acct or area), center=center, everyone=everyone, terr_on=T.enabled(),
                            customers=q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE"),
                            areas=sorted({k.title() for k in PF.AREAS}))
 

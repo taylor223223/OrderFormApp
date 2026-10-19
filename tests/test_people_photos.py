@@ -493,3 +493,35 @@ def test_plan_week_by_area_and_accounts(app, c):
                                   "why_1": "Near", "day_1": day, "back": "/plan/near?account=x"})
     assert r.status_code == 302
     c.post("/plan/area", data={"csrf_token": c.t, "day": day, "area": ""})
+
+
+def test_territory_filter(app, c):
+    from datetime import date, timedelta
+    from orderapp import territory as T
+    with app.app_context():
+        from orderapp.db import x, set_setting
+        set_setting("report_rep", "Taylor Anderson")
+        old = (date.today() - timedelta(days=80)).isoformat() + " 09:00"
+        inside = x("INSERT INTO customers(name, zip, city, status, lat, lon) VALUES ('Inside Terr Flats','85013','Phoenix','Active',33.51,-112.08)")
+        outside = x("INSERT INTO customers(name, zip, city, status, lat, lon) VALUES ('Mesa Far Away','85210','Mesa','Active',33.39,-111.84)")
+        tempe_s = x("INSERT INTO customers(name, zip, city, status, lat, lon) VALUES ('Tempe South 202','85281','Tempe','Active',33.41,-111.93)")
+        tempe_n = x("INSERT INTO customers(name, zip, city, status, lat, lon) VALUES ('Tempe North 202','85281','Tempe','Active',33.45,-111.93)")
+        for cid in (inside, outside, tempe_s, tempe_n):
+            x("INSERT INTO activities(customer_id, kind, occurred_at, subject) VALUES (?,?,?,?)", (cid, "Call", old, "x"))
+        ids = T.my_ids()
+        assert inside in ids and tempe_n in ids and outside not in ids and tempe_s not in ids
+        from orderapp import planner as PL
+        names = [r["name"] for r in PL.recommendations(7)]
+        assert "Inside Terr Flats" in names and "Mesa Far Away" not in names and "Tempe South 202" not in names
+    # Settings page saves ZIPs; Mesa added to my list -> it shows up
+    page = c.get("/settings/territory").get_data(as_text=True)
+    assert "Taylor Anderson" in page and "85013" in page
+    r = c.post("/settings/territory", data={"csrf_token": c.t, "zips_0": T.DEFAULT_MY_ZIPS + " 85210", "only": "1",
+                                            "include_billed": "1", "partial": "85281 85288"})
+    assert r.status_code == 302
+    with app.app_context():
+        assert outside in T.my_ids()
+    lst = c.get("/customers?terr=mine").get_data(as_text=True)
+    assert "Inside Terr Flats" in lst and "Tempe South 202" not in lst
+    c.post("/settings/territory", data={"csrf_token": c.t, "zips_0": T.DEFAULT_MY_ZIPS, "only": "1",
+                                        "include_billed": "1", "partial": "85281 85288"})

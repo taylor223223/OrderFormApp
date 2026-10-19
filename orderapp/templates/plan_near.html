@@ -20,7 +20,7 @@
 <input type="hidden" name="back" value="{{ request.full_path }}">
 <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><b>{{ total }} account{{ 's' if total != 1 }} within {{ '%g' % radius }} mi{% if total > 150 %} (closest 150 shown){% endif %}</b>
 <span class="row" style="gap:6px">Add ticked to <input type="date" id="nearDay" value="{{ day }}" style="width:auto"><button class="btn primary">Add to my route</button></span></div>
-<p class="small muted">Straight-line miles from map points on your customers. Only properties with a map point are listed - run Routes &gt; Locate all after importing addresses to see more.</p>
+<p class="small muted">{% if terr_on and not everyone %}🗺️ Only accounts in your territory - <a href="{{ request.full_path }}&everyone=1">show everyone</a>. {% endif %}Straight-line miles from map points on your customers. Only properties with a map point are listed - run Routes &gt; Locate all after importing addresses to see more.</p>
 <div class="tablewrap"><table><tr><th></th><th>Account</th><th class="right">Miles</th><th class="right">Sales 12 mo</th><th>Last order</th><th>Last contact</th><th>Why</th></tr>
 {% for r in rows %}{% set k = loop.index %}<tr>
 <td><input type="checkbox" name="pick" value="{{ k }}"><input type="hidden" name="cid_{{ k }}" value="{{ r.c.id }}"><input type="hidden" name="name_{{ k }}" value="{{ r.c.name }}">

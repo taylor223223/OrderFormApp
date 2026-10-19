@@ -2,7 +2,8 @@
 {% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
 {% block body %}
 <div class="pagehead"><div><h1>Plan my {{ view }}</h1>
-<div class="muted">{{ label }} at a glance, who to see and why, and where the month is heading. Nothing is added to your routes until you tick it.</div></div>
+<div class="muted">{{ label }} at a glance, who to see and why, and where the month is heading. Nothing is added to your routes until you tick it.</div>
+<div class="small">{% if terr_on %}🗺️ Only accounts in your territory ({{ terr_n }}) · <a href="{{ url_for('settings.territory') }}">change</a>{% else %}<span style="color:#b45309">Showing every account (territory filter off)</span> · <a href="{{ url_for('settings.territory') }}">set my territory</a>{% endif %}</div></div>
 <div class="row" style="gap:6px">
   <a class="btn sm {{ 'primary' if view == 'week' }}" href="{{ url_for('plan.overview', view='week') }}">Week</a>
   <a class="btn sm {{ 'primary' if view == 'month' }}" href="{{ url_for('plan.overview', view='month') }}">Month</a>
