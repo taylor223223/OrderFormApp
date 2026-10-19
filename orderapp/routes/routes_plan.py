@@ -741,9 +741,97 @@ def overview():
         recs = PL.recommendations(7, today)
         weeks, prev_m, next_m = None, (start - timedelta(days=7)).isoformat(), (start + timedelta(days=7)).isoformat()
         label = f"Week of {start:%b %d}"
+    focus, near_sugg, areas = {}, {}, []
+    if view == "week":
+        from .. import plan_focus as PF
+        work = [d["iso"] for d in days if d["date"].weekday() < 5 and d["iso"] >= today.isoformat()] or \
+            [d["iso"] for d in days if d["date"].weekday() < 5]
+        focus = PF.focus_for([d["iso"] for d in days])
+        near_sugg = PF.place_recs(recs, work)
+        for d in days:
+            d["focus"] = focus.get(d["iso"])
+            d["near"] = near_sugg.get(d["iso"], [])
+        for dd, rows in near_sugg.items():      # warm accounts near the day's area go in the list too
+            for row in rows:
+                c = row["c"]
+                recs.append({"key": f"n{dd}{c['id']}", "name": c["name"], "customer_id": c["id"], "city": c["city"] or "",
+                             "address": "", "kind": "visit", "score": 0, "value": row["f"]["sales12"], "links": [],
+                             "why": [f"Near {row['from']} ({row['mi']} mi)" + (": " + ", ".join(row["why"]) if row["why"] else "")],
+                             "day": dd, "near": f"{row['mi']} mi from {row['from']}", "suggested": True})
+        recs.sort(key=lambda r: (r.get("kind") != "visit", r.get("day") or "9", bool(r.get("suggested")), -r["score"]))
+        areas = sorted({(r["city"] or "").strip().title() for r in q("SELECT DISTINCT city FROM customers") if r["city"]}
+                       | {k.title() for k in PF.AREAS})
     proj = PL.projection(today)
     return render_template("plan.html", view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
-                           prev=prev_m, nxt=next_m, today=today.isoformat(), monday=today.weekday() == 0)
+                           prev=prev_m, nxt=next_m, today=today.isoformat(), monday=today.weekday() == 0,
+                           areas=areas, start=request.args.get("start", ""),
+                           customers=q("SELECT id, name, acct_type FROM customers ORDER BY name COLLATE NOCASE"))
+
+
+@bp.route("/plan/area", methods=["POST"])
+@login_required
+def plan_area():
+    """Where you're going on a day: a city, zip, part of town or a property."""
+    from .. import plan_focus as PF
+    day = _day(request.form.get("day")) or abort(400)
+    text = request.form.get("area", "").strip()
+    r = PF.set_area(day.isoformat(), text)
+    if not text:
+        flash(f"Cleared the area for {day:%a %m/%d}.", "ok")
+    elif r:
+        flash(f"{day:%a %m/%d}: planning around {r[2]}. Suggestions near it are listed under the day and in "
+              f"'Who to see'.", "ok")
+    else:
+        flash(f"Saved '{text}' for {day:%a %m/%d}, but couldn't place it on the map - try a city, a zip, a part of "
+              "town (e.g. South Central Phoenix) or a property name. Accounts you add to the day still count.", "error")
+    return redirect(url_for("plan.overview", view="week", start=request.form.get("start", "")) + f"#d{day.isoformat()}")
+
+
+@bp.route("/plan/day_add", methods=["POST"])
+@login_required
+def plan_day_add():
+    """Put an account you need to visit on a day; the day's suggestions then form around it."""
+    day = _day(request.form.get("day")) or abort(400)
+    name = request.form.get("account", "").strip()
+    c = q("SELECT id, name FROM customers WHERE name=? COLLATE NOCASE", (name,), one=True) if name else None
+    if not c:
+        flash("Pick an account from the list (start typing its name).", "error")
+    else:
+        add_stop(day.isoformat(), customer_id=c["id"], purpose=request.form.get("purpose", "").strip() or "Planned visit",
+                 source="Plan")
+        try:
+            plan_day(day.isoformat())
+        except geo.GeoError:
+            pass
+        flash(f"Added {c['name']} to {day:%a %m/%d}. Accounts near it are suggested under that day.", "ok")
+    return redirect(url_for("plan.overview", view="week", start=request.form.get("start", "")) + f"#d{day.isoformat()}")
+
+
+@bp.route("/plan/near")
+@login_required
+def plan_near():
+    """Accounts around a property or an area - pick the ones to add to a day."""
+    from .. import plan_focus as PF
+    a = request.args
+    center, label = None, ""
+    acct = a.get("account", "").strip()
+    area = a.get("area", "").strip()
+    c = q("SELECT id, name, lat, lon FROM customers WHERE name=? COLLATE NOCASE", (acct,), one=True) if acct else None
+    if c and c["lat"] is not None:
+        center, label = (c["lat"], c["lon"]), c["name"]
+    elif area or acct:
+        r = PF.resolve_area(area or acct)
+        if r:
+            center, label = (r[0], r[1]), r[2]
+    radius = a.get("radius", type=float) or 3.0
+    sort = a.get("sort", "best")
+    rows = PF.near_accounts(center, radius, exclude=[c["id"]] if c else [], sort=sort) if center else []
+    unplaced = bool(c and c["lat"] is None)
+    return render_template("plan_near.html", rows=rows[:150], total=len(rows), label=label, acct=acct, area=area,
+                           radius=radius, sort=sort, day=a.get("day") or date.today().isoformat(), unplaced=unplaced,
+                           searched=bool(acct or area), center=center,
+                           customers=q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE"),
+                           areas=sorted({k.title() for k in PF.AREAS}))
 
 
 @bp.route("/plan/add", methods=["POST"])
@@ -769,7 +857,9 @@ def plan_add():
         except geo.GeoError:
             pass
     flash(f"Added {n} stop(s) to your route{'s' if len(days) > 1 else ''}.", "ok")
-    return redirect(url_for("plan.overview", view=f.get("view", "week")))
+    if f.get("back"):
+        return redirect(f["back"]) if f["back"].startswith("/") else redirect(url_for("plan.overview"))
+    return redirect(url_for("plan.overview", view=f.get("view", "week"), start=f.get("start", "")))
 
 
 @bp.route("/plan/projection", methods=["POST"])

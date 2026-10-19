@@ -444,3 +444,52 @@ def test_reorder_from_purchase_history(app, c):
         d = loads(q("SELECT data FROM orders WHERE id=?", (oid,), one=True)["data"])
     assert [(l["qty"], l["item_no"]) for l in d["lines"]] == [("6", "HB-2"), ("3", "DS-1")] and d["header"]["po"] == "PO-78"
     assert "Reorder Request" in c.get("/tracking").get_data(as_text=True)
+
+
+def test_plan_week_by_area_and_accounts(app, c):
+    from datetime import date, timedelta
+    with app.app_context():
+        from orderapp.db import x, q
+        old = (date.today() - timedelta(days=70)).isoformat() + " 09:00"
+        mk = lambda n, city, zp, lat, lon: x("INSERT INTO customers(name, address, city, state, zip, status, lat, lon) "
+                                             "VALUES (?,?,?,?,?,'Active',?,?)", (n, '1 Test St', city, 'AZ', zp, lat, lon))
+        south = mk("Ocotillo South Flats", "Phoenix", "85040", 33.395, -112.070)
+        south2 = mk("Baseline Palms", "Phoenix", "85041", 33.380, -112.080)
+        scott = mk("Camelback Vista Scottsdale", "Scottsdale", "85251", 33.495, -111.925)
+        for cid in (south, south2, scott):
+            x("INSERT INTO activities(customer_id, kind, occurred_at, subject) VALUES (?,?,?,?)", (cid, "Call", old, "x"))
+        sid = x("INSERT INTO sales(invoice_no, invoice_date, customer_id, customer_name, total) VALUES "
+                "('91001', ?, ?, 'Baseline Palms', 2500)", ((date.today() - timedelta(days=40)).isoformat(), south2))
+    mon = date.today() - timedelta(days=date.today().weekday())
+    wk = [mon + timedelta(days=i) for i in range(5)]
+    day = next((d for d in wk if d >= date.today()), wk[-1]).isoformat()
+    from orderapp import plan_focus as PF
+    with app.app_context():
+        assert PF.resolve_area("South Central Phoenix")[3] == "area"
+        assert PF.resolve_area("85251")[3] == "zip" and PF.resolve_area("scottsdale")[3] == "city"
+    r = c.post("/plan/area", data={"csrf_token": c.t, "day": day, "area": "South Central Phoenix"})
+    assert r.status_code == 302
+    page = c.get("/plan").get_data(as_text=True)
+    assert "around South Central Phoenix" in page
+    with app.app_context():
+        from orderapp import planner as PL
+        recs = PL.recommendations(7)
+        work = [d.isoformat() for d in wk if d.isoformat() >= date.today().isoformat()] or [d.isoformat() for d in wk]
+        sugg = PF.place_recs(recs, work)
+        by = {r["name"]: r for r in recs}
+        assert by["Ocotillo South Flats"]["day"] == day and "mi from South Central Phoenix" in by["Ocotillo South Flats"]["near"]
+        assert by["Camelback Vista Scottsdale"]["day"] != day or by["Camelback Vista Scottsdale"].get("far")
+    # add an account to the day, then look around it
+    r = c.post("/plan/day_add", data={"csrf_token": c.t, "day": day, "account": "Ocotillo South Flats"})
+    assert r.status_code == 302
+    with app.app_context():
+        from orderapp.db import q
+        assert q("SELECT 1 FROM route_stops WHERE day=? AND customer_id=?", (day, south), one=True)
+    near = c.get("/plan/near?account=Ocotillo South Flats&radius=3").get_data(as_text=True).split("<table")[-1]
+    assert "Baseline Palms" in near and "Camelback Vista Scottsdale" not in near
+    near = c.get("/plan/near?area=Scottsdale&radius=3").get_data(as_text=True).split("<table")[-1]
+    assert "Camelback Vista Scottsdale" in near and "Baseline Palms" not in near
+    r = c.post("/plan/add", data={"csrf_token": c.t, "pick": "1", "cid_1": str(south2), "name_1": "Baseline Palms",
+                                  "why_1": "Near", "day_1": day, "back": "/plan/near?account=x"})
+    assert r.status_code == 302
+    c.post("/plan/area", data={"csrf_token": c.t, "day": day, "area": ""})

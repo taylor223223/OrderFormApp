@@ -12,15 +12,33 @@
 
 {% if view == 'week' %}
 <div class="weekgrid">
-{% for d in days %}<div class="card wday {{ 'today' if d.iso == today }}" style="margin:0">
+{% for d in days %}<div class="card wday {{ 'today' if d.iso == today }}" style="margin:0" id="d{{ d.iso }}">
 <div class="row" style="justify-content:space-between"><b>{{ d.name }} {{ d.date.strftime('%m/%d') }}</b><a class="small" href="{{ url_for('plan.day', day=d.iso) }}">route →</a></div>
+{% if d.date.weekday() < 5 %}
+<form method="post" action="{{ url_for('plan.plan_area') }}" class="dayarea"><input type="hidden" name="day" value="{{ d.iso }}"><input type="hidden" name="start" value="{{ start }}">
+<input name="area" list="dl_areas" value="{{ d.focus.area if d.focus else '' }}" placeholder="Area, city or zip" title="Where you're working this day - suggestions for the day stay near it" onchange="this.form.submit()">
+{% if d.focus and d.focus.lat is none %}<div class="small" style="color:#b45309">⚠ not placed on the map</div>{% elif d.focus %}<div class="small muted">📍 around {{ d.focus.area_label }}</div>{% endif %}</form>
+<form method="post" action="{{ url_for('plan.plan_day_add') }}" class="dayarea"><input type="hidden" name="day" value="{{ d.iso }}"><input type="hidden" name="start" value="{{ start }}">
+<input name="account" list="dl_accounts" placeholder="+ Account to visit" title="Pick an account - it goes on this day's route and nearby accounts are suggested" onchange="this.form.submit()"></form>
+{% endif %}
 {% for s in d.stops %}<div class="small">📍 {{ s.cname or s.label }}{% if s.expected %} <span class="muted">· {{ money(s.expected) }}</span>{% endif %}</div>{% endfor %}
 {% for t in d.tasks %}<div class="small">☑ {{ t.title }}{% if t.cname %} <span class="muted">· {{ t.cname }}</span>{% endif %}</div>{% endfor %}
 {% for o in d.orders_due %}<div class="small">📦 <a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a> {{ o.cname or '' }} <span class="muted">{{ o.status }}</span></div>{% endfor %}
 {% for dl in d.deals %}<div class="small">🤝 {{ dl.name }} <span class="muted">{{ money(dl.value) }}</span></div>{% endfor %}
 {% for qu in d.quotes %}<div class="small">🧾 <a href="{{ url_for('quotes.edit', qid=qu.id) }}">{{ qu.number }}</a> expires</div>{% endfor %}
 {% if not (d.stops or d.tasks or d.orders_due or d.deals or d.quotes) %}<div class="small muted">Open</div>{% endif %}
+{% if d.near %}<div class="small" style="margin-top:6px;border-top:1px dashed var(--line);padding-top:4px"><b>Warm nearby:</b>
+{% for n in d.near %}<div>• <a href="{{ url_for('customers.view', cid=n.c.id) }}">{{ n.c.name }}</a> <span class="muted">{{ n.mi }} mi{% if n.f.sales12 %} · ${{ '{:,.0f}'.format(n.f.sales12) }}{% endif %}</span></div>{% endfor %}
+<div class="muted">tick them in "Who to see" below</div></div>{% endif %}
+{% if d.date.weekday() < 5 and (d.focus or d.stops) %}<a class="small" href="{{ url_for('plan.plan_near', area=(d.focus.area if d.focus and d.focus.lat is not none else ''), account=('' if d.focus and d.focus.lat is not none else ((d.stops[0].cname or d.stops[0].label) if d.stops else '')), day=d.iso) }}">🔎 more around here</a>{% endif %}
 </div>{% endfor %}</div>
+<datalist id="dl_areas">{% for a in areas %}<option value="{{ a }}">{% endfor %}</datalist>
+<datalist id="dl_accounts">{% for c in customers %}<option value="{{ c.name }}">{% endfor %}</datalist>
+<form class="card row" method="get" action="{{ url_for('plan.plan_near') }}" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+<b>Find accounts around:</b><input name="account" list="dl_accounts" placeholder="An account (e.g. the one you have to visit)" style="max-width:300px">
+<span class="muted">or</span><input name="area" list="dl_areas" placeholder="City, zip or area" style="max-width:220px">
+<select name="radius" style="width:auto">{% for r in [1,2,3,5,8] %}<option value="{{ r }}" {{ 'selected' if r == 3 }}>{{ r }} mi</option>{% endfor %}</select>
+<button class="btn primary">Find</button></form>
 {% else %}
 <div class="tablewrap"><table class="monthcal"><tr>{% for n in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}<th>{{ n }}</th>{% endfor %}</tr>
 {% for wk in weeks %}<tr>{% for d in wk %}<td style="vertical-align:top;height:78px;{{ 'opacity:.4;' if not d.in_month }}{{ 'background:var(--brand-soft,#fff7ed);' if d.iso == today }}">
@@ -33,18 +51,18 @@
 </td>{% endfor %}</tr>{% endfor %}</table></div>
 {% endif %}
 
-<form method="post" action="{{ url_for('plan.plan_add') }}" class="card"><input type="hidden" name="view" value="{{ view }}">
+<form method="post" action="{{ url_for('plan.plan_add') }}" class="card"><input type="hidden" name="view" value="{{ view }}"><input type="hidden" name="start" value="{{ start }}">
 <div class="row" style="justify-content:space-between"><h2 style="margin:0">Who to see {{ 'this week' if view == 'week' else 'this month' }}</h2>
 <button class="btn primary">Add ticked to my routes</button></div>
-<p class="small muted">Worked out from your quotes, follow-ups, deals, orders and the company sales data. Each is given a day, grouping the same city together - change the day before adding. Calls are marked 📞.</p>
+<p class="small muted">Worked out from your quotes, follow-ups, deals, orders and the company sales data. {% if view == 'week' %}Days where you set an area or added an account get the accounts near them (and warm accounts nearby); other days group the same city together.{% else %}Each is given a day, grouping the same city together.{% endif %} Change the day before adding. Calls are marked 📞.</p>
 <div class="tablewrap"><table><tr><th></th><th>Account</th><th>Why</th><th class="right">$ at stake</th><th>Day</th></tr>
-{% for r in recs[:40] %}{% set k = loop.index %}<tr>
+{% for r in recs[:60] %}{% set k = loop.index %}<tr>
 <td><input type="checkbox" name="pick" value="{{ k }}" {{ 'checked' if loop.index <= 8 and r.kind == 'visit' and 'HOLD' not in r.why[0] }}>
 <input type="hidden" name="cid_{{ k }}" value="{{ r.customer_id or '' }}"><input type="hidden" name="addr_{{ k }}" value="{{ r.address }}"><input type="hidden" name="name_{{ k }}" value="{{ r.name }}"><input type="hidden" name="why_{{ k }}" value="{{ r.why[0] }}"></td>
-<td>{{ '📞 ' if r.kind == 'call' }}{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id) }}">{{ r.name }}</a>{% else %}{{ r.name }} <span class="small muted">(not in your customers)</span>{% endif %}<div class="small muted">{{ r.city }}</div></td>
+<td>{{ '📞 ' if r.kind == 'call' }}{{ '✨ ' if r.suggested }}{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id) }}">{{ r.name }}</a>{% else %}{{ r.name }} <span class="small muted">(not in your customers)</span>{% endif %}<div class="small muted">{{ r.city }}</div></td>
 <td class="small">{% for w in r.why %}<div>{{ w }}</div>{% endfor %}</td>
 <td class="right">{{ money(r.value) if r.value else '' }}</td>
-<td><input type="date" name="day_{{ k }}" value="{{ r.day }}" style="width:auto"></td></tr>
+<td><input type="date" name="day_{{ k }}" value="{{ r.day }}" style="width:auto">{% if r.near %}<div class="small muted">{{ r.near }}</div>{% elif r.far %}<div class="small" style="color:#b45309">not near any area you planned</div>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">Nothing urgent. Import the company reports and add quotes / follow-ups and this fills up.</td></tr>{% endfor %}</table></div>
 </form>
 

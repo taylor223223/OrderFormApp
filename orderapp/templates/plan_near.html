@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% block title %}Accounts around {{ label or 'an account' }}{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>Accounts around {{ label or '...' }}</h1>
+<div class="muted">Pick an account you have to visit (or a city / zip / part of town) and see who else is close by - with their sales, last order and last contact - then add the ones you want to a day.</div></div>
+<div class="row"><a class="btn sm" href="{{ url_for('plan.overview', view='week') }}">← Plan my week</a></div></div>
+
+<form class="card row" method="get" style="gap:8px;flex-wrap:wrap">
+<input name="account" list="dl_accounts" value="{{ acct }}" placeholder="Account" style="max-width:320px">
+<span class="muted">or</span><input name="area" list="dl_areas" value="{{ area }}" placeholder="City, zip or area" style="max-width:220px">
+<select name="radius" style="width:auto">{% for r in [1,2,3,5,8,12] %}<option value="{{ r }}" {{ 'selected' if r == radius }}>{{ r }} mi</option>{% endfor %}</select>
+<select name="sort" style="width:auto">{% for k, l in [('best','Best fit (close + warm)'),('closest','Closest'),('sales','Sales (12 mo)')] %}<option value="{{ k }}" {{ 'selected' if k == sort }}>{{ l }}</option>{% endfor %}</select>
+<input type="hidden" name="day" value="{{ day }}"><button class="btn primary">Find</button></form>
+<datalist id="dl_accounts">{% for c in customers %}<option value="{{ c.name }}">{% endfor %}</datalist>
+<datalist id="dl_areas">{% for a in areas %}<option value="{{ a }}">{% endfor %}</datalist>
+
+{% if unplaced %}<div class="miss">{{ acct }} isn't on the map yet (no address or not located). Add its address, then Routes &gt; Locate all - or search by its city / zip instead.</div>
+{% elif searched and not center %}<div class="miss">Couldn't place "{{ area or acct }}" on the map. Try a city, a zip, a part of town (e.g. South Central Phoenix) or a property name.</div>
+{% elif center %}
+<form method="post" action="{{ url_for('plan.plan_add') }}" class="card">
+<input type="hidden" name="back" value="{{ request.full_path }}">
+<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><b>{{ total }} account{{ 's' if total != 1 }} within {{ '%g' % radius }} mi{% if total > 150 %} (closest 150 shown){% endif %}</b>
+<span class="row" style="gap:6px">Add ticked to <input type="date" id="nearDay" value="{{ day }}" style="width:auto"><button class="btn primary">Add to my route</button></span></div>
+<p class="small muted">Straight-line miles from map points on your customers. Only properties with a map point are listed - run Routes &gt; Locate all after importing addresses to see more.</p>
+<div class="tablewrap"><table><tr><th></th><th>Account</th><th class="right">Miles</th><th class="right">Sales 12 mo</th><th>Last order</th><th>Last contact</th><th>Why</th></tr>
+{% for r in rows %}{% set k = loop.index %}<tr>
+<td><input type="checkbox" name="pick" value="{{ k }}"><input type="hidden" name="cid_{{ k }}" value="{{ r.c.id }}"><input type="hidden" name="name_{{ k }}" value="{{ r.c.name }}">
+<input type="hidden" name="why_{{ k }}" value="Near {{ label }} ({{ r.mi }} mi){{ ': ' ~ r.why|join(', ') if r.why }}"><input type="hidden" name="day_{{ k }}" class="nearDay" value="{{ day }}"></td>
+<td><a href="{{ url_for('customers.view', cid=r.c.id) }}">{{ r.c.name }}</a><div class="small muted">{{ r.c.address or '' }}{% if r.c.city %}, {{ r.c.city }}{% endif %}</div></td>
+<td class="right">{{ r.mi }}</td><td class="right">{{ '${:,.0f}'.format(r.f.sales12) if r.f.sales12 else '' }}</td>
+<td class="small nowrap">{{ r.f.last_order or '' }}</td>
+<td class="small">{{ r.f.last_contact or '' }}{% if r.f.who %} · {{ r.f.who }}{% endif %}{% if r.f.temp %} <span class="tag">{{ r.f.temp }}</span>{% endif %}</td>
+<td class="small">{{ r.why|join(', ') }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">No mapped accounts that close. Try a bigger radius.</td></tr>{% endfor %}</table></div>
+</form>
+<script>document.getElementById('nearDay').addEventListener('change', e => document.querySelectorAll('.nearDay').forEach(i => i.value = e.target.value));</script>
+{% endif %}
+{% endblock %}
