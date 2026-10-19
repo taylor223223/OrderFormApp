@@ -72,11 +72,13 @@ def facts(customers):
     since = (date.today() - timedelta(days=365)).isoformat()
     ph = ",".join("?" * len(ids))
     out = {i: {"sales12": 0.0, "sales_all": 0.0, "last_order": "", "last_contact": "", "how": "", "temp": "",
-               "who": "", "src": ""} for i in ids}
+               "who": "", "src": "", "orders": 0, "avg": 0.0} for i in ids}
     for r in q(f"""SELECT customer_id, SUM(CASE WHEN invoice_date>=? THEN total ELSE 0 END) s12, SUM(total) sall,
-                   MAX(invoice_date) last FROM sales WHERE customer_id IN ({ph}) GROUP BY customer_id""", [since] + ids):
+                   MAX(invoice_date) last, COUNT(*) n FROM sales WHERE customer_id IN ({ph}) GROUP BY customer_id""",
+               [since] + ids):
         o = out[r["customer_id"]]
-        o.update(sales12=r["s12"] or 0, sales_all=r["sall"] or 0, last_order=r["last"] or "", src="my sales")
+        o.update(sales12=r["s12"] or 0, sales_all=r["sall"] or 0, last_order=r["last"] or "", src="my sales",
+                 orders=r["n"] or 0)
     # company-wide figures (all reps) when the Company Data reports are loaded - bigger picture wins
     try:
         from .company_db import company_key
@@ -86,10 +88,11 @@ def facts(customers):
                 if not k:
                     continue
                 r = q("""SELECT SUM(CASE WHEN doc_date>=? THEN total ELSE 0 END) s12, SUM(total) sall,
-                         MAX(doc_date) last FROM co_docs WHERE cust_key=?""", (since, k), one=True)
+                         MAX(doc_date) last, COUNT(CASE WHEN doc_type='Invoice' THEN 1 END) n
+                         FROM co_docs WHERE cust_key=?""", (since, k), one=True)
                 o = out[c["id"]]
                 if r and (r["sall"] or 0) >= o["sales_all"]:
-                    o.update(sales12=r["s12"] or 0, sales_all=r["sall"] or 0, src="company")
+                    o.update(sales12=r["s12"] or 0, sales_all=r["sall"] or 0, src="company", orders=r["n"] or 0)
                 if r and (r["last"] or "") > o["last_order"]:
                     o["last_order"] = r["last"] or ""
     except Exception:  # noqa: BLE001 - company data is optional
@@ -98,6 +101,8 @@ def facts(customers):
         d = _iso(r["order_date"]) or (r["created"] or "")[:10]
         if d and d > out[r["customer_id"]]["last_order"]:
             out[r["customer_id"]]["last_order"] = d
+    for o in out.values():
+        o["avg"] = round(o["sales_all"] / o["orders"], 2) if o["orders"] else 0.0
     for cid, r in last_contacts(ids).items():
         o = out[cid]
         o.update(last_contact=r["occurred_at"][:10],

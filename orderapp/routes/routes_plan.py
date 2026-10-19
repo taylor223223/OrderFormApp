@@ -761,6 +761,14 @@ def overview():
         recs.sort(key=lambda r: (r.get("kind") != "visit", r.get("day") or "9", bool(r.get("suggested")), -r["score"]))
         areas = sorted({(r["city"] or "").strip().title() for r in q("SELECT DISTINCT city FROM customers") if r["city"]}
                        | {k.title() for k in PF.AREAS})
+    from ..along import facts as _facts
+    cids = [r["customer_id"] for r in recs if r.get("customer_id")]
+    crow = {c["id"]: c for c in q(f"SELECT id, name, address, city FROM customers WHERE id IN ({','.join('?' * len(cids))})",
+                                    cids)} if cids else {}
+    fx = _facts(list(crow.values())) if crow else {}
+    for r in recs:
+        r["f"] = fx.get(r.get("customer_id"))
+        r["addr"] = crow[r["customer_id"]]["address"] if r.get("customer_id") in crow else ""
     proj = PL.projection(today)
     from .. import territory as T
     return render_template("plan.html", terr_on=T.enabled(), terr_n=len(T.my_ids()) if T.enabled() else 0, view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,

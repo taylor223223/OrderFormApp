@@ -56,15 +56,19 @@
 <div class="row" style="justify-content:space-between"><h2 style="margin:0">Who to see {{ 'this week' if view == 'week' else 'this month' }}</h2>
 <button class="btn primary">Add ticked to my routes</button></div>
 <p class="small muted">Worked out from your quotes, follow-ups, deals, orders and the company sales data. {% if view == 'week' %}Days where you set an area or added an account get the accounts near them (and warm accounts nearby); other days group the same city together.{% else %}Each is given a day, grouping the same city together.{% endif %} Change the day before adding. Calls are marked 📞.</p>
-<div class="tablewrap"><table><tr><th></th><th>Account</th><th>Why</th><th class="right">$ at stake</th><th>Day</th></tr>
+<div class="tablewrap"><table><tr><th></th><th>Account</th><th class="right">Sales 12 mo</th><th class="right">Avg order</th><th>Last order</th><th>Last contact</th><th>Why</th><th>Day</th></tr>
 {% for r in recs[:60] %}{% set k = loop.index %}<tr>
 <td><input type="checkbox" name="pick" value="{{ k }}" {{ 'checked' if loop.index <= 8 and r.kind == 'visit' and 'HOLD' not in r.why[0] }}>
 <input type="hidden" name="cid_{{ k }}" value="{{ r.customer_id or '' }}"><input type="hidden" name="addr_{{ k }}" value="{{ r.address }}"><input type="hidden" name="name_{{ k }}" value="{{ r.name }}"><input type="hidden" name="why_{{ k }}" value="{{ r.why[0] }}"></td>
-<td>{{ '📞 ' if r.kind == 'call' }}{{ '✨ ' if r.suggested }}{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id) }}">{{ r.name }}</a>{% else %}{{ r.name }} <span class="small muted">(not in your customers)</span>{% endif %}<div class="small muted">{{ r.city }}</div></td>
+<td>{{ '📞 ' if r.kind == 'call' }}{{ '✨ ' if r.suggested }}{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id, tab='crm') }}">{{ r.name }}</a>{% else %}{{ r.name }} <span class="small muted">(not in your customers)</span>{% endif %}<div class="small muted">{{ r.addr or '' }}{% if r.addr and r.city %}, {% endif %}{{ r.city }}</div></td>
+{% set f = r.f %}
+<td class="right nowrap">{% if f and f.sales12 %}{{ money(f.sales12) }}{% else %}—{% endif %}{% if f and f.sales_all and f.sales_all != f.sales12 %}<div class="small muted">{{ money(f.sales_all) }} all</div>{% endif %}</td>
+<td class="right nowrap">{% if f and f.avg %}{{ money(f.avg) }}<div class="small muted">{{ f.orders }} order{{ 's' if f.orders != 1 }}</div>{% else %}—{% endif %}</td>
+<td class="nowrap small">{{ (f.last_order if f else '') or '—' }}</td>
+<td class="nowrap small">{% if f and f.last_contact %}{{ f.last_contact }}<div class="muted">{{ f.how }}{% if f.temp %} · {{ f.temp }}{% endif %}{% if f.who %} · {{ f.who }}{% endif %}</div>{% else %}—{% endif %}</td>
 <td class="small">{% for w in r.why %}<div>{{ w }}</div>{% endfor %}</td>
-<td class="right">{{ money(r.value) if r.value else '' }}</td>
 <td><input type="date" name="day_{{ k }}" value="{{ r.day }}" style="width:auto">{% if r.near %}<div class="small muted">{{ r.near }}</div>{% elif r.far %}<div class="small" style="color:#b45309">not near any area you planned</div>{% endif %}</td></tr>
-{% else %}<tr><td colspan="5" class="muted">Nothing urgent. Import the company reports and add quotes / follow-ups and this fills up.</td></tr>{% endfor %}</table></div>
+{% else %}<tr><td colspan="8" class="muted">Nothing urgent. Import the company reports and add quotes / follow-ups and this fills up.</td></tr>{% endfor %}</table></div>
 </form>
 
 <div class="card" id="projection"><h2 style="margin-top:0">{{ proj.month }}: where it's heading</h2>

@@ -21,16 +21,17 @@
 <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><b>{{ total }} account{{ 's' if total != 1 }} within {{ '%g' % radius }} mi{% if total > 150 %} (closest 150 shown){% endif %}</b>
 <span class="row" style="gap:6px">Add ticked to <input type="date" id="nearDay" value="{{ day }}" style="width:auto"><button class="btn primary">Add to my route</button></span></div>
 <p class="small muted">{% if terr_on and not everyone %}🗺️ Only accounts in your territory - <a href="{{ request.full_path }}&everyone=1">show everyone</a>. {% endif %}Straight-line miles from map points on your customers. Only properties with a map point are listed - run Routes &gt; Locate all after importing addresses to see more.</p>
-<div class="tablewrap"><table><tr><th></th><th>Account</th><th class="right">Miles</th><th class="right">Sales 12 mo</th><th>Last order</th><th>Last contact</th><th>Why</th></tr>
+<div class="tablewrap"><table><tr><th></th><th>Account</th><th class="right">Miles</th><th class="right">Sales 12 mo</th><th class="right">Avg order</th><th>Last order</th><th>Last contact</th><th>Why</th></tr>
 {% for r in rows %}{% set k = loop.index %}<tr>
 <td><input type="checkbox" name="pick" value="{{ k }}"><input type="hidden" name="cid_{{ k }}" value="{{ r.c.id }}"><input type="hidden" name="name_{{ k }}" value="{{ r.c.name }}">
 <input type="hidden" name="why_{{ k }}" value="Near {{ label }} ({{ r.mi }} mi){{ ': ' ~ r.why|join(', ') if r.why }}"><input type="hidden" name="day_{{ k }}" class="nearDay" value="{{ day }}"></td>
 <td><a href="{{ url_for('customers.view', cid=r.c.id) }}">{{ r.c.name }}</a><div class="small muted">{{ r.c.address or '' }}{% if r.c.city %}, {{ r.c.city }}{% endif %}</div></td>
 <td class="right">{{ r.mi }}</td><td class="right">{{ '${:,.0f}'.format(r.f.sales12) if r.f.sales12 else '' }}</td>
+<td class="right nowrap">{{ '${:,.0f}'.format(r.f.avg) if r.f.avg else '' }}{% if r.f.orders %}<div class="small muted">{{ r.f.orders }} orders</div>{% endif %}</td>
 <td class="small nowrap">{{ r.f.last_order or '' }}</td>
 <td class="small">{{ r.f.last_contact or '' }}{% if r.f.who %} · {{ r.f.who }}{% endif %}{% if r.f.temp %} <span class="tag">{{ r.f.temp }}</span>{% endif %}</td>
 <td class="small">{{ r.why|join(', ') }}</td></tr>
-{% else %}<tr><td colspan="7" class="empty">No mapped accounts that close. Try a bigger radius.</td></tr>{% endfor %}</table></div>
+{% else %}<tr><td colspan="8" class="empty">No mapped accounts that close. Try a bigger radius.</td></tr>{% endfor %}</table></div>
 </form>
 <script>document.getElementById('nearDay').addEventListener('change', e => document.querySelectorAll('.nearDay').forEach(i => i.value = e.target.value));</script>
 {% endif %}
