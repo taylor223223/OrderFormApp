@@ -121,3 +121,19 @@ def test_near_my_stops(app, c):
     with app.app_context():
         from orderapp.db import q
         assert q("SELECT 1 FROM route_stops WHERE day=? AND customer_id=?", (DAY, app.ids["Two Miles Villas"]), one=True)
+
+
+def test_move_stop_to_number(app, c):
+    day = "2030-04-10"
+    with app.app_context():
+        from orderapp.db import x
+        sids = [x("INSERT INTO route_stops(day, position, label, address, status) VALUES (?,?,?,?, 'Planned')",
+                  (day, i, f"Stop {i + 1}", f"{i + 1} Test Rd")) for i in range(9)]
+    html = c.get(f"/routes/day/{day}").get_data(as_text=True)
+    assert 'name="act" value="pos"' in html and '<option value="9" selected>' in html
+    c.post(f"/routes/stop/{sids[8]}", data={"csrf_token": c.t, "act": "pos", "to": "1"})   # 9th -> 1st in one go
+    c.post(f"/routes/stop/{sids[0]}", data={"csrf_token": c.t, "act": "pos", "to": "99"})  # past the end -> last
+    with app.app_context():
+        from orderapp.db import q
+        order = [r["label"] for r in q("SELECT label FROM route_stops WHERE day=? ORDER BY position", (day,))]
+    assert order == ["Stop 9", "Stop 2", "Stop 3", "Stop 4", "Stop 5", "Stop 6", "Stop 7", "Stop 8", "Stop 1"]

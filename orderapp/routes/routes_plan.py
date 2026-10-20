@@ -510,6 +510,14 @@ def stop_action(sid):
             ids[i], ids[j] = ids[j], ids[i]
             for p, k in enumerate(ids):
                 x("UPDATE route_stops SET position=? WHERE id=?", (p, k))
+    elif act == "pos":            # jump straight to stop # N (instead of clicking the arrows N times)
+        ids = [r["id"] for r in stops_for(day)]
+        to = request.form.get("to", type=int)
+        if to and sid in ids:
+            ids.remove(sid)
+            ids.insert(min(max(to, 1), len(ids) + 1) - 1, sid)
+            for p, k in enumerate(ids):
+                x("UPDATE route_stops SET position=? WHERE id=?", (p, k))
     elif act == "move":
         nd = request.form.get("to_day")
         if _day(nd):
@@ -528,7 +536,7 @@ def stop_action(sid):
                          ", ".join(f.getlist("products")), sid))
     elif act == "delete":
         x("DELETE FROM route_stops WHERE id=?", (sid,))
-    if act in ("Done", "Skipped", "Planned", "move", "delete", "up", "down"):
+    if act in ("Done", "Skipped", "Planned", "move", "delete", "up", "down", "pos"):
         try:
             plan_day(day)          # refresh legs / arrival times for the rest of the day
         except geo.GeoError:

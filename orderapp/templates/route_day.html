@@ -19,11 +19,13 @@
 <input name="notes" placeholder="Notes (unit #, vacant/occupied...)" style="width:100%">
 <details style="width:100%"><summary class="small">Address instead of a property</summary><input name="address" placeholder="Full address" style="margin-top:4px"></details></form>
 <div class="card" style="padding:8px 12px">
-<div class="row small muted"><b>Start:</b> {{ res.start_address }}</div>
+<div class="row small muted" style="justify-content:space-between"><span><b>Start:</b> {{ res.start_address }}</span>{% if rows|length > 1 %}<span>Tip: click a stop's number to move it to any spot</span>{% endif %}</div>
 {% for r in rows %}{% set s = r.s %}
 {% if r.leg %}<div class="legline">↓ {{ r.leg_txt }} · {{ r.miles }} mi</div>{% endif %}
 <div class="row" style="align-items:flex-start;padding:6px 0;border-top:1px solid var(--line);{{ 'opacity:.55' if s.status=='Skipped' }}">
-<span class="stopn {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}">{{ loop.index }}</span>
+{% set num = loop.index %}{% if rows|length > 1 %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="stoppos" title="Move this stop to another stop number"><input type="hidden" name="act" value="pos">
+<select name="to" class="stopn {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}" onchange="this.form.submit()" aria-label="Stop number">{% for n in range(1, rows|length + 1) %}<option value="{{ n }}" {{ 'selected' if n == num }}>{{ n }}</option>{% endfor %}</select></form>
+{% else %}<span class="stopn {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}">{{ loop.index }}</span>{% endif %}
 <div style="flex:1;min-width:0">
 <b>{% if s.customer_id %}<a href="{{ url_for('customers.view', cid=s.customer_id, tab='crm') }}">{{ s.label or s.cname }}</a>{% else %}{{ s.label }}{% endif %}</b>
 {% if r.arrive %}<span class="tag">{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}</span>{% endif %}{% if s.source %}<span class="tag">{{ s.source }}</span>{% endif %}{% if s.status!='Planned' %}<span class="tag {{ 'ok' if s.status=='Done' }}">{{ s.status }}</span>{% endif %}
