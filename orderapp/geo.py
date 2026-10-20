@@ -364,6 +364,47 @@ def optimize_order(dur, round_trip=True, fixed_first=None):
     return order
 
 
+def optimize_with_slots(dur, slots, free, start=0, round_trip=True, home=0):
+    """Fill the open slots (None) in `slots` with the `free` stop indexes in the order with the least driving,
+    keeping pinned stops (already in `slots`) exactly where they are. Path starts at `start`; with round_trip
+    it ends back at `home`. Nearest neighbour slot by slot, then swaps / reversals of the free stops."""
+    open_at = [k for k, v in enumerate(slots) if v is None]
+
+    def build(seq):
+        out = list(slots)
+        for k, v in zip(open_at, seq):
+            out[k] = v
+        return out
+
+    def cost(seq):
+        c, prev = 0.0, start
+        for i in build(seq):
+            c += dur[prev][i]
+            prev = i
+        return c + (dur[prev][home] if round_trip else 0.0)
+
+    seq, left, prev = [], set(free), start
+    for k, v in enumerate(slots):
+        if v is not None:
+            prev = v
+            continue
+        nxt = min(left, key=lambda j: dur[prev][j])
+        seq.append(nxt)
+        left.discard(nxt)
+        prev = nxt
+    best, improved = cost(seq), True
+    while improved:
+        improved = False
+        for i in range(len(seq) - 1):
+            for k in range(i + 1, len(seq)):
+                for cand in (seq[:i] + seq[i:k + 1][::-1] + seq[k + 1:],
+                             seq[:i] + [seq[k]] + seq[i + 1:k] + [seq[i]] + seq[k + 1:]):
+                    c = cost(cand)
+                    if c + 1e-6 < best:
+                        seq, best, improved = cand, c, True
+    return build(seq)
+
+
 def best_insertion(dur, current_order, new_idx, round_trip=True):
     """Where to put one new stop with the least extra driving (for quick-adds during the day)."""
     best_pos, best_cost = len(current_order), None

@@ -137,3 +137,46 @@ def test_move_stop_to_number(app, c):
         from orderapp.db import q
         order = [r["label"] for r in q("SELECT label FROM route_stops WHERE day=? ORDER BY position", (day,))]
     assert order == ["Stop 9", "Stop 2", "Stop 3", "Stop 4", "Stop 5", "Stop 6", "Stop 7", "Stop 8", "Stop 1"]
+
+
+def test_pinned_stops_stay_put_when_optimizing(app, c):
+    day = "2030-04-11"
+    with app.app_context():
+        from orderapp.db import get_db, set_setting, x
+        set_setting("route_start_address", "100 Home St, Phoenix AZ")
+        set_setting("route_return_to_start", "0")
+        set_setting("ors_api_key", "")
+        db = get_db()
+        db.execute("INSERT OR REPLACE INTO geocache(address, lat, lon, provider, updated) VALUES (?,?,?,?,?)",
+                   ("100 home st, phoenix az", 33.45, -112.07, "test", "x"))
+        db.commit()
+        # a line of stops heading east from home, entered in a scrambled order
+        pts = {"East 4": -111.85, "East 2": -111.95, "East 1": -112.00, "East 3": -111.90}
+        sids = {n: x("INSERT INTO route_stops(day, position, label, address, lat, lon, status) "
+                     "VALUES (?,?,?,?,?,?, 'Planned')", (day, i, n, f"{n} Rd", 33.45, lo))
+                for i, (n, lo) in enumerate(pts.items())}
+
+    def order():
+        with app.app_context():
+            from orderapp.db import q
+            return [r["label"] for r in q("SELECT label FROM route_stops WHERE day=? ORDER BY position", (day,))]
+
+    c.post(f"/routes/day/{day}/optimize", data={"csrf_token": c.t})
+    assert order() == ["East 1", "East 2", "East 3", "East 4"]                 # nothing pinned: plain optimize
+    c.post(f"/routes/stop/{sids['East 4']}", data={"csrf_token": c.t, "act": "pin", "pin": "first"})
+    c.post(f"/routes/day/{day}/optimize", data={"csrf_token": c.t})
+    assert order()[0] == "East 4" and order()[1:] == ["East 3", "East 2", "East 1"]   # rest optimized after it
+    c.post(f"/routes/stop/{sids['East 1']}", data={"csrf_token": c.t, "act": "pin", "pin": "last"})
+    c.post(f"/routes/day/{day}/optimize", data={"csrf_token": c.t})
+    o = order()
+    assert o[0] == "East 4" and o[-1] == "East 1"
+    html = c.get(f"/routes/day/{day}").get_data(as_text=True)
+    assert "📌 First" in html and "📌 Last" in html
+    # picking a number pins it there ("keep this #"); unpin clears it
+    c.post(f"/routes/stop/{sids['East 2']}", data={"csrf_token": c.t, "act": "pos", "to": "2"})
+    c.post(f"/routes/day/{day}/optimize", data={"csrf_token": c.t})
+    assert order()[1] == "East 2"
+    c.post(f"/routes/stop/{sids['East 2']}", data={"csrf_token": c.t, "act": "pin", "pin": ""})
+    with app.app_context():
+        from orderapp.db import q
+        assert q("SELECT pin FROM route_stops WHERE id=?", (sids["East 2"],), one=True)["pin"] is None

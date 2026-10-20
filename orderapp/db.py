@@ -195,7 +195,7 @@ CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
 MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
                   "owner": "TEXT", "acct_type": "TEXT", "services": "TEXT"},
-    "route_stops": {"products": "TEXT", "done_at": "TEXT", "expected": "REAL"},
+    "route_stops": {"products": "TEXT", "done_at": "TEXT", "expected": "REAL", "pin": "TEXT"},
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},

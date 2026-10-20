@@ -57,6 +57,41 @@ def _start(day):
     return addr, t
 
 
+PINS = {"first": "📌 First", "last": "📌 Last", "here": "📌 Keep this #"}
+
+
+def _pinned_order(rest, pins, done, ok_stops, dur, cur, round_trip):
+    """Order the not-yet-visited stops with pinned ones held in place. rest/done are 1-based indexes into
+    ok_stops (= rows of the duration matrix)."""
+    n = len(rest)
+    slots = [None] * n
+    by_pos = sorted(rest, key=lambda i: (ok_stops[i - 1]["position"], ok_stops[i - 1]["id"]))
+    firsts = [i for i in by_pos if pins[i] == "first"]
+    lasts = [i for i in by_pos if pins[i] == "last"]
+    for k, i in enumerate(firsts):
+        slots[k] = i
+    for k, i in enumerate(reversed(lasts)):
+        if slots[n - 1 - k] is None:
+            slots[n - 1 - k] = i
+    # "keep this #": the stop number it has now (counting visited stops), nearest open slot if taken
+    all_by_pos = sorted(done + rest, key=lambda i: (ok_stops[i - 1]["position"], ok_stops[i - 1]["id"]))
+    for i in [i for i in by_pos if pins[i] == "here"]:
+        want = min(max(all_by_pos.index(i) - len(done), 0), n - 1)
+        for d in range(n):
+            for k in (want - d, want + d):
+                if 0 <= k < n and slots[k] is None:
+                    slots[k] = i
+                    break
+            else:
+                continue
+            break
+    placed = {v for v in slots if v is not None}
+    free = [i for i in rest if i not in placed]
+    if not free:
+        return slots
+    return geo.optimize_with_slots(dur, slots, free, start=cur, round_trip=round_trip, home=0)
+
+
 def plan_day(day, optimize=False):
     """Geocode, (optionally) reorder, compute legs + ETAs, save. Returns a dict for the page."""
     stops = [s for s in stops_for(day) if s["status"] != "Skipped"]
@@ -101,7 +136,11 @@ def plan_day(day, optimize=False):
                       key=lambda i: (ok_stops[i - 1]["done_at"] or "", ok_stops[i - 1]["position"]))
         rest = [i for i in range(1, len(allp)) if i not in done]
         cur = done[-1] if done else 0
-        if len(rest) > 1:
+        pins = {i: (ok_stops[i - 1]["pin"] or "") for i in rest}
+        if len(rest) > 1 and any(pins.values()):
+            # pinned stops stay put (first / last / this stop #); only the others are re-ordered around them
+            rest = _pinned_order(rest, pins, done, ok_stops, dur, cur, round_trip)
+        elif len(rest) > 1:
             sub = [cur] + rest
             sdur = [[dur[a][b] for b in sub] for a in sub]
             if cur and round_trip:   # trip home still ends at the start address
@@ -369,7 +408,7 @@ def day(day):
                            miles=round(res["total_m"] / 1609.34, 1), finish=finish, gmaps=gmaps,
                            points=points, start=res["start"], customers=customers, week_days=week_days,
                            has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"),
-                           items=ESTIMATE_ITEMS, check=route_check(day, res))
+                           items=ESTIMATE_ITEMS, check=route_check(day, res), pins=PINS)
 
 
 def route_check(day, res):
@@ -477,7 +516,9 @@ def optimize(day):
         flash("; ".join(res["errors"]), "error")
     else:
         done_n = sum(1 for st in stops_for(day) if st["status"] == "Done")
+        pinned = sum(1 for st in stops_for(day) if st["pin"] and st["status"] == "Planned")
         flash(("Rest of the day re-planned from your last visited stop" if done_n else "Route optimized")
+              + (f" around {pinned} pinned stop{'s' if pinned != 1 else ''}" if pinned else "")
               + f": {fmt_dur(res['total_s'])} of driving"
               + (" (estimated - add a free OpenRouteService key in Settings for real road times)" if res["estimated"] else "")
               + ".", "ok")
@@ -515,9 +556,13 @@ def stop_action(sid):
         to = request.form.get("to", type=int)
         if to and sid in ids:
             ids.remove(sid)
-            ids.insert(min(max(to, 1), len(ids) + 1) - 1, sid)
+            to = min(max(to, 1), len(ids) + 1)
+            ids.insert(to - 1, sid)
             for p, k in enumerate(ids):
                 x("UPDATE route_stops SET position=? WHERE id=?", (p, k))
+            # a stop you put somewhere on purpose stays there when you hit Optimize (unpin it to let it move)
+            pin = "first" if to == 1 else ("last" if to == len(ids) else "here")
+            x("UPDATE route_stops SET pin=? WHERE id=?", (pin, sid))
     elif act == "move":
         nd = request.form.get("to_day")
         if _day(nd):
@@ -527,6 +572,9 @@ def stop_action(sid):
             flash(f"Moved to {nd}.", "ok")
     elif act == "Done":
         mark_done(s, request.form.get("notes", "").strip())
+    elif act == "pin":            # hold this stop first / last / at its number when optimizing
+        v = request.form.get("pin", "")
+        x("UPDATE route_stops SET pin=? WHERE id=?", (v if v in PINS else None, sid))
     elif act in ("Skipped", "Planned"):
         x("UPDATE route_stops SET status=?, done_at=NULL WHERE id=?", (act, sid))
     elif act == "notes":

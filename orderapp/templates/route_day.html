@@ -4,7 +4,7 @@
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('plan.week') }}">← Route planner</a> · <a href="{{ url_for('plan.trip_log', month=day[:7]) }}">Trip log</a></div>
 <h1>{{ d.strftime('%A, %b %d') }}</h1>
 <div class="row">{% if rows %}<span class="tag">🚗 {{ total }} driving</span><span class="tag">{{ miles }} mi</span><span class="tag">Start {{ res.start_time }}</span><span class="tag">Back ~{{ finish.strftime('%I:%M %p').lstrip('0') }}</span>{% if res.estimated %}<span class="tag warn" title="Add a free OpenRouteService key in Settings for real road times">estimated</span>{% endif %}{% endif %}</div></div>
-<div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}">{% set n_done = rows|selectattr('s.status', 'equalto', 'Done')|list|length %}<button class="btn primary" {{ 'disabled' if rows|length < 2 }} title="{{ 'Re-orders only the stops you have not visited yet, starting from your last visited stop' if n_done else 'Puts the stops in the order with the least driving' }}">{{ '🔄 Re-plan rest of day' if n_done else 'Optimize route' }}</button></form>
+<div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}">{% set n_done = rows|selectattr('s.status', 'equalto', 'Done')|list|length %}<button class="btn primary" {{ 'disabled' if rows|length < 2 }} title="{{ 'Re-orders only the stops you have not visited yet, starting from your last visited stop' if n_done else 'Puts the stops in the order with the least driving' }} (📌 pinned stops stay where they are)">{{ '🔄 Re-plan rest of day' if n_done else 'Optimize route' }}</button></form>
 {% if rows %}<a class="btn" href="{{ url_for('plan.sheet', day=day) }}">Stop list</a>{% endif %}
 {% if gmaps %}<a class="btn" href="{{ gmaps }}" target="_blank" rel="noopener">{{ 'Navigate remaining stops' if (n_done and d == d.today()) else 'Open in Google Maps' }}</a>{% endif %}</div></div>
 {% for e in res.errors %}<div class="flash error">{{ e }} <a href="{{ url_for('settings.test_maps') }}">Test map connection</a></div>{% endfor %}
@@ -19,7 +19,7 @@
 <input name="notes" placeholder="Notes (unit #, vacant/occupied...)" style="width:100%">
 <details style="width:100%"><summary class="small">Address instead of a property</summary><input name="address" placeholder="Full address" style="margin-top:4px"></details></form>
 <div class="card" style="padding:8px 12px">
-<div class="row small muted" style="justify-content:space-between"><span><b>Start:</b> {{ res.start_address }}</span>{% if rows|length > 1 %}<span>Tip: click a stop's number to move it to any spot</span>{% endif %}</div>
+<div class="row small muted" style="justify-content:space-between"><span><b>Start:</b> {{ res.start_address }}</span>{% if rows|length > 1 %}<span>Tip: click a stop's number to move it to any spot - it gets 📌 pinned there so Optimize won't move it</span>{% endif %}</div>
 {% for r in rows %}{% set s = r.s %}
 {% if r.leg %}<div class="legline">↓ {{ r.leg_txt }} · {{ r.miles }} mi</div>{% endif %}
 <div class="row" style="align-items:flex-start;padding:6px 0;border-top:1px solid var(--line);{{ 'opacity:.55' if s.status=='Skipped' }}">
@@ -28,7 +28,7 @@
 {% else %}<span class="stopn {{ 'done' if s.status=='Done' }} {{ 'skip' if s.status=='Skipped' }}">{{ loop.index }}</span>{% endif %}
 <div style="flex:1;min-width:0">
 <b>{% if s.customer_id %}<a href="{{ url_for('customers.view', cid=s.customer_id, tab='crm') }}">{{ s.label or s.cname }}</a>{% else %}{{ s.label }}{% endif %}</b>
-{% if r.arrive %}<span class="tag">{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}</span>{% endif %}{% if s.source %}<span class="tag">{{ s.source }}</span>{% endif %}{% if s.status!='Planned' %}<span class="tag {{ 'ok' if s.status=='Done' }}">{{ s.status }}</span>{% endif %}
+{% if r.arrive %}<span class="tag">{{ r.arrive.strftime('%I:%M %p').lstrip('0') }}</span>{% endif %}{% if s.pin %}<span class="tag pin" title="Stays here when you optimize the route">{{ pins[s.pin] }}</span>{% endif %}{% if s.source %}<span class="tag">{{ s.source }}</span>{% endif %}{% if s.status!='Planned' %}<span class="tag {{ 'ok' if s.status=='Done' }}">{{ s.status }}</span>{% endif %}
 <div class="small muted">{{ s.address }}{% if s.cphone %} · <a href="tel:{{ s.cphone }}">{{ s.cphone }}</a>{% endif %}</div>
 {% if s.purpose %}<div class="small muted">{{ s.purpose }}</div>{% endif %}
 {% if s.id in res.missing %}<div class="small err">Couldn't find this address on the map. Edit the property's address.</div>{% endif %}
@@ -45,6 +45,8 @@
 </details></div>
 <div class="row stopacts" style="gap:4px">
 {% for act, lbl, ttl in [('up','↑','Earlier'),('down','↓','Later')] %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="{{ act }}"><button class="btn sm" title="{{ ttl }}">{{ lbl }}</button></form>{% endfor %}
+{% if s.status!='Done' and rows|length > 1 %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" title="Pinned stops stay put when you optimize - the rest are re-ordered around them"><input type="hidden" name="act" value="pin">
+<select name="pin" class="pinsel {{ 'on' if s.pin }}" onchange="this.form.submit()" style="width:auto"><option value="">{{ '📌 Unpin' if s.pin else '📌 Pin' }}</option>{% for k, l in pins.items() %}<option value="{{ k }}" {{ 'selected' if s.pin == k }}>{{ l[2:] }}</option>{% endfor %}</select></form>{% endif %}
 {% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Done"><button class="btn sm ok" title="Visited - logs a site visit in the CRM">✓ Visited</button></form>{% endif %}
 {% if s.status=='Planned' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Skipped"><button class="btn sm" title="Skip today">Skip</button></form>
 {% else %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Planned"><button class="btn sm" title="Back to planned">↺</button></form>{% endif %}
