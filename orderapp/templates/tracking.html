@@ -5,6 +5,9 @@
 <div class="stat"><div class="l">Put in {{ p.label|lower }}</div><div class="n">${{ '{:,.0f}'.format(p.total) }}</div>
 <div class="small muted">{{ p.orders }} order{{ '' if p.orders == 1 else 's' }}{% if p.partial %} · {{ p.partial }} not fully priced{% endif %}</div></div>{% endfor %}</div>
 <p class="small muted" style="margin-top:-6px">Conservative estimate: each line at the low end of what the account (or similar items) sold for; lines with no price history count as $0. Drafts and cancelled orders aren't counted.{% if totals.pending %} {{ totals.pending }} order(s) still being estimated - refresh in a moment.{% endif %}</p>{% endif %}
+{% if undo %}<div class="flash ok row" style="gap:10px;align-items:center" id="undoBar">🗑️ Deleted order #{{ undo.order_id }}{% if undo.label %} ({{ undo.label }}){% endif %}.
+<form method="post" action="{{ url_for('orders.restore', tid=undo.id) }}"><input type="hidden" name="next" value="{{ url_for('orders.tracking') }}"><button class="btn sm primary">Undo</button></form>
+<span class="small muted">It stays in Recently deleted (bottom of this page) for 30 days.</span></div>{% endif %}
 <div class="row" style="margin-bottom:10px">
   {% for k in ['open','all'] + tap_labels %}
   <a class="tag {{ 'st-' ~ k.split()[0] if k not in ('open','all') }}" style="{{ 'outline:2px solid var(--brand)' if st==k }}" href="{{ url_for('orders.tracking', status=k, q=s) }}">{{ k|capitalize if k in ('open','all') else k }}{% if k in counts %} ({{ counts[k] }}){% endif %}</a>
@@ -18,9 +21,15 @@
 <tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td><td>{% if o.kind == 'quote' %}<span class="tag" style="background:#fee2e2;color:#991b1b">Estimate</span> {% endif %}{{ o.title }}<div class="small muted">{{ (o.notes or '')[:60] }}</div></td><td>{{ o.po or '' }}</td><td class="nowrap">{{ o.order_date or '' }}</td><td>{{ o.vendor_ref or '' }}</td><td class="nowrap">{{ o.due_date or '' }}</td>
 <td><form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}"><input type="hidden" name="next" value="{{ request.full_path }}">
 <div class="taps sm">{% set cur = tap_for(o.status, o.kind) %}{% for t in tap_labels %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}">{{ t }}</button>{% endfor %}</div>{% if not cur %}<div class="small muted">{{ status_label(o.status, o.kind) }}</div>{% endif %}</form></td>
-<td>{% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}"><button class="btn sm" title="One click: same items, new draft">↻</button></form>{% endif %}</td></tr>
+<td><div class="row" style="gap:4px;flex-wrap:nowrap">{% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}"><button class="btn sm" title="One click: same items, new draft">↻</button></form>{% endif %}
+{% set msg = 'Delete order #' ~ o.id ~ (' - ' ~ o.cname if o.cname else '') ~ '?\n\n' ~ (o.title or '') ~ '\n\nYou can undo this (Recently deleted keeps it for 30 days).' %}<form method="post" action="{{ url_for('orders.delete', oid=o.id) }}" onsubmit='return confirm({{ msg|tojson }})'><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn sm danger" title="Delete this order (entered by mistake)">🗑</button></form></div></td></tr>
 {% else %}<tr><td colspan="9" class="empty">No orders here.</td></tr>{% endfor %}
 </table></div>
+{% if trash %}<details class="card" style="margin-top:16px" id="recentlyDeleted"><summary>🗑️ Recently deleted ({{ trash|length }}) - put an order back within 30 days</summary>
+<div class="tablewrap" style="margin-top:8px"><table><tr><th>#</th><th>Order</th><th>Deleted</th><th></th></tr>
+{% for t in trash %}<tr><td>#{{ t.order_id }}</td><td>{{ t.label }}</td><td class="nowrap small">{{ t.deleted_at }}</td>
+<td><form method="post" action="{{ url_for('orders.restore', tid=t.id) }}"><input type="hidden" name="next" value="{{ url_for('orders.tracking') }}"><button class="btn sm">Restore</button></form></td></tr>{% endfor %}
+</table></div></details>{% endif %}
 <details class="card" style="margin-top:16px" {{ 'open' if not rows }}><summary>Add an order placed outside the app</summary>
 <form method="post" action="{{ url_for('orders.tracking_add') }}" class="grid g4" style="margin-top:10px">
   <div style="grid-column:span 2"><label>What</label><input name="title" placeholder="e.g. 12 vertical blinds - phone order"></div>

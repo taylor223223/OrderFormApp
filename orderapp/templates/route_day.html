@@ -51,7 +51,7 @@
 {% else %}<div class="empty">No stops yet. Add properties above, or from the Routes week view.</div>{% endfor %}
 {% if res.back %}<div class="legline">↓ {{ (res.back.s/60)|round|int }} min back to start</div>{% endif %}
 </div>
-{% if rows %}<div class="card" id="alongcard"><div class="row" style="justify-content:space-between"><h3 style="margin:0">🧭 Along the way</h3><span class="small muted">Every property near this route - sort, flip through and add</span></div>
+{% if rows %}<div class="card" id="alongcard"><div class="row" style="justify-content:space-between"><h3 style="margin:0">🧭 Along the way</h3><span class="small muted">Properties on the drive, or near each stop - sort, flip through and add</span></div>
 <div id="along" style="margin-top:6px"><div class="small muted">Looking for properties along the route…</div></div></div>{% endif %}
 <details class="card" id="routecheck" {{ 'open' if not check.ok }}><summary><b>{{ '✅' if check.ok else '⚠️' }} Route check</b> <span class="small muted">- what the drive times depend on</span></summary>
 <table class="small" style="margin-top:6px">{% for name, val, ok in check["items"] %}<tr><td class="nowrap">{{ '✅' if ok else '❌' }} {{ name }}</td><td>{{ val }}</td></tr>{% endfor %}</table>
@@ -102,6 +102,10 @@
       const ctl = box.querySelector('form.alongctl');
       const go = (page) => { if (!ctl) return; const f = new FormData(ctl); if (page) f.set('page', page); load(ctl.dataset.url + '?' + new URLSearchParams(f)); };
       if (ctl) ctl.querySelectorAll('select').forEach(s => s.addEventListener('change', () => go(1)));
+      if (ctl) ctl.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => {
+        const f = new FormData(ctl); f.set('page', 1); f.delete('radius'); f.set('switched', 1);
+        load(ctl.dataset.url + '?' + new URLSearchParams(f));
+      }));
       box.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => go(b.dataset.page)));
       if (window.routeMap && window.L) {
         if (layer) layer.remove();

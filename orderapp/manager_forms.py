@@ -1276,15 +1276,15 @@ class Trim(Form):
         ("2  CASING = DOOR OPENINGS", "Count the door openings that need trim around them, and if it's "
          "one side or both sides.", _tile_casing),
         ("3  ROUND UP", "Round feet up to the next whole foot - we add a little extra for cuts.", None),
-        ("4  PICK THE PROFILE", "Find the shape that matches below (A-J), or check \"Match what's there\".",
-         None),
+        ("4  PICK THE PROFILE", "Find the shape that matches below (A-K), or check \"Match what's there\". "
+         "Plain flat / square boards = K: write the thickness and height.", None),
     ]
 
     def intro(self, pg, y):
         from .catalog import TRIM_PROFILES
         names = {k: d.split(" ")[0] for k, d in TRIM_PROFILES}
         return photo_strip(pg, y, "TRIM PROFILES  (pick the letter in each item)", "trim_profile",
-                           TRIM_LETTERS, keys=[x.lower() for x in TRIM_LETTERS], h=46)
+                           TRIM_LETTERS + ["K"], keys=[x.lower() for x in TRIM_LETTERS + ["K"]], h=46)
 
     def card(self, pg, n, y):
         k = f"{self.prefix}{n}"
@@ -1306,6 +1306,12 @@ class Trim(Form):
         for i, ltr in enumerate(TRIM_LETTERS):
             pg.check(f"{k} Profile {ltr}", L + 310 + i * 24, y, ltr, 8)
         y += 14
+        pg.check(f"{k} Profile K", L + 8, y, "K FLAT / SQUARE:", 8)
+        pg.text(L + 100, y, "thick", 7.5)
+        pg.field(f"{k} Flat Thickness", (L + 120, y - 9, L + 160, y + 3), size=8, align=1)
+        pg.text(L + 164, y, "x tall", 7.5)
+        pg.field(f"{k} Flat Height", (L + 186, y - 9, L + 226, y + 3), size=8, align=1)
+        pg.text(L + 229, y, "in", 7.5)
         pg.check(f"{k} Profile Match", L + 310, y, "Match what's there / not sure", 8)
         y3 = notes_row(pg, k, y + 16, x1=R - 6)
         return y3 + 2

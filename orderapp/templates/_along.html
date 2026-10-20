@@ -1,31 +1,35 @@
 {% macro money(v) %}{{ '$' + '{:,.0f}'.format(v) if v else '—' }}{% endmacro %}
-{% if res.no_points %}
-<div class="small muted">Needs your start address found on the map plus at least one stop on the map - see <b>Route check</b> below for which one is missing.</div>
-{% else %}
-<form class="alongctl row" data-url="{{ url_for('plan.along', day=day) }}" style="gap:6px;margin-bottom:6px" onsubmit="return false">
+{% set near = res.mode == 'stops' %}
+<form class="alongctl row" data-url="{{ url_for('plan.along', day=day) }}" style="gap:6px;margin-bottom:6px;flex-wrap:wrap" onsubmit="return false">
+  <div class="taps sm" title="Along the route = properties on the drive between stops. Near my stops = properties close to each place you're going.">{% for k, l in modes.items() %}<label class="{{ 'on' if k == res.mode }}" style="cursor:pointer"><input type="radio" name="mode" value="{{ k }}" {{ 'checked' if k == res.mode }} style="display:none">{{ '🛣️ ' if k == 'route' else '📍 ' }}{{ l }}</label>{% endfor %}</div>
+{% if not res.no_points %}
   <label class="small row" style="gap:4px">Sort <select name="sort" style="width:auto">{% for k, l in sorts.items() %}<option value="{{ k }}" {{ 'selected' if k == res.sort }}>{{ l }}</option>{% endfor %}</select></label>
-  <label class="small row" style="gap:4px">Within <select name="radius" style="width:auto">{% for r in radii %}<option value="{{ r }}" {{ 'selected' if r == res.radius }}>{{ r }} mi</option>{% endfor %}</select> of the route</label>
+  <label class="small row" style="gap:4px">Within <select name="radius" style="width:auto">{% for r in radii %}<option value="{{ r }}" {{ 'selected' if r == res.radius }}>{{ '%g' % r }} mi</option>{% endfor %}</select> of {{ 'a stop' if near else 'the route' }}</label>
   <input type="hidden" name="page" value="{{ res.page }}">
+{% endif %}
 </form>
-<form method="post" action="{{ url_for('plan.along_add', day=day) }}">
+{% if res.no_points %}
+<div class="small muted">{% if near %}None of today's stops are on the map yet - add a stop with an address (or run Routes → Locate all) and properties near it show here.{% else %}Needs your start address found on the map plus at least one stop on the map - see <b>Route check</b> below for which one is missing. Or switch to <b>Near my stops</b>, which doesn't need the start address.{% endif %}</div>
+{% else %}
+<form method="post" action="{{ url_for('plan.along_add', day=day) }}"><input type="hidden" name="source" value="{{ 'Near my stops' if near else 'Along the way' }}">
 <div class="tablewrap"><table class="along">
-<tr><th></th><th>Property</th><th class="right">Extra drive</th><th class="right">Sales 12 mo</th><th>Last order</th><th>Last contact</th></tr>
+<tr><th></th><th>Property</th><th class="right">{{ 'Distance' if near else 'Extra drive' }}</th><th class="right">Sales 12 mo</th><th>Last order</th><th>Last contact</th></tr>
 {% for r in res.rows %}{% set c = r.c %}{% set f = r.f %}<tr data-lat="{{ c.lat }}" data-lon="{{ c.lon }}" data-name="{{ c.name }}">
-<td><input type="checkbox" name="customer_id" value="{{ c.id }}"><input type="hidden" name="why_{{ c.id }}" value="{{ r.why[0] if r.why else 'On the way' }}"></td>
+<td><input type="checkbox" name="customer_id" value="{{ c.id }}"><input type="hidden" name="why_{{ c.id }}" value="{{ ('Near ' ~ r.near_stop ~ (': ' ~ r.why[0] if r.why else '')) if near else (r.why[0] if r.why else 'On the way') }}"></td>
 <td><a href="{{ url_for('customers.view', cid=c.id, tab='crm') }}" target="_blank">{{ c.name }}</a><div class="small muted">{{ c.address or '' }}{% if c.city %}, {{ c.city }}{% endif %}</div>
 {% if r.why %}<div class="small">{{ r.why|join(' · ') }}</div>{% endif %}</td>
-<td class="right nowrap small">+{{ r.extra_min }} min<div class="muted">{{ r.extra_mi }} mi</div></td>
+{% if near %}<td class="right small">{{ r.extra_mi }} mi<div class="muted">from {{ r.near_stop }}</div></td>{% else %}<td class="right nowrap small">+{{ r.extra_min }} min<div class="muted">{{ r.extra_mi }} mi</div></td>{% endif %}
 <td class="right nowrap">{{ money(f.sales12) }}{% if f.sales_all and f.sales_all != f.sales12 %}<div class="small muted">{{ money(f.sales_all) }} all</div>{% endif %}</td>
 <td class="nowrap small">{{ f.last_order or '—' }}</td>
 <td class="nowrap small">{% if f.last_contact %}{{ f.last_contact }}<div class="muted">{{ f.how }}{% if f.temp %} · {{ f.temp }}{% endif %}{% if f.who %} · {{ f.who }}{% endif %}</div>{% else %}—{% endif %}</td>
-</tr>{% else %}<tr><td colspan="6" class="empty small">No properties on the map within {{ res.radius|int }} mi of this route - try a wider distance.{% if res.unmapped %} {{ res.unmapped }} of your properties aren't on the map yet (Routes → Locate all properties).{% endif %}</td></tr>{% endfor %}
+</tr>{% else %}<tr><td colspan="6" class="empty small">No properties on the map within {{ '%g' % res.radius }} mi of {{ 'your stops' if near else 'this route' }} - try a wider distance.{% if res.unmapped %} {{ res.unmapped }} of your properties aren't on the map yet (Routes → Locate all properties).{% endif %}</td></tr>{% endfor %}
 </table></div>
 <div class="row" style="margin-top:8px;gap:6px;align-items:center">
 {% if res.rows %}<button class="btn primary sm">+ Add ticked to this route</button>{% endif %}
 {% if res.pages > 1 %}<button type="button" class="btn sm" data-page="{{ res.page - 1 }}" {{ 'disabled' if res.page <= 1 }}>‹ Prev</button>
 <button type="button" class="btn sm" data-page="{{ res.page + 1 }}" {{ 'disabled' if res.page >= res.pages }}>Next ›</button>{% endif %}
-<span class="small muted">{% if res.total %}{{ res.first }}–{{ res.last }} of {{ res.total }} properties along this route{% endif %}. "Extra drive" is a rough added drive.</span>
+<span class="small muted">{% if res.total %}{{ res.first }}–{{ res.last }} of {{ res.total }} properties {{ 'near your stops' if near else 'along this route' }}{% endif %}. {% if near %}"Distance" is straight-line miles from the closest stop.{% else %}"Extra drive" is a rough added drive.{% endif %}</span>
 </div></form>
 {% if res.unmapped %}<div class="small muted" style="margin-top:6px">{{ res.unmapped }} of your properties aren't on the map yet, so they can't show here.
-<form method="post" action="{{ url_for('plan.along_find', day=day) }}" style="display:inline"><button class="btn sm">📍 Locate the ones near this route</button></form></div>{% endif %}
+<form method="post" action="{{ url_for('plan.along_find', day=day) }}" style="display:inline"><button class="btn sm">📍 Locate the ones near {{ 'my stops' if near else 'this route' }}</button></form></div>{% endif %}
 {% endif %}

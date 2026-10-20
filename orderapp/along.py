@@ -139,15 +139,40 @@ def why(f):
 SORTS = {"best": "Best fit", "closest": "Closest to route", "sales": "Sales (12 mo)",
          "last_contact": "Longest since contact", "last_order": "Longest since order", "name": "Name"}
 RADII = [1, 3, 5, 10]
+MODES = {"route": "Along the route", "stops": "Near my stops"}
+NEAR_RADII = [0.5, 1, 2, 3, 5, 8]
+NEAR_MI = 2.0       # default "near my stops" distance (straight-line miles from a stop)
 
 
-def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None):
+def stop_points(day):
+    """[(lat, lon, stop name)] for the day's stops that are on the map (no start address needed)."""
+    from .routes.routes_plan import stops_for
+    out = []
+    for s in stops_for(day):
+        if s["status"] == "Skipped":
+            continue
+        lat, lon = s["lat"], s["lon"]
+        if lat is None and s["customer_id"]:
+            c = q("SELECT lat, lon FROM customers WHERE id=?", (s["customer_id"],), one=True)
+            if c and c["lat"] is not None:
+                lat, lon = c["lat"], c["lon"]
+        if lat is not None:
+            out.append((lat, lon, s["cname"] or s["label"] or "a stop"))
+    return out
+
+
+def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None, mode="route"):
     """Every property near the day's route (within `radius` extra miles), with its sales, last order and last
     contact as information - nothing is left out for missing data. Sorted by `sort`, `n` per page.
     Returns {"rows", "page", "pages", "total", "no_points", "mapped", "unmapped", ...}."""
     n = n or int(setting("along_count") or 10)
-    radius = float(radius) if radius else (WIDE_MI if wide else NORMAL_MI)
-    pts = route_points(day)
+    mode = mode if mode in MODES else "route"
+    if mode == "stops":
+        radius = float(radius) if radius else NEAR_MI
+        pts = stop_points(day)
+    else:
+        radius = float(radius) if radius else (WIDE_MI if wide else NORMAL_MI)
+        pts = route_points(day)
     on_route = {r["customer_id"] for r in q("SELECT customer_id FROM route_stops WHERE day=?", (day,))
                 if r["customer_id"]}
     mapped = q("""SELECT id, name, address, city, lat, lon, status FROM customers WHERE lat IS NOT NULL
@@ -158,12 +183,19 @@ def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None):
         mapped = [c for c in mapped if c["id"] in mine]
     unmapped = q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''", one=True)["n"]
     base = {"rows": [], "page": 1, "pages": 0, "total": 0, "more": 0, "mapped": len(mapped), "unmapped": unmapped,
-            "sort": sort, "radius": radius}
-    if len(pts) < 2:     # need the start point + at least one stop to know the way
+            "sort": sort, "radius": radius, "mode": mode}
+    if mode == "stops" and not pts:      # no stop on the map yet
+        return dict(base, no_points=True)
+    if mode != "stops" and len(pts) < 2:     # need the start point + at least one stop to know the way
         return dict(base, no_points=True)
     near = []
     for c in mapped:
         if c["id"] in on_route:
+            continue
+        if mode == "stops":     # straight-line miles to the closest stop; "leg" = that stop's name
+            d, name = min((_mi((p[0], p[1]), (c["lat"], c["lon"])), p[2]) for p in pts)
+            if d <= radius:
+                near.append((d, name, c))
             continue
         extra, leg = detour(pts, (c["lat"], c["lon"]))
         if extra <= radius:
@@ -180,7 +212,7 @@ def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None):
         if f["temp"] == "Cold" and not f["sales_all"]:
             value += 0.5
         rows.append({"c": c, "extra_mi": round(extra, 1), "extra_min": max(1, round(extra / MPH * 60)),
-                     "leg": leg, "f": f, "why": why(f), "score": extra - value * 0.8, "days": ds,
+                     "near_stop": leg if mode == "stops" else None, "leg": leg, "f": f, "why": why(f), "score": extra - value * 0.8, "days": ds,
                      "order_days": _days_since(f["last_order"])})
     big = 10 ** 6
     keys = {"best": lambda r: r["score"], "closest": lambda r: r["extra_mi"],

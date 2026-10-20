@@ -545,9 +545,17 @@ def along(day):
     _day(day) or abort(404)
     skip = [int(v) for v in (request.args.get("skip") or "").split(",") if v.strip().isdigit()]
     a = request.args
+    from ..db import set_setting
+    mode = a.get("mode") or setting("along_mode") or "route"
+    if a.get("mode") in AL.MODES and a.get("mode") != setting("along_mode"):
+        set_setting("along_mode", a["mode"])          # remember the last one picked
+    radius = a.get("radius", type=float)
+    if a.get("switched"):                             # each mode has its own distances
+        radius = None
     res = AL.suggest(day, skip=skip, wide=bool(a.get("wide")), sort=a.get("sort", "best"),
-                     page=a.get("page", 1, type=int), radius=a.get("radius", type=float))
-    return render_template("_along.html", day=day, res=res, sorts=AL.SORTS, radii=AL.RADII)
+                     page=a.get("page", 1, type=int), radius=radius, mode=mode)
+    return render_template("_along.html", day=day, res=res, sorts=AL.SORTS, modes=AL.MODES,
+                           radii=AL.NEAR_RADII if res["mode"] == "stops" else AL.RADII)
 
 
 @bp.route("/routes/day/<day>/along/add", methods=["POST"])
@@ -560,7 +568,7 @@ def along_add(day):
         return redirect(url_for("plan.day", day=day))
     for cid in ids:
         add_stop(day, customer_id=cid, purpose=request.form.get(f"why_{cid}", "") or "On the way",
-                 source="Along the way")
+                 source=request.form.get("source") or "Along the way")
     try:
         plan_day(day)
     except geo.GeoError:

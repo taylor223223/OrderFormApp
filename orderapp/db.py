@@ -229,6 +229,8 @@ def init_db(path=None):
     con.executescript(KITCHEN_SCHEMA)
     from .plan_focus import FOCUS_SCHEMA
     con.executescript(FOCUS_SCHEMA)
+    from .order_trash import TRASH_SCHEMA
+    con.executescript(TRASH_SCHEMA)
     for table, cols in MIGRATIONS.items():
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

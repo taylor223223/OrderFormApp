@@ -475,12 +475,30 @@ def set_status(oid):
 @bp.route("/orders/<int:oid>/delete", methods=["POST"])
 @login_required
 def delete(oid):
-    import shutil
-    from ..photos import photo_dir
-    x("DELETE FROM orders WHERE id=?", (oid,))
-    shutil.rmtree(photo_dir(oid), ignore_errors=True)
-    flash("Order deleted (the PDF file, if any, was left in your output folder).", "ok")
-    return redirect(url_for("orders.tracking"))
+    """Delete = move to Recently deleted (30 days). The next page shows an Undo button."""
+    from .. import order_trash
+    tid = order_trash.delete(oid)
+    if tid is None:
+        abort(404)
+    nxt = request.form.get("next") or ""
+    if not nxt.startswith("/tracking"):
+        nxt = url_for("orders.tracking")
+    import re
+    nxt = re.sub(r"[?&]undo=\d+", "", nxt).rstrip("?&")
+    return redirect(nxt + ("&" if "?" in nxt else "?") + f"undo={tid}")
+
+
+@bp.route("/orders/restore/<int:tid>", methods=["POST"])
+@login_required
+def restore(tid):
+    from .. import order_trash
+    oid = order_trash.restore(tid)
+    if oid is None:
+        flash("That order is no longer in Recently deleted.", "error")
+        return redirect(url_for("orders.tracking"))
+    flash(f"Order #{oid} is back.", "ok")
+    nxt = request.form.get("next") or ""
+    return redirect(nxt if nxt.startswith("/") else url_for("orders.view", oid=oid))
 
 
 # ---------------- tracking ----------------
@@ -515,6 +533,12 @@ def tracking():
         args += [f"%{s}%"] * 5
     sql += " ORDER BY CASE WHEN coalesce(o.due_date,'')='' THEN 1 ELSE 0 END, o.due_date, o.updated DESC"
     rows = q(sql, args)
+    from .. import order_trash
+    order_trash.purge()
+    trash = order_trash.recent()
+    undo = None
+    if request.args.get("undo", "").isdigit():
+        undo = q("SELECT * FROM order_trash WHERE id=?", (int(request.args["undo"]),), one=True)
     counts = {}
     for r in q("SELECT status, coalesce(kind,'order') kind, COUNT(*) n FROM orders GROUP BY status, kind"):
         lab = status_label(r["status"], r["kind"])
@@ -526,7 +550,8 @@ def tracking():
     except Exception:   # noqa: BLE001 - the board must always load
         totals = None
     return render_template("tracking.html", rows=rows, statuses=STATUSES, st=st, s=s, counts=counts,
-                           customers=customers, month=month, totals=totals, out_dir=output_dir())
+                           customers=customers, month=month, totals=totals, out_dir=output_dir(),
+                           trash=trash, undo=undo)
 
 
 @bp.route("/orders/folder", methods=["POST"])

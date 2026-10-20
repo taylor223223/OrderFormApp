@@ -42,6 +42,7 @@
     <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}" style="--c:#b45309"><span class="ic">✅</span>Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>
     <a href="{{ url_for('settings.index') }}" class="{{ 'on' if ep.startswith('settings.') }}" style="--c:#78716c"><span class="ic">⚙️</span>Settings</a>
   </nav>
+  <button type="button" class="tbtn" id="refreshBtn" onclick="location.reload()" title="Refresh this page - updates today's date, day of the week and everything shown">⟳ Refresh</button>
   <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn">Log out</button></form>
 {% if not cloud %}  <form method="post" action="{{ url_for('main.quit_app') }}" onsubmit="return confirm('Close AIS Sales Support?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="tbtn" title="Stop the app">Quit</button></form>{% endif %}
 </header>
@@ -105,6 +106,28 @@ document.querySelectorAll('main a[href]').forEach(a => {
   });
 })();
 </script>{% endif %}
+<div id="newDay" class="flash ok" style="display:none;position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)">
+It's a new day - <button type="button" class="btn sm primary" onclick="location.reload()">⟳ Refresh</button> to update the dates (you have unsaved changes on this page, so it didn't refresh by itself).</div>
+<script>
+(function () {
+  // Date rolls over at midnight: when the day changes while the app is open, reload the page so "today",
+  // the day of the week, this week's plan etc. are current. If something is being typed, just show a banner.
+  const opened = new Date().toDateString();
+  let dirty = false;
+  document.addEventListener('input', e => { if (e.target.closest('form')) dirty = true; });
+  document.addEventListener('submit', () => { dirty = false; });
+  function checkDay() {
+    if (new Date().toDateString() === opened) return;
+    const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (dirty || typing) { document.getElementById('newDay').style.display = 'block'; return; }
+    location.reload();
+  }
+  setInterval(checkDay, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDay(); });
+  window.addEventListener('focus', checkDay);
+  window.__checkDay = checkDay;
+})();
+</script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 </body>

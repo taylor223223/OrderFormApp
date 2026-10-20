@@ -81,6 +81,6 @@
   <div class="card"><h3 style="margin-top:0">History</h3>
     {% for h in hist %}<div class="small" style="padding:3px 0"><span class="muted">{{ h.ts[:16] }}</span> <span class="tag st-{{ h.status.split()[0] }}">{{ status_label(h.status, o.kind) }}</span> {{ h.note or '' }}</div>{% endfor %}
   </div>
-  <form method="post" action="{{ url_for('orders.delete', oid=o.id) }}" onsubmit="return confirm('Delete order #{{ o.id }}?')"><button class="btn sm danger">Delete order</button></form>
+  <form method="post" action="{{ url_for('orders.delete', oid=o.id) }}" onsubmit="return confirm('Delete order #{{ o.id }}?\n\nYou can undo this (Order Tracking > Recently deleted keeps it for 30 days).')"><button class="btn sm danger">Delete order</button></form>
 </div></div>
 {% endblock %}

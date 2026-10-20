@@ -40,7 +40,12 @@ TRIM_PROFILES = [
     ("H", '1" Eased Edge Craftsman Base 387MUL-5 1/2" x 5-1/2"'),
     ("I", '#711 Base MDF Ultralight 311MUL 3/8" x 3-1/2"'),
     ("J", 'Victorian/Newport Base 329MUL 9/16" x 3-7/8"'),
+    ("K", 'Flat / Square Edge (modern) - pick thickness & height'),
 ]
+# flat / square-edge modern trim (newer apartments and houses) - common sizes; type the exact size if different
+FLAT_TRIM_PROFILE = "K: " + TRIM_PROFILES[-1][1]
+FLAT_TRIM_THICK = ['1/2"', '9/16"', '5/8"', '3/4"']
+FLAT_TRIM_HEIGHT = ['2-1/4"', '3-1/4"', '3-1/2"', '4"', '4-1/4"', '5-1/4"', '5-1/2"']
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
 COUNTERTOP_MATERIALS = ["Laminate", "Synthetic", "Thinscape", "Custom"]
 PREFAB_KITCHEN_ITEMS = ["Base Cabinet", "Sink Base", "Drawer Base", "Wall Cabinet"]
@@ -751,6 +756,10 @@ GENERATED = {
             _g("unit", "Unit #"), _g("room", "Location (room)"),
             _gc("trim_type", "Casing or Baseboard", ["Casing", "Baseboard"]),
             _gc("profile", "Type", [f"{k}: {d}" for k, d in TRIM_PROFILES], photos="trim_profile"),
+            _gc("flat_thick", "Flat Trim Thickness", FLAT_TRIM_THICK, show_if=("profile", [FLAT_TRIM_PROFILE])),
+            _gc("flat_height", "Flat Trim Height", FLAT_TRIM_HEIGHT, show_if=("profile", [FLAT_TRIM_PROFILE])),
+            _g("flat_size", "Exact Size (if different)", show_if=("profile", [FLAT_TRIM_PROFILE]),
+               placeholder='e.g. 5/8" x 4-3/4"'),
             _g("length", "Linear Feet Needed", measure=True),
             _LINE_COMMENTS]],
         "products": ["baseboard", "casing"],

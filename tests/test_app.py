@@ -398,7 +398,9 @@ def test_new_products_and_app_made_forms():
     thr = next(f for f in spec["fields"] if f["key"] == "threshold")
     assert thr["show_if"] == {"key": "prehung", "in": ["Yes"]}
     prof = next(f for f in public_spec("trim")["fields"] if f["key"] == "profile")
-    assert len(prof["options"]) == 10 and prof["photo_map"]
+    assert len(prof["options"]) == 11 and prof["photo_map"]
+    flat = {f["key"]: f for f in public_spec("trim")["fields"] if f["key"].startswith("flat_")}
+    assert set(flat) == {"flat_thick", "flat_height", "flat_size"} and flat["flat_thick"]["show_if"]["key"] == "profile"
     assert option_photos.slug("A: #103 Casing") == "a" and option_photos.slug("Soma (Matte Black)") == "soma"
     hz = next(f for f in public_spec("horizontal_blind")["fields"] if f["key"] == "style")
     assert "Basswood" in hz["options"] and "All Vinyl" in hz["options"]
