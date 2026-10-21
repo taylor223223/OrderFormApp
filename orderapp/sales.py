@@ -29,23 +29,47 @@ CREATE INDEX IF NOT EXISTS ix_lines_sale ON sales_lines(sale_id);
 CATEGORIES = ["Blinds & Shades", "Doors", "Closet & Wardrobe Doors", "Patio Doors", "Screens",
               "Baseboard & Casing", "Door Hardware", "Bath Hardware", "Cabinets", "Countertops",
               "Shower Doors", "Mirror Frames", "Other"]
-_KEYWORDS = [   # first match wins - more specific words first
+_DOOR_SIZE = r"\d\s*['’]\s*-?\s*\d{1,2}(?:[- ]\d+/\d+)?\s*[\"”]?\s*x\s*[5-9]\s*['’]\s*-?\s*\d"   # 2'-10" x 6'-8"
+_KEYWORDS = [   # first match wins - more specific first (checked against the QuickBooks item group first, see below)
     ("Mirror Frames", r"mirror ?mate|mirror frame"),
+    ("Blinds & Shades", r"roller ?shade|clutch shade|vx ?/? ?solar|solar screen \d|e-?screen|blackout"),
     ("Shower Doors", r"shower|enclosure|tub door"),
-    ("Closet & Wardrobe Doors", r"bi-?pass|bypass|bi-?fold|closet|wardrobe|mirrored|finger pull"),
+    ("Closet & Wardrobe Doors", r"vanity mirror|bi-?pass|bypass|bi-?fold|closet|wardrobe|mirrored|panel mirror|"
+                                r"mirror door|bottom roller"),
+    ("Screens", r"screen door|window screen|sun ?screen"),
+    ("Countertops", r"counter ?top|backsplash|back splash|peel and stick|thinscape|laminate (half )?sheet|granite|"
+                    r"\bend cap\b"),
+    ("Cabinets", r"cabinet|vanity|drawer|thermofoil|toe ?kick|face frame|(end|side|back) panel|filler|scribe|"
+                 r"mounting plate|edge ?band|\bar ?756\b|sink base|kitchen\s+base|wall stove|"
+                 r"fingerpulls?|vertical grain|hinge holes|h\.c\. @|hinges? (@|at) \d|cbinet|hinge bor"),
     ("Patio Doors", r"patio door|sliding (glass|patio)|slider"),
-    ("Screens", r"screen|suntex|sunscreen"),
-    ("Blinds & Shades", r"blind|vertical|shade|valance|slat|headrail|faux wood|basswood|mini"),
-    ("Door Hardware", r"knob|lever|lockset|deadbolt|passage|privacy|entry set|hinge|door hardware|ball catch|flush bolt|"
+    ("Doors", _DOOR_SIZE + r"|pre-?hung|\b[hs]c\b[^,;]*door|door[^,;]*\((lh|rh)\)|lite insert|glass insert|astragal|"
+              r"\bjamb\b|louver|astri?gal"),
+    ("Blinds & Shades", r"roller shade|\bblinds?\b|valance|headrail|fascia|cloth size|vx solar|faux wood|basswood|"
+                        r"\bmini\b|\bslats?\b|vertical (blind|slat|louver)|\bshades?\b|\bwand\b|tilt"),
+    ("Screens", r"screen|suntex|spreader bar|% block|frame sticks?|spline|patio strike"),
+    ("Door Hardware", r"finger ?pull|knob|lever|lockset|deadbolt|passage|privacy|entry set|hinge|door hardware|ball catch|flush bolt|"
                       r"door stop|sweep|q-?lon|weather ?strip|"
                       r"marina|soma lever|lombard|sea cliff|tiburon lever"),
     ("Bath Hardware", r"towel|paper holder|tissue|bath hardware|robe hook|waterfront|palo alto|santa cruz"),
-    ("Baseboard & Casing", r"baseboard|base board|base corner|casing|trim|mdf|moulding|molding|craftsman base"),
-    ("Countertops", r"counter ?top|laminate|thinscape|backsplash|peel and stick"),
-    ("Cabinets", r"cabinet|vanity|drawer|thermofoil|shaker|italia|bradford|elegante|bar pull|mounting plate|"
-                 r"scribe|toe kick|filler"),
-    ("Doors", r"door|pre-?hung|slab|panel|primecoat|hollow core|solid core|jamb|astragal|interior stop|glass insert"),
+    ("Baseboard & Casing", r"baseboard|base board|base corner|casing|trim|mdf|moulding|molding|craftsm?an base|"
+                           r"quarter round|craft\w* base|\d\s*\"?\s*base\b"),
+    ("Cabinets", r"shaker|italia|bradford|elegante|bar pull|crown|shel(f|ving)"),
+    ("Doors", r"door|slab|panel|primecoat|hollow core|solid core|interior stop"),
 ]
+# QuickBooks item groups (they come through as the item # on the company reports) -> the categories they can be.
+# The words in the description pick between them; anything else falls back to the first one.
+ITEM_GROUPS = {
+    "doors": ["Doors", "Closet & Wardrobe Doors", "Patio Doors", "Shower Doors", "Door Hardware"],
+    "cabinet doors & drawer fronts": ["Cabinets"], "drawer boxes": ["Cabinets"],
+    "cabinets": ["Cabinets", "Countertops"], "countertops": ["Countertops"],
+    "wardrobe doors": ["Closet & Wardrobe Doors", "Mirror Frames", "Shower Doors"],
+    "screens/screen doors": ["Screens"], "base board & casing": ["Baseboard & Casing"],
+    "roller shades": ["Blinds & Shades"], "faux wood blinds": ["Blinds & Shades"], "mini blinds": ["Blinds & Shades"],
+    "vertical blinds": ["Blinds & Shades"], "faux woods - cordless": ["Blinds & Shades"],
+    "faux woods - corded": ["Blinds & Shades"], "basswood blinds": ["Blinds & Shades"],
+    "fuel surcharge": ["Other"], "fin chg": ["Other"], "discount": ["Other"],
+}
 _CAT_RE = [(c, re.compile(p, re.I)) for c, p in _KEYWORDS]
 
 # CSV column names we understand (lower-case, spaces/punctuation removed) -> our field
@@ -96,15 +120,22 @@ def guess_mapping(headers):
     return out
 
 
-def category_for(*texts):
-    t = " ".join(str(s or "") for s in texts)
+def classify(*texts):
+    """(category, how) - how = 'group' (QuickBooks item group), 'exact' (a category name), 'keyword' or 'none'."""
+    parts = [str(x or "").strip() for x in texts]
+    t = " ".join(parts)
+    group = next((ITEM_GROUPS[p.lower()] for p in parts if p.lower() in ITEM_GROUPS), None)
+    kw = next((c for c, rx in _CAT_RE if rx.search(t)), None)
+    if group:
+        return (kw if kw in group else group[0]), "group"
     for c in CATEGORIES:                       # a column that already says the category
-        if t.strip().lower() == c.lower():
-            return c
-    for c, rx in _CAT_RE:
-        if rx.search(t):
-            return c
-    return "Other"
+        if t.lower() == c.lower():
+            return c, "exact"
+    return (kw, "keyword") if kw else ("Other", "none")
+
+
+def category_for(*texts):
+    return classify(*texts)[0]
 
 
 def _num(v):

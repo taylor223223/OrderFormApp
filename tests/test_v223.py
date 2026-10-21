@@ -100,3 +100,29 @@ def test_cabinet_bottom_hinge_follows_top(app, c):
 def test_editor_has_fire_and_hinge_helpers(c):
     html = c.get("/orders/editor?form=prehung").get_data(as_text=True)
     assert "function fireRated" in html and "function hingeMirror" in html
+
+
+def test_categories_doors_vs_cabinets():
+    from orderapp.sales import category_for
+    # QuickBooks item group "Doors" + a shaker door: Doors (was filed under Cabinets because of "Shaker")
+    assert category_for('(#134309) 3\'-0" x 8\'-0" x 1-3/4" SC 1-Panel Primed Shaker Door (LH)', "", "Doors") == "Doors"
+    assert category_for('2\'-10" x 6\'-8" x 1-3/8" HC 1-Panel Shaker Lincoln Park Door (LH)') == "Doors"   # no group
+    assert category_for('17 7/8" x 29" Elegante White Cabinet Door (Hinges at 3 1/8")') == "Cabinets"
+    assert category_for('14-7/8" x 35" Elegante II Valencia Cabinet Door, Vertical Grain', "",
+                        "Cabinet Doors & Drawer Fronts") == "Cabinets"
+    assert category_for("Rustic Slate Countertop *3145") == "Countertops"
+    assert category_for("(VSB24) 24\" Modern Slate Vanity Sink Base Cabinet") == "Cabinets"
+    assert category_for('27" x 94" (CLOTH SIZE) White VX Solar Screen 3000 (1%) Roller Shade') == "Blinds & Shades"
+    assert category_for("Fuel Surcharge", "", "Fuel Surcharge") == "Other"
+    assert category_for('5\'-0" x 6\'-8" Bi-Pass Closet Door Set White Panel') == "Closet & Wardrobe Doors"
+
+
+def test_recategorize_existing_lines(app):
+    with app.app_context():
+        from orderapp.db import get_db, recategorize
+        con = get_db()
+        con.execute("INSERT INTO items(item_no, description, category) VALUES "
+                    "('TEST-1', '2''-8\" x 6''-8\" x 1-3/8\" HC 1-Panel Shaker Door (RH)', 'Cabinets')")
+        con.commit()
+        assert recategorize(con)["items"] >= 1
+        assert con.execute("SELECT category FROM items WHERE item_no='TEST-1'").fetchone()[0] == "Doors"

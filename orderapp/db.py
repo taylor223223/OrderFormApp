@@ -429,4 +429,31 @@ def _data_migrations(con):
             d["_v212"] = True
             con.execute("UPDATE orders SET data=? WHERE id=?", (json.dumps(d), oid))
         con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_closet_leaves', '1')")
+    if "dm_categories_v2" not in done:   # v2.23: QuickBooks item group first ("Shaker" doors were filed as Cabinets)
+        recategorize(con)
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('dm_categories_v2', '1')")
     con.commit()
+
+
+def recategorize(con):
+    """Re-file every imported line and item under the current category rules. Returns {table: changed}."""
+    from .sales import category_for
+    out = {}
+    jobs = (("co_lines", "id", ("memo", "item_desc", "item_no")),
+            ("sales_lines", "id", ("description", "item_no")),
+            ("items", "item_no", ("description", "item_no")))
+    for table, key, cols in jobs:
+        have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        if not have or "category" not in have or not set(cols) <= have:
+            continue
+        changed, seen = [], {}
+        for r in con.execute(f"SELECT {key}, category, {', '.join(cols)} FROM {table}").fetchall():
+            k = r[2:]
+            new = seen.get(k)
+            if new is None:
+                new = seen[k] = category_for(*k)
+            if new != r[1]:
+                changed.append((new, r[0]))
+        con.executemany(f"UPDATE {table} SET category=? WHERE {key}=?", changed)
+        out[table] = len(changed)
+    return out
