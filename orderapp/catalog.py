@@ -192,43 +192,44 @@ def _door_common(prehung=False):
             _c("swing_dir", "Swing In / Out", [("Swing In", {"mark": (106, 335)}),
                                                ("Swing Out", {"mark": (106, 346)})]),
             _c("jamb", "Jamb Type", [("Flat", {"mark": (450, 287)}), ("Kerfed", {"mark": (450, 298)})]),
-            _t("rough_width", "Rough Opening Width (in)", None, measure=True, **_ov(142, 413, 80)),
-            _t("rough_height", "Rough Opening Height (in)", None, measure=True, **_ov(342, 414, 215)),
+            _t("rough_width", "Rough Opening Width (in)", "RoughWidth.0", measure=True),
+            _t("rough_height", "Rough Opening Height (in)", "RoughHeight.0", measure=True),
         ]
-    else:
-        f += [
-            _t("hinge1", "Top of door to top of 1st hinge (in)", "Hinge1.0", measure=True),
-            _t("hinge2", "Top of door to top of 2nd hinge (in)", "Hinge2.0", measure=True),
-            _t("hinge3", "Top of door to top of 3rd hinge (in)", "Hinge3.0", measure=True),
-            _t("hinge4", "Top of door to top of 4th hinge (in) - if it has one", "Hinge4.0", measure=True),
-        ]
+    f += [
+        _t("hinge1", "Top of door to top of 1st hinge (in)", "Hinge1.0", measure=True),
+        _t("hinge2", "Top of door to top of 2nd hinge (in)", "Hinge2.0", measure=True),
+        _t("hinge3", "Top of door to top of 3rd hinge (in)", "Hinge3.0", measure=True),
+        _t("hinge4", "Top of door to top of 4th hinge (in) - if it has one", "Hinge4.0", measure=True),
+    ]
     f += [
         _t("width", "Door Width (in)", "DoorWidth.0", measure=True),
         _t("height", "Door Height (in)", "DoorHeight.0", measure=True),
     ]
+    f += [   # bores: each one measured from the top of the door to its center (same on both forms)
+        _t("one_sided_deadbolt", "Top of door to center of one-sided deadbolt (in)",
+           "OneSided_Deadbolt.0", measure=True),
+        _t("deadbolt", "Top of door to center of deadbolt (in)", "Deadbolt.0", measure=True),
+        _t("entry_lock", "Top of door to center of entry lock (in)", "EntryLock.0", measure=True),
+    ]
     if prehung:
+        peep = ("peephole_yn", ["Y", "Yes", "y", "yes", "YES"])
         f += [
-            _t("bore_qty", "Bore Quantity", None, **_ov(105, 465, 92)),
-            _t("one_sided_bore", "One Sided Bore", None, **_ov(278, 465, 88)),
-            _t("one_sided_bore_size", "One Sided Bore Size", None, **_ov(469, 465, 92)),
-            _t("threshold_type", "Threshold Type (Adjustable, ADA)", None,
-               suggest=["Adjustable", "ADA"], **_ov(196, 490, 76)),
-            _t("threshold_color", "Threshold Color (Mill, Bronze)", None,
-               suggest=["Mill", "Bronze"], **_ov(413, 490, 148)),
-            _t("hinge_color", "Hinge Color (Satin Nickel, Brass, Chrome)", None,
-               suggest=["Satin Nickel", "Brass", "Chrome"], **_ov(230, 514, 41, 7)),
-            _t("self_closing", "Self Closing Hinges (Y/N)", None, suggest=YES_NO, **_ov(391, 514, 34)),
-            _t("nrp_hinges", "NRP Hinges (Y/N)", None, suggest=YES_NO, **_ov(514, 515, 47)),
-            _t("glass_insert", "Glass Insert (Full Ten Lite, Full One Lite, Half Lite)", None,
-               suggest=["Full Ten Lite", "Full One Lite", "Half Lite", "None"], **_ov(263, 539, 88, 8)),
-            _t("peephole_yn", "Peep Hole (Y/N)", None, suggest=YES_NO, **_ov(433, 539, 128)),
+            _t("threshold_type", "Threshold Type (Adjustable, ADA)", "ThresholdType.0", suggest=["Adjustable", "ADA"]),
+            _t("threshold_color", "Threshold Color (Mill, Bronze)", "ThresholdColor.0", suggest=["Mill", "Bronze"]),
+            _t("threshold_size", "Threshold Size (width x length, in)", "ThresholdSize.0",
+               placeholder='e.g. 5-5/8" x 36"'),
+            _t("threshold_thick", "Threshold Thickness / Height (in)", "ThresholdThick.0", placeholder='e.g. 1/2"'),
+            _t("hinge_color", "Hinge Color (Satin Nickel, Brass, Chrome)", "HingeColor.0",
+               suggest=["Satin Nickel", "Brass", "Chrome"]),
+            _t("self_closing", "Self Closing Hinges (Y/N)", "SelfClosingYN.0", suggest=YES_NO),
+            _t("nrp_hinges", "NRP Hinges (Y/N)", "NRPHinges.0", suggest=YES_NO),
+            _t("glass_insert", "Glass Insert (Full Ten Lite, Full One Lite, Half Lite)", "GlassInsert.0",
+               suggest=["Full Ten Lite", "Full One Lite", "Half Lite", "None"]),
+            _t("peephole_yn", "Peep Hole (Y/N)", "PeepholeYN.0", suggest=YES_NO),
+            _t("peephole", "Top of door to center of peephole (in)", "Peephole.0", measure=True, show_if=peep),
         ]
     else:
         f += [
-            _t("one_sided_deadbolt", "Top of door to center of one-sided deadbolt (in)",
-               "OneSided_Deadbolt.0", measure=True),
-            _t("deadbolt", "Top of door to center of deadbolt (in)", "Deadbolt.0", measure=True),
-            _t("entry_lock", "Top of door to center of entry lock (in)", "EntryLock.0", measure=True),
             _t("peephole", "Top of door to center of peephole (in)", "Peephole.0", measure=True),
         ]
     f += [
@@ -616,6 +617,27 @@ def _prehung_fields():
     ]
 
 
+FIRE_RATINGS = ["20 min", "45 min", "60 min", "90 min"]
+
+
+def _fire_fields(self_closing_box=True):
+    """Fire-rated door: Yes/No, the rating, and (Door form) self-closing hinges - a rated door is a labeled
+    assembly with self-closing hinges or a closer and a latch. Unit entry doors onto inside corridors are
+    usually 20 min; stairwell / utility doors can be 45-90."""
+    yes = ("fire_rated", ["Yes"])
+    out = [_x("fire_rated", "Fire Rated", "choice", YN),
+           _x("fire_rating", "Fire Rating", "choice", [(r, None) for r in FIRE_RATINGS], show_if=yes)]
+    if self_closing_box:
+        out.append(_x("self_closing", "Self-Closing Hinges", "choice", YN, show_if=yes))
+    return out
+
+
+def _fire_names(key):
+    return {"fire_rated": lambda o: f"FireRated {_slug(o)}.0",
+            "fire_rating": lambda o: f"FireRating {o.split()[0]}.0",
+            "self_closing": lambda o: f"SelfClosing {_slug(o)}.0"}[key]
+
+
 def _door_edge_field():
     """Beveled (standard, e.g. 29-3/4 x 79-1/2) or Full Book (square, e.g. 30 x 80). Printed in the line's comments."""
     from .door_edge import EDGES
@@ -660,28 +682,45 @@ FORMS["door"]["blocks"] = [b + _boxed(_prehung_fields() + _door_hardware_fields(
                            for b in FORMS["door"]["blocks"]]
 FORMS["new_door"]["blocks"] = [b + _prehung_fields() + _door_hardware_fields() for b in FORMS["new_door"]["blocks"]]
 FORMS["prehung"]["blocks"] = [b + _boxed(_door_hardware_fields(), _door_names) for b in FORMS["prehung"]["blocks"]]
+FORMS["door"]["blocks"] = [b + _boxed(_fire_fields(), _fire_names) for b in FORMS["door"]["blocks"]]
+FORMS["prehung"]["blocks"] = [b + _boxed(_fire_fields(self_closing_box=False), _fire_names)
+                              for b in FORMS["prehung"]["blocks"]]
+
+
+def _fire_after_location(block):
+    """Show the fire-rated questions in the app right after Door Location (interior / exterior)."""
+    fire = [f for f in block if f["key"] in ("fire_rated", "fire_rating") or
+            (f["key"] == "self_closing" and f["kind"] == "choice")]
+    rest = [f for f in block if f not in fire]
+    i = next(n for n, f in enumerate(rest) if f["key"] == "door_location") + 1
+    return rest[:i] + fire + rest[i:]
+
+
+for _fk in ("door", "prehung"):
+    FORMS[_fk]["blocks"] = [_fire_after_location(b) for b in FORMS[_fk]["blocks"]]
 for _fk in ("door", "new_door", "prehung"):   # full book vs beveled edge (from the size)
     FORMS[_fk]["blocks"] = [_after_height(b, [_door_edge_field()]) for b in FORMS[_fk]["blocks"]]
 # the New Door form has no comments box: print the edge under the Width box
 FORMS["new_door"]["blocks"] = [[dict(f, **_ov(48, 670, 215, 9.5)) if f["key"] == "door_edge" else f for f in b]
                                for b in FORMS["new_door"]["blocks"]]
-def _shift_overlays(fields, y_from, dy):
+def _shift_overlays(fields, y_from, dy, y_to=10 ** 6):
     """Things the app writes at fixed spots (no box on the form) move with the form's lower half."""
     for f in fields:
-        if f.get("overlay") and f["overlay"][1] > y_from:
+        if f.get("overlay") and y_from < f["overlay"][1] < y_to:
             x, y, w = f["overlay"]
             f["overlay"] = (x, y + dy, w)
         for i, o in enumerate(f.get("options") or []):
-            if isinstance(o[1], dict) and o[1]["mark"][1] > y_from:
+            if isinstance(o[1], dict) and y_from < o[1]["mark"][1] < y_to:
                 x, y = o[1]["mark"]
                 f["options"][i] = (o[0], {"mark": (x, y + dy)})
 
 
 def _door_shift():
-    from .form_patches import DOOR_SPLIT, door_added_height
+    from .form_patches import DOOR_SPLIT, MEAS_BOT, door_added_height, lower_shift
     for fk in ("door", "prehung"):
-        for b in FORMS[fk]["blocks"]:
-            _shift_overlays(b, DOOR_SPLIT, door_added_height())
+        for b in FORMS[fk]["blocks"]:   # rows under the Measurements box moved a bit less than the ones above
+            _shift_overlays(b, MEAS_BOT - 1, lower_shift())
+            _shift_overlays(b, DOOR_SPLIT, door_added_height(), y_to=MEAS_BOT - 1 + lower_shift())
 
 
 _door_shift()
@@ -714,9 +753,9 @@ def _hinge_cut_fields():
     yes = ("hinge_cut", ["Yes"])
     return [_gc("hinge_cut", "Concealed Hinge Bores", ["Yes", "No"]),
             _gc("hinge_cut_dia", "Cup Diameter", ['35mm', '26mm', '40mm'], show_if=yes),
-            _g("hinge_top", "Top Hinge: Top of Door to Center (in)", measure=True, show_if=yes, placeholder="e.g. 3",
+            _g("hinge_top", "Top & Bottom Hinge: Door Edge to Center (in)", measure=True, show_if=yes, placeholder="e.g. 3",
                pdf_label="Top Hinge from Top"),
-            _g("hinge_bottom", "Bottom Hinge: Bottom of Door to Center (in)", measure=True, show_if=yes,
+            _g("hinge_bottom", "Bottom Hinge (fills in from the top - change only if different)", measure=True, show_if=yes,
                placeholder="e.g. 3", pdf_label="Btm Hinge from Btm"),
             _g("hinge_center", "Center Hinge: Top of Door to Center (in)", measure=True, show_if=yes,
                placeholder="only if there's a 3rd hinge", pdf_label="Ctr Hinge from Top")]

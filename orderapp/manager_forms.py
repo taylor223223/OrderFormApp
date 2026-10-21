@@ -261,14 +261,14 @@ def choices(pg, k, x, y, groups, width=R - CX - 4):
 
 def hinge_cut_rows(pg, k, x, y, x1=R - 6):
     """Cabinet doors: concealed hinge bore locations (to the hinge CENTER) and the cup size."""
-    for label, name in (("TOP HINGE - top of door to center:", "Top Hinge"),
-                        ("BOTTOM HINGE - bottom of door to center:", "Bottom Hinge"),
+    for label, name in (("TOP & BOTTOM HINGES - door edge to center:", "Top Hinge"),
+                        ("BOTTOM - only if it's different:", "Bottom Hinge"),
                         ("CENTER HINGE (if any) - top of door to center:", "Center Hinge"),
                         ("CUP DIAMETER (if needed):", "Hinge Cup Diameter")):
         y += RS
         lw = pg.text(x, y, label, 7, bold=True)
         pg.field(f"{k} {name}", (x + lw + 4, y - 9, x1, y + 3), size=8)
-    pg.text(x, y + 10, 'Measure in inches to the center of each hinge.', 6.5, color=DARK)
+    pg.text(x, y + 10, 'To hinge center. Same both ends (3" from top = 3" from bottom).', 6.2, color=DARK)
     return y + 14
 
 
@@ -1041,8 +1041,16 @@ def door_card(pg, k, n, y, item, exterior):
                ("HARDWARE:", (["None", "Entry knob", "Deadbolt", "Peephole"] if exterior
                               else ["None", "Passage (no lock)", "Privacy (lock)"]), 2),
                dict(title='HINGE SIZE (how tall):', opts=['3-1/2"', '4"', "Not sure", "Other"], cols=4,
-                    other=("Other",))]
+                    other=("Other",)),
+               dict(title="FIRE-RATED? (metal label on the hinge edge):", name="Fire Rated", cols=3,
+                    opts=["No", "20 min", "45 min", "60 min", "90 min", "Not sure"])]
     yc = choices(pg, k, CX, yc - 4, groups)
+    if exterior:     # peephole location, from the top of the door like the other measurements
+        yc += RS
+        lw = pg.text(CX, yc, "PEEPHOLE - top of door to center:", 8, bold=True)
+        pg.field(f"{k} Peephole", (CX + lw + 4, yc - 9, CX + lw + 54, yc + 3), size=8.5, align=1)
+        pg.text(CX + lw + 58, yc, "in", 7.5)
+        yc += 3
     # hinge corners, with a little picture of each
     yc += RS
     pg.text(CX, yc, "HINGE CORNERS:", 8.5, bold=True)

@@ -135,6 +135,9 @@ def save():
     if any(f["key"] == "door_edge" for f in FORMS[form_key]["blocks"][0]):
         from ..door_edge import fill_blocks
         fill_blocks(data.get("blocks"))      # 30 x 80 -> Full Book, 29-3/4 x 79-1/2 -> Beveled (if not picked)
+    for b in data.get("blocks") or []:      # cabinet hinge bores: bottom = same distance as the top unless typed
+        if isinstance(b, dict) and b.get("hinge_top") and not b.get("hinge_bottom"):
+            b["hinge_bottom"] = b["hinge_top"]
     oid = request.form.get("order_id", type=int)
     cid = request.form.get("customer_id", type=int)
     action = request.form.get("action", "save")

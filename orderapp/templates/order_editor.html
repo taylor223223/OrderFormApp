@@ -189,6 +189,34 @@ function doorEdge(el, target){
   tip.textContent = hint;
 }
 
+// Fire-rated door: needs a rating and self-closing hinges (or a closer) - fill / flag them
+function fireRated(el, target){
+  const fr = el.querySelector('[data-k="fire_rated"]');
+  if (!fr) return;
+  const sc = el.querySelector('[data-k="self_closing"]');
+  const wrap = fr.closest('[data-f]');
+  let tip = wrap.querySelector('.firehint');
+  if (!tip) { tip = document.createElement('div'); tip.className = 'firehint small'; tip.style.color = '#92400e'; wrap.appendChild(tip); }
+  if (fr.value !== 'Yes') { tip.textContent = ''; if (sc) sc.closest('[data-f]').classList.remove('needs'); return; }
+  if (target === fr && sc && !sc.value) {
+    if (sc.tagName === 'SELECT') sc.value = 'Yes'; else sc.value = 'Y';
+    sc.dispatchEvent(new Event('input', {bubbles: false}));
+  }
+  const yes = sc && /^y/i.test(sc.value || '');
+  if (sc) sc.closest('[data-f]').classList.toggle('needs', !yes);
+  tip.textContent = 'Rated door = labeled door + frame, self-closing hinges (or a closer) and a latch. ' +
+    'Unit entry doors onto inside corridors are usually 20 min; stairwell / utility doors 45-90 min.' +
+    (yes ? '' : ' Self-closing hinges are set to No - check that.');
+}
+
+// Cabinet hinge bores: the bottom hinge sits the same distance from the bottom as the top one from the top
+function hingeMirror(el, target){
+  const top = el.querySelector('[data-k="hinge_top"]'), bot = el.querySelector('[data-k="hinge_bottom"]');
+  if (!top || !bot) return;
+  if (target === bot) { bot.dataset.auto = bot.value ? '' : '1'; return; }
+  if (target === top && (!bot.value || bot.dataset.auto === '1')) { bot.value = top.value; bot.dataset.auto = '1'; }
+}
+
 let blockCount = 0;
 function addBlock(values, predictedKeys){
   const bi = blockCount++;
@@ -203,8 +231,8 @@ function addBlock(values, predictedKeys){
      <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit').map(f => fieldHTML(f, bi)).join('')}</div>`;
   $('#blocks').appendChild(el);
   setBlock(el, values || {}, predictedKeys);
-  el.addEventListener('input', ev => { onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); });
-  el.addEventListener('change', ev => { onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); });
+  el.addEventListener('input', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); });
+  el.addEventListener('change', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); });
   el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
   el.querySelector('[data-act=clear]').onclick = () => { setBlock(el, {}, null, true); dirty = true; };
   el.querySelector('[data-act=dup]').onclick = () => { const v = getBlock(el); const n = addBlock(v); el.after(n); renumber(); dirty = true; };
@@ -322,7 +350,7 @@ $('#custSel').onchange = async e => {
 const initial = (DATA.blocks && DATA.blocks.length) ? DATA.blocks : [];
 const fromEmail = {{ 'true' if order and order.source == 'email' and order.status == 'Draft' else 'false' }};
 initial.forEach(b => addBlock(b, fromEmail ? Object.keys(b) : null));
-document.querySelectorAll('#blocks .blk').forEach(el => doorEdge(el, null));
+document.querySelectorAll('#blocks .blk').forEach(el => { doorEdge(el, null); fireRated(el, null); });
 for (let i = initial.length; i < SPEC.blocks_per_page; i++) addBlock({});
 
 document.querySelectorAll('[data-h], #comments, #sales_rep').forEach(i => i.addEventListener('input', () => dirty = true));

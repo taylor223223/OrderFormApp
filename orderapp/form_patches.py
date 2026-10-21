@@ -158,11 +158,21 @@ DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plan
 DOOR_PANELS = ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]
 DOOR_TOPS = ["Square Top", "Arched Top"]
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
-EXTRA_ROWS = 4          # material, pre-hung + hardware, hardware style, hardware type
+EXTRA_ROWS = 5          # material, pre-hung + hardware, hardware style, hardware type, fire rated
+FIRE_RATINGS = ["20", "45", "60", "90"]          # minutes
+# the Measurements box: the company rows (392.4 - 540.7) are redrawn a little tighter so the fire-rated row
+# above fits without pushing Comments / Sales Rep down
+MEAS_TOP, MEAS_BOT = 392.4, 540.7
+SHRINK = 11.5
 def door_added_height():
     """How far the company Door / Pre-Hung forms' lower half moved down (catalog overlays use it)."""
     rows_style = max(len(c[1]) for c in DOOR_STYLE_COLS)
     return rows_style * DOOR_ROW + 2 + EXTRA_ROWS * DOOR_ROW + 2.5
+
+
+def lower_shift():
+    """How far the rows under the Measurements box (lock basket, thickness, hinge size) moved down."""
+    return door_added_height() - SHRINK
 
 
 PHOTO_X = 462          # photo column (door photo on top, hardware photo under it)
@@ -198,8 +208,10 @@ def patch_door(doc, prehung=False):
         q.flow(40 if r_i == 0 else indent, y0 + 10 + (r_i + 1) * DOOR_ROW, items, PHOTO_X - 4)
     page.draw_line((37.4, y_hw), (PHOTO_X, y_hw), color=(0, 0, 0), width=0.75)
     # 3) pre-hung + door hardware
-    q.flow(40, y_hw + 9.5, [("label", "Door Material:")] +
-           [("cb", f"Material {slug(m)}.0", m) for m in DOOR_MATERIALS], PHOTO_X - 4)
+    mat = [("label", "Door Material:")] + [("cb", f"Material {slug(m)}.0", m) for m in DOOR_MATERIALS]
+    if not prehung:      # rated doors need self-closing hinges (the Pre-Hung form has its own Y/N box)
+        mat += [("label", "   Self-Closing Hinges:"), ("cb", "SelfClosing yes.0", "Yes"), ("cb", "SelfClosing no.0", "No")]
+    q.flow(40, y_hw + 9.5, mat, PHOTO_X - 4)
     row = []
     if not prehung:
         row = [("label", "Pre-Hung:"), ("cb", "PreHung yes.0", "Yes"), ("cb", "PreHung no.0", "No"),
@@ -211,6 +223,9 @@ def patch_door(doc, prehung=False):
     q.flow(40, y_hw + 9.5 + 3 * DOOR_ROW, [("label", "Hardware Type:")] + [("cb", hw_name("type", t), t)
            for t in HARDWARE_TYPES] + [("label", " Finish:")] +
            [("cb", hw_name("finish", t), t) for t in HARDWARE_FINISHES], PHOTO_X - 4)
+    fire = [("label", "Fire Rated:"), ("cb", "FireRated yes.0", "Yes"), ("cb", "FireRated no.0", "No"),
+            ("label", " Rating (min):")] + [("cb", f"FireRating {m}.0", m) for m in FIRE_RATINGS]
+    q.flow(40, y_hw + 9.5 + 4 * DOOR_ROW, fire, PHOTO_X - 4)
     page.draw_line((37.4, bottom - 0.5), (561.1, bottom - 0.5), color=(0, 0, 0), width=0.75)
     page.draw_rect(fitz.Rect(35.5, y0 - 1, 37.4, bottom), color=None, fill=(0, 0, 0))
     page.draw_rect(fitz.Rect(561.1, y0 - 1, 563.0, bottom), color=None, fill=(0, 0, 0))
@@ -223,29 +238,44 @@ def patch_door(doc, prehung=False):
         w.rect = fitz.Rect(r)
         w.field_flags = fitz.PDF_FIELD_IS_READ_ONLY
         q.widgets.append(w)
-    # 4) the rest of the company form, moved down
-    hinge_x = _four_hinges(src[0]) if not prehung else {}
+    # 4) the rest of the company form, moved down; the Measurements rows are redrawn (see _measure_rows)
+    meas = _measure_rows(src[0], prehung)
+    low = add - SHRINK
     for w in _hinge_extras(src[0], prehung):        # hinge size "Other" + square hinges (lower half)
         r = w.rect
-        w.rect = fitz.Rect(r.x0, r.y0 + add, r.x1, r.y1 + add)
+        w.rect = fitz.Rect(r.x0, r.y0 + low, r.x1, r.y1 + low)
         q.widgets.append(w)
         q.new_names.append(w.field_name)
+    have = set()
     for w in list(page.widgets()):
         r = w.rect
-        dy = add if y0 - 1 <= r.y0 < 600 else (COMMENTS_DROP if 676 <= r.y0 < 760 else 0)
-        x0 = hinge_x.get(w.field_name, r.x0)
-        if dy or x0 != r.x0:
-            w.rect = fitz.Rect(x0, r.y0 + dy, x0 + (HINGE_W if w.field_name in hinge_x else r.width), r.y1 + dy)
+        if w.field_name in meas:
+            have.add(w.field_name)
+            w.rect = meas[w.field_name] + (0, add, 0, add)
+            w.text_fontsize = 9
             w.update()
-        if w.field_name == "Hinge1.0" and hinge_x:
-            h4 = fitz.Widget()
-            h4.field_type = fitz.PDF_WIDGET_TYPE_TEXT
-            h4.field_name = "Hinge4.0"
-            h4.rect = fitz.Rect(hinge_x["Hinge4.0"], w.rect.y0, hinge_x["Hinge4.0"] + HINGE_W, w.rect.y1)
-            h4.text_font, h4.text_fontsize = w.text_font or "Helv", w.text_fontsize or 10
-            q.widgets.append(h4)
-            q.new_names.append("Hinge4.0")
-    page.show_pdf_page(fitz.Rect(0, y0 + add, 612, 594 + add), src, 0, clip=fitz.Rect(0, y0, 612, 594))
+            continue
+        if MEAS_TOP <= r.y0 < MEAS_BOT - 1:     # a box from the old rows that's no longer used
+            page.delete_widget(w)
+            continue
+        dy = (add if y0 - 1 <= r.y0 < MEAS_TOP else low if MEAS_BOT - 1 <= r.y0 < 600
+              else COMMENTS_DROP if 676 <= r.y0 < 760 else 0)
+        if dy:
+            w.rect = fitz.Rect(r.x0, r.y0 + dy, r.x1, r.y1 + dy)
+            w.update()
+    for name, rect in meas.items():
+        if name in have:
+            continue
+        t = fitz.Widget()
+        t.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        t.field_name = name
+        t.rect = rect + (0, add, 0, add)
+        t.text_font, t.text_fontsize = "Helv", 9
+        q.widgets.append(t)
+        q.new_names.append(name)
+    page.show_pdf_page(fitz.Rect(0, y0 + add, 612, MEAS_BOT - SHRINK + add), src, 0,
+                       clip=fitz.Rect(0, y0, 612, MEAS_BOT - SHRINK))
+    page.show_pdf_page(fitz.Rect(0, MEAS_BOT + low, 612, 594 + low), src, 0, clip=fitz.Rect(0, MEAS_BOT, 612, 594))
     page.show_pdf_page(fitz.Rect(0, 676 + COMMENTS_DROP, 612, 756 + COMMENTS_DROP), src, 0,
                        clip=fitz.Rect(0, 676, 612, 756))
     for w in q.widgets:
@@ -254,25 +284,73 @@ def patch_door(doc, prehung=False):
     p.finish(doc)
 
 
-HINGE_W = 36          # width of each "top of door to top of hinge" box on the Door form
-
-
-def _four_hinges(sp):
-    """Company Door form row 'Distance ... to top of: [ ] First Hinge [ ] Second Hinge [ ] Third Hinge'
-    becomes four boxes: [ ] Hinge 1 [ ] Hinge 2 [ ] Hinge 3 [ ] Hinge 4 (some doors have 4).
-    Edits the source page (which is then copied onto the form), returns new box x positions."""
-    words = [w for w in sp.get_text("words") if w[4] in ("First", "Second", "Third")]
-    if len(words) != 3:
-        return {}
-    wy0, wy1 = min(w[1] for w in words), max(w[3] for w in words)
-    sp.draw_rect(fitz.Rect(236, wy0 - 0.5, 560.6, wy1 + 0.08), color=None, fill=(1, 1, 1))   # keep the row line
-    base = wy1 - 2.3
-    out, x = {}, 239.0
-    for i in range(4):
-        out[f"Hinge{i + 1}.0"] = x
-        sp.insert_text((x + HINGE_W + 3, base), f"Hinge {i + 1}", fontsize=10, fontname="AISR", fontfile=ARIAL)
-        x += HINGE_W + 3 + fitz.Font(fontfile=ARIAL).text_length(f"Hinge {i + 1}", 10) + 6
+def _measure_rows(sp, prehung):
+    """Redraw the company Measurements rows (same wording, Arial 10) a little tighter, on the source page that is
+    then copied onto the form. Returns {box name: rect} in source coordinates.
+    Door:     hinges 1-4 | width / height | one-sided deadbolt | deadbolt | entry lock | peephole
+    Pre-Hung: rough opening | width / height | hinges 1-4 | one-sided deadbolt + deadbolt + entry lock
+              | threshold type, color, size, thickness | hinge color, self closing, NRP | glass, peep hole + location"""
+    font = fitz.Font(fontfile=ARIAL)
+    sp.draw_rect(fitz.Rect(37.4, MEAS_TOP, 561.1, MEAS_BOT), color=None, fill=(1, 1, 1))
+    hinges = [("label", "Distance in inches from top of door to top of:")] + \
+        [x for i in range(1, 5) for x in (("box", f"Hinge{i}.0", 36), ("label", f"Hinge {i}"))]
+    size = [("label", "Actual door width in inches:"), ("box", "DoorWidth.0", 58), ("gap", 30),
+            ("label", "Actual door height in inches:"), ("box", "DoorHeight.0", 58)]
+    if prehung:
+        rows = [
+            [("label", "Rough Opening Width:"), ("box", "RoughWidth.0", 70), ("gap", 16),
+             ("label", "Rough Opening Height:"), ("box", "RoughHeight.0", 70)],
+            size, hinges,
+            [("label", "Top of door to center of:"), ("label", "One-sided deadbolt"), ("box", "OneSided_Deadbolt.0", 44),
+             ("label", "Deadbolt"), ("box", "Deadbolt.0", 44), ("label", "Entry lock"), ("box", "EntryLock.0", 44)],
+            [("label", "Threshold Type:"), ("box", "ThresholdType.0", 0), ("label", "Color:"),
+             ("box", "ThresholdColor.0", 0), ("label", "Size (W x L):"), ("box", "ThresholdSize.0", 0),
+             ("label", "Thickness:"), ("box", "ThresholdThick.0", 0)],
+            [("label", "Hinge Color (Satin Nickel, Brass...):"), ("box", "HingeColor.0", 0),
+             ("label", "Self Closing Hinges (Y/N):"), ("box", "SelfClosingYN.0", 26),
+             ("label", "NRP Hinges (Y/N):"), ("box", "NRPHinges.0", 26)],
+            [("label", "Glass Insert (Ten / One / Half Lite):"), ("box", "GlassInsert.0", 0),
+             ("label", "Peep Hole (Y/N):"), ("box", "PeepholeYN.0", 22),
+             ("label", "Top of door to center:"), ("box", "Peephole.0", 40)],
+        ]
+    else:
+        rows = [hinges, size] + [
+            [("label", f"Distance in inches from top of door to center of {t}:"), ("box", n, 58)]
+            for t, n in (("one-sided deadbolt", "OneSided_Deadbolt.0"), ("deadbolt", "Deadbolt.0"),
+                         ("entry lock", "EntryLock.0"), ("peephole", "Peephole.0"))]
+    pitch = (MEAS_BOT - SHRINK - MEAS_TOP) / len(rows)
+    out = {}
+    for n, row in enumerate(rows):
+        line = MEAS_TOP + (n + 1) * pitch
+        base = line - 3.2
+        fs = 10.0
+        while True:      # flexible boxes (width 0) share what's left; shrink the words if a row is too full
+            fixed = sum(font.text_length(it[1], fs) + 4 if it[0] == "label" else (it[2] + 6 if it[0] == "box" else it[1])
+                        for it in row)
+            flex = [it for it in row if it[0] == "box" and it[2] == 0]
+            room = 559.0 - 40.0 - fixed
+            if room >= 34 * len(flex) or fs <= 8:
+                break
+            fs -= 0.25
+        fw = room / len(flex) - 6 if flex else 0
+        x = 40.0
+        for it in row:
+            if it[0] == "label":
+                sp.insert_text((x, base), it[1], fontsize=fs, fontname="AISR", fontfile=ARIAL)
+                x += font.text_length(it[1], fs) + 4
+            elif it[0] == "gap":
+                x += it[1]
+            else:
+                w = it[2] or fw
+                out[it[1]] = fitz.Rect(x, line - min(pitch - 3, 14.4), x + w, line - 0.8)
+                sp.draw_line((x, line - 1.2), (x + w, line - 1.2), color=(0, 0, 0), width=0.5)
+                x += w + 6
+        if n < len(rows) - 1:
+            sp.draw_rect(fitz.Rect(37.4, line - 0.5, 561.1, line + 0.5), color=None, fill=(0, 0, 0))
     return out
+
+
+HINGE_W = 36          # width of each "top of door to top of hinge" box on the Door form
 
 
 def _hinge_extras(sp, prehung):

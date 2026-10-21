@@ -43,6 +43,11 @@ def _set_text(idx, ref, value):
     for w in ws:
         w.field_value = "" if value is None else str(value)
         w.text_color = FILL_BLUE
+        fs = w.text_fontsize or 0
+        if fs and w.field_value:       # long answers in small boxes: shrink the type instead of cutting it off
+            while fs > 6 and fitz.get_text_length(w.field_value, "helv", fs) > w.rect.width - 4:
+                fs -= 0.5
+            w.text_fontsize = fs
         w.update()
     return bool(ws)
 
@@ -170,6 +175,11 @@ def check_order(form_key, data):
             sw, st, col = (str(b.get(k) or "").lower() for k in ("slat_width", "slat_style", "color"))
             if sw.startswith("2") and "rib" in st and "alab" in col:
                 warns.append(f"Line {i}: 2\" ribbed vertical slats only come in White - double-check the color.")
+        if form_key in ("door", "prehung") and str(b.get("fire_rated") or "").lower().startswith("y"):
+            if not b.get("fire_rating"):
+                warns.append(f"Line {i}: fire-rated door - pick the rating (20, 45, 60 or 90 min).")
+            if not str(b.get("self_closing") or "").lower().startswith("y"):
+                warns.append(f"Line {i}: fire-rated doors need self-closing hinges (or a closer) - check Self-Closing.")
     return warns
 
 
