@@ -161,6 +161,8 @@ def _page_frame(page, src, title, n_page, total):
         _label(page, 388, y, lab, 10)
         _text_widget(page, HEADER_NAMES[key], (386, y + 3, R, y + 18))
     # rest of the customer info (the Door form has these too)
+    from .form_patches import contact_row
+    contact_row(page, _PENDING, y=128.5, x0=L + 3, x1=380)       # who to talk to at the property
     page.draw_rect(fitz.Rect(L, 132, R, 142), color=None, fill=NAVY)
     y = 156
     x = L + 3
@@ -426,6 +428,90 @@ def _door_meas_rows(pen, n, fields, y):
     return y + 5
 
 
+PLAN_H = 168       # height of the countertop top-view drawing
+
+
+def _plan_box(pen, n, f, x0, y0, x1, label, label_at="above", size=6.5):
+    """A measurement box on the drawing with its small label."""
+    pg = pen.page
+    if pg:
+        pg.draw_rect(fitz.Rect(x0, y0, x1, y0 + 13), color=(0, 0, 0), width=0.8, fill=(1, 1, 1))
+        w = fitz.Widget()
+        w.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        w.field_name = tname(n, f["key"])
+        w.rect = fitz.Rect(x0 + 1, y0 + 1, x1 - 1, y0 + 12)
+        w.text_font, w.text_fontsize = "Helv", 9
+        w.text_format = fitz.TEXT_ALIGN_CENTER if hasattr(fitz, "TEXT_ALIGN_CENTER") else 1
+        pen.widgets.append(w)
+        tw = pen.w(label, size)
+        if label_at == "above":
+            pen.text((x0 + x1 - tw) / 2, y0 - 2, label, size, color=(0.25, 0.25, 0.25))
+        elif label_at == "below":
+            pen.text((x0 + x1 - tw) / 2, y0 + 13 + size + 0.5, label, size, color=(0.25, 0.25, 0.25))
+        else:   # right
+            pen.text(x1 + 3, y0 + 9.5, label, size, color=(0.25, 0.25, 0.25))
+
+
+def _countertop_plan(pen, n, fields, top):
+    """Top view of the countertop the way it's drawn on paper: back wall and side walls (thick), the top,
+    the sink bowl, and a box for each measurement where it's taken. Returns the y under the drawing."""
+    by = {f.get("plan"): f for f in fields if f.get("plan")}
+    pg = pen.page
+    WL, WR = 128, 442                    # inside faces of the side walls
+    back, front = top + 52, top + 140    # back wall face, front edge of the top
+    cx, cy, r = 262, top + 92, 25        # sink bowl
+    ink, grey = (0, 0, 0), (0.25, 0.25, 0.25)
+    if pg:
+        pg.draw_rect(fitz.Rect(WL, back, WR, front), color=ink, width=1.2, fill=(0.94, 0.94, 0.94))
+        wall = (0.2, 0.2, 0.2)
+        pg.draw_rect(fitz.Rect(WL - 7, back - 7, WR + 7, back), color=None, fill=wall)          # back wall
+        pg.draw_rect(fitz.Rect(WL - 7, back, WL, front + 14), color=None, fill=wall)          # left wall
+        pg.draw_rect(fitz.Rect(WR, back, WR + 7, front + 14), color=None, fill=wall)          # right wall
+        pg.draw_circle((cx, cy), r, color=ink, width=1.1, fill=(1, 1, 1))
+        # sink center to the right wall: the line the box sits under
+        pg.draw_line((cx, cy), (WR - 1, cy), color=ink, width=0.7, dashes="[3 2] 0")
+        pg.draw_circle((cx, cy), 1.4, color=ink, fill=ink)
+        for tip in ((WR - 1, cy),):
+            pg.draw_polyline([(tip[0] - 5, tip[1] - 2.5), tip, (tip[0] - 5, tip[1] + 2.5)], color=ink, width=0.7)
+        lw = pen.w("FRONT EDGE", 6.5, True)
+        pen.text((WL + WR - lw) / 2 + 60, front + 9, "FRONT EDGE", 6.5, True, color=grey)
+        lw = pen.w("BACK WALL", 6.5, True)
+        pen.text(WL - 7 - lw - 4, back - 1, "BACK WALL", 6.5, True, color=grey)
+        pen.text(WL - 7 - pen.w("SIDE WALL", 6.5, True) - 4, back + 40, "SIDE WALL", 6.5, True, color=grey)
+        pen.text(WR + 11, back + 8, "SIDE WALL", 6.5, True, color=grey)
+        # back wall length: dimension line over the wall, box in the middle
+        yl = back - 20
+        pg.draw_line((WL, yl), (WR, yl), color=ink, width=0.6)
+        for x, d in ((WL, 1), (WR, -1)):
+            pg.draw_line((x, yl - 4), (x, yl + 4), color=ink, width=0.6)
+            pg.draw_polyline([(x + 5 * d, yl - 2.5), (x, yl), (x + 5 * d, yl + 2.5)], color=ink, width=0.6)
+    mid = (WL + WR) / 2
+    if "back" in by:
+        _plan_box(pen, n, by["back"], mid - 38, back - 26.5, mid + 38, "Back wall length")
+    if "depth" in by:      # outside the right wall, beside the top
+        _plan_box(pen, n, by["depth"], WR + 14, cy - 6.5, WR + 82, "Depth (wall to front)", "above")
+        if pg:
+            xd = WR + 92
+            pg.draw_line((xd, back), (xd, front), color=ink, width=0.6)
+            for y, d in ((back, 1), (front, -1)):
+                pg.draw_line((xd - 4, y), (xd + 4, y), color=ink, width=0.6)
+                pg.draw_polyline([(xd - 2.5, y + 5 * d), (xd, y), (xd + 2.5, y + 5 * d)], color=ink, width=0.6)
+    if "sink_size" in by:  # inside the bowl
+        _plan_box(pen, n, by["sink_size"], cx - 19, cy - 19, cx + 19, "", "above")
+        pen.text(cx - pen.w("Sink size W x D", 6.5) / 2, cy - r - 3, "Sink size W x D", 6.5, color=(0.25, 0.25, 0.25))
+    if "sink_left" in by:  # left of the bowl
+        _plan_box(pen, n, by["sink_left"], WL + 14, cy - 6.5, cx - r - 12, "Center to left wall")
+    if "sink_right" in by:  # under the line to the right wall
+        _plan_box(pen, n, by["sink_right"], cx + r + 22, cy + 4, WR - 22, "Center to right wall", "below")
+    if "sink_front" in by:  # under the bowl
+        _plan_box(pen, n, by["sink_front"], cx - 30, cy + r + 4, cx + 30, "Center to front edge", "right")
+        if pg:
+            pg.draw_line((cx, cy + r), (cx, cy + r + 4), color=ink, width=0.6, dashes="[2 2] 0")
+    if "overhang" in by:   # bottom right corner, past the front edge
+        _plan_box(pen, n, by["overhang"], WR + 14, front + 2, WR + 64, "Overhang", "right")
+    return top + PLAN_H
+
+
 def _door_block(pen, n, fields, y, section, page=None):
     """One line item: '<Section>:' box (with the photo on the right) and 'Measurements:' box."""
     has_photo = any(f.get("photos") for f in fields)
@@ -452,7 +538,20 @@ def _door_block(pen, n, fields, y, section, page=None):
             pen.widgets.append(w)
     if page:
         page.draw_rect(fitz.Rect(D_L, top, D_R, end), color=(0, 0, 0), width=1.9)
-    if meas or other:
+    plan = [f for f in fields if f.get("plan")]
+    if plan:
+        y = end + 4
+        pen.text(D_L + 1, y + 13, "Countertop Drawing (top view) - Measurements:", 12, bold=True)
+        top = y + 17
+        end = _countertop_plan(pen, n, fields, top)
+        rest = [f for f in fields if not f.get("plan")]
+        _, _, r_meas, r_other, r_comments = _parts(rest)
+        if r_meas or r_other or r_comments:
+            pen.line(end - 1)
+            end = _door_meas_rows(pen, n, rest, end - 4)
+        if page:
+            page.draw_rect(fitz.Rect(D_L, top, D_R, end), color=(0, 0, 0), width=1.9)
+    elif meas or other:
         y = end + 4
         pen.text(D_L + 1, y + 13, "Measurements:", 12, bold=True)
         top = y + 17

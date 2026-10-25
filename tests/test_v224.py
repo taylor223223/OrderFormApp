@@ -57,13 +57,15 @@ def test_contact_boxes_on_door_style_forms(app):
     assert "Contact:" in t        # the printed label
 
 
-def test_contact_in_comments_when_no_boxes(app):
+def test_contact_in_boxes_on_screen_door(app):
+    # v2.26: every form has its own contact boxes (no longer in the comments)
     from orderapp.catalog import FORMS
     from orderapp.pdf_fill import fill_form
-    assert "contact" not in FORMS["screen_door"]["header"]
+    assert "contact" in FORMS["screen_door"]["header"]
     with app.app_context():
         pdf, _ = fill_form("screen_door", {"header": H, "blocks": [{"qty": "1"}]})
-    assert "Contact: Pat Sample" in _text(pdf)
+    t = _text(pdf)
+    assert "Pat Sample" in t and "Contact: Pat Sample" not in t
 
 
 def test_editor_defaults_contact_from_saved_people(app, c):

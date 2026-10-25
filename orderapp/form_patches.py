@@ -170,6 +170,27 @@ def contact_row(page, widgets, y=199.0, x0=38.4, x1=322.0, size=7.5):
     return widgets
 
 
+def add_contact(page, y, x0, x1, size=7.5):
+    """contact_row on a form whose widgets are added right away (no Patcher)."""
+    for w in contact_row(page, [], y=y, x0=x0, x1=x1, size=size):
+        page.add_widget(w)
+
+
+# where the contact row fits on each company form: under the AIS phone / fax lines, above the first box
+CONTACT_SPOTS = {
+    "OF-Screen Door.pdf": (164, 38.4, 322),
+    "OF-Window Screen.pdf": (181, 38.4, 322),
+    "OF-Vertical Blind.pdf": (186, 38.4, 322),
+    "OrderFormVert.pdf": (166, 38.4, 322),
+    "OF-New Door Order Form.pdf": (162, 20, 262),
+    "OF-Horizontal Blind Order Form.pdf": (131.5, 30, 380),   # between the logo and the navy band
+}
+
+
+def contact_only(fn):
+    return lambda doc: add_contact(doc[0], *CONTACT_SPOTS[fn])
+
+
 def _heading_box(p, y_head, y_top, y_bot, title):
     p.text(39, y_head, title, 12, bold=True)
     p.page.draw_rect(fitz.Rect(38.3, y_top, 562.1, y_bot), color=(0, 0, 0), width=1.9)
@@ -449,6 +470,8 @@ def patch_screen_door(doc):
         rb, rw = ws[f"Bronze{s}"], ws[f"White{s}"]
         p.option(f"Tan{s}", 490, rb.y1 - 1, "Tan")
         p.option(f"Gray{s}", 490, rw.y1 - 1, "Gray")
+    y, x0, x1 = CONTACT_SPOTS["OF-Screen Door.pdf"]
+    contact_row(page, p.widgets, y=y, x0=x0, x1=x1)
     p.finish(doc)
 
 
@@ -466,6 +489,8 @@ def patch_window_screen(doc):
         p.flow(40, y, [("label", "Sunscreen:"), ("cb", f"Suntex80{s}", "Suntex 80"), ("cb", f"Suntex90{s}", "Suntex 90"),
                        ("label", "Color:")] + [("cb", f"SunCol {slug(c)}{s}", c) for c in SUNSCREEN_COLORS], 560)
         ws = {w.field_name: w for w in page.widgets()}
+    y, x0, x1 = CONTACT_SPOTS["OF-Window Screen.pdf"]
+    contact_row(page, p.widgets, y=y, x0=x0, x1=x1)
     p.finish(doc)
 
 
@@ -518,6 +543,8 @@ def patch_blind(doc):
                 page.draw_rect(fitz.Rect(r.x0 + 1.2, r.y0 - 0.9, r.x1 - 1.2, r.y0 + 0.9), color=None, fill=CYAN)
     p.new_names = [x for x in p.new_names if (" Style " in x and any(t in x for t in NEW_BLIND_STYLES))
                    or " Slat " in x]
+    y, x0, x1 = CONTACT_SPOTS["OF-Horizontal Blind Order Form.pdf"]
+    contact_row(page, p.widgets, y=y, x0=x0, x1=x1)
     p.finish(doc)
 
 
@@ -545,7 +572,9 @@ def remove_leftovers(doc):
 
 
 PATCHES = {
-    "OF-Vertical Blind.pdf": lambda d: None,     # only the clean-up below
+    "OF-Vertical Blind.pdf": contact_only("OF-Vertical Blind.pdf"),
+    "OrderFormVert.pdf": contact_only("OrderFormVert.pdf"),
+    "OF-New Door Order Form.pdf": contact_only("OF-New Door Order Form.pdf"),
     "OF-Door.pdf": patch_door,
     "OF-Pre-Hung.pdf": lambda d: patch_door(d, prehung=True),
     "OF-Bypass Door.pdf": patch_bypass,

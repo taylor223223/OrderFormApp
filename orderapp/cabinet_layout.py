@@ -131,6 +131,15 @@ def box_id(row, i):
 
 
 # ------------------------------------------------------------------ countertop
+def _sink_spots(p):
+    """Countertop form boxes from a layout piece: sink center to each end, front overhang."""
+    out = {"overhang": fin(p["overhang"]).rstrip('"')} if p.get("overhang") else {}
+    if len(p.get("sink_at") or []) == 1:
+        c = p["sink_at"][0]
+        out.update(sink_center=fin(c).rstrip('"'), sink_center_r=fin(p["length"] - c).rstrip('"'))
+    return out
+
+
 def countertop(d):
     """Pieces per wall: [{wall, boxes: 'L1-L2', length, depth, sqft, sink, note}]"""
     d = normalize(d)
@@ -148,7 +157,8 @@ def countertop(d):
             out.append({"wall": w["name"], "boxes": run[0][0] + ("-" + run[-1][0] if len(run) > 1 else ""),
                         "length": length, "depth": depth, "sqft": length * depth / 144.0,
                         "sink": ", ".join(f"{s[0]} center {fin(s[4] + s[1] / 2 - run[0][4])} from left end"
-                                          for s in sinks)})
+                                          for s in sinks),
+                        "sink_at": [s[4] + s[1] / 2 - run[0][4] for s in sinks], "overhang": over})
             run.clear()
         for i, b in enumerate(w["lowers"]):
             k = kind("lowers", b)
@@ -563,6 +573,7 @@ def order_lines(d, form_key):
                         "depth": fin(p["depth"]).rstrip('"'),
                         "backsplash": "Yes" if (num(t.get("splash")) or 0) > 0 else "No",
                         "sink": "Single Bowl" if p["sink"] else "None", "ct_color": t.get("color") or "",
+                        **_sink_spots(p),
                         "line_comments": f"{p['wall']} over {p['boxes']}" + (f"; {p['sink']}" if p["sink"] else "") +
                                          (f"; backsplash {fin(num(t.get('splash')))} rise" if num(t.get("splash")) else "")})
         return out

@@ -868,14 +868,22 @@ GENERATED = {
             _gc("ct_room", "Room", ["Kitchen", "Bathroom Vanity"]),
             _gc("ct_material", "Material", COUNTERTOP_MATERIALS),
             _gc("ct_layout", "Layout", ["Straight", "L-Shape", "U-Shape", "Island"]),
-            _g("length", "Run A Length (in)", measure=True),
+            # measurement boxes sit on a top-view drawing of the countertop (form_builder._countertop_plan)
+            _g("length", "Back Wall Length (in)", measure=True, plan="back"),
+            _g("depth", "Depth - Wall to Front Edge (in)", measure=True, plan="depth"),
             _g("length_b", "Run B Length (in)", measure=True, show_if=("ct_layout", ["L-Shape", "U-Shape"])),
             _g("length_c", "Run C Length (in)", measure=True, show_if=("ct_layout", ["U-Shape"])),
-            _g("depth", "Depth (in)", measure=True),
+            _g("overhang", "Front Overhang (in)", measure=True, plan="overhang"),
             _gc("backsplash", "Backsplash", ["Yes", "No"]),
             _gc("end_splash", "End Splash", ["None", "Left", "Right", "Both"]),
             _gc("sink", "Sink Cutout", ["None", "Single Bowl", "Double Bowl", "Vanity Bowl"]),
-            _g("sink_center", "Sink Center From Left End (in)", measure=True,
+            _g("sink_size", "Sink Size W x D (in)", measure=True, plan="sink_size",
+               show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
+            _g("sink_center", "Sink Center to Left Wall (in)", measure=True, plan="sink_left",
+               show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
+            _g("sink_center_r", "Sink Center to Right Wall (in)", measure=True, plan="sink_right",
+               show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
+            _g("sink_front", "Sink Center to Front Edge (in)", measure=True, plan="sink_front",
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
             _g("ct_color", "Color / Edge", suggest=LAMINATE_COLORS,
                placeholder="Peel & stick color from the sample book, edge..."),
@@ -1040,13 +1048,12 @@ def _app_made(spec, fk):
 for _fk, _spec in GENERATED.items():
     FORMS[_fk] = _app_made(_spec, _fk)
 
-# property contact (name / phone / email): its own boxes on the forms that share the Door form's header;
-# the other forms print it at the start of the comments (see pdf_fill)
+# property contact (name / phone / email): its own boxes on every form (pdf_fill still falls back to the
+# comments for a form without them)
 CONTACT_KEYS = ("contact", "contact_phone", "contact_email")
-for _fk, _spec in FORMS.items():
-    if _fk in ("door", "prehung", "bypass") or _spec.get("style") == "door":
-        _spec["header"] = dict(_spec["header"], contact="Contact Name", contact_phone="Contact Phone",
-                               contact_email="Contact Email")
+for _spec in FORMS.values():
+    _spec["header"] = dict(_spec["header"], contact="Contact Name", contact_phone="Contact Phone",
+                           contact_email="Contact Email")
 
 for _fk in FORMS:
     FORMS[_fk]["blocks"] = [_lwh_order(b) for b in FORMS[_fk]["blocks"]]
