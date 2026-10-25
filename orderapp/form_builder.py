@@ -494,6 +494,8 @@ def build_door_style(spec, out_path, forms_dir):
     for n, fields in enumerate(spec["blocks"]):
         y = _door_block(pen, n, fields, y, section, page) + 8
     assert y <= D_BOTTOM + 8, (title, y)
+    from .form_patches import contact_row
+    contact_row(page, pen.widgets)
     for w in pen.widgets:
         page.add_widget(w)
     # "Clear Name" button: its exclude-list must be this form's item fields

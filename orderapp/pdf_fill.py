@@ -45,7 +45,7 @@ def _set_text(idx, ref, value):
         w.text_color = FILL_BLUE
         fs = w.text_fontsize or 0
         if fs and w.field_value:       # long answers in small boxes: shrink the type instead of cutting it off
-            while fs > 6 and fitz.get_text_length(w.field_value, "helv", fs) > w.rect.width - 4:
+            while fs > 5 and fitz.get_text_length(w.field_value, "helv", fs) > w.rect.width - 4:
                 fs -= 0.5
             w.text_fontsize = fs
         w.update()
@@ -123,6 +123,12 @@ def _reset(page):
             if w.field_value:
                 w.field_value = ""
                 w.update()
+
+
+def contact_line(h):
+    """'Contact: Ana Ruiz (602) 555-0101 ana@property.com' - who to talk to at the property, or ''."""
+    parts = [str(h.get(k) or "").strip() for k in ("contact", "contact_phone", "contact_email")]
+    return ("Contact: " + " ".join(p for p in parts if p)) if any(parts) else ""
 
 
 def _combined_address(h):
@@ -297,6 +303,9 @@ def _fill(form_key, data):
         if spec.get("sales_rep") and data.get("sales_rep"):
             _set_text(idx, spec["sales_rep"], data["sales_rep"])
         notes = []
+        contact = contact_line(header)
+        if contact and not all(k in spec["header"] for k in ("contact", "contact_phone", "contact_email")):
+            notes.append(contact)    # no contact boxes on this paper form: first thing in the comments
         for i, blk in enumerate(chunk):
             line_no = pnum * per_page + i + 1
             bn = []

@@ -1038,6 +1038,14 @@ def _app_made(spec, fk):
 for _fk, _spec in GENERATED.items():
     FORMS[_fk] = _app_made(_spec, _fk)
 
+# property contact (name / phone / email): its own boxes on the forms that share the Door form's header;
+# the other forms print it at the start of the comments (see pdf_fill)
+CONTACT_KEYS = ("contact", "contact_phone", "contact_email")
+for _fk, _spec in FORMS.items():
+    if _fk in ("door", "prehung", "bypass") or _spec.get("style") == "door":
+        _spec["header"] = dict(_spec["header"], contact="Contact Name", contact_phone="Contact Phone",
+                               contact_email="Contact Email")
+
 for _fk in FORMS:
     FORMS[_fk]["blocks"] = [_lwh_order(b) for b in FORMS[_fk]["blocks"]]
 GENERIC_FIELDS = _lwh_order(GENERIC_FIELDS)
@@ -1298,6 +1306,7 @@ def public_spec(form_key):
         "header": [k for k in ["name", "acct", "address", "city", "state", "zip", "mgmt", "phone", "po", "date"]
                    if k in f["header"] or (k in ("city", "state", "zip") and f.get("address_combined"))],
         "has_sales_rep": bool(f.get("sales_rep")),
+        "has_contact_boxes": "contact" in f["header"],
         "has_comments": bool(f.get("comments")),
         "blocks_per_page": len(f["blocks"]),
         "fields": fields,

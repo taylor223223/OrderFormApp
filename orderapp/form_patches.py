@@ -143,6 +143,33 @@ def _keep_clear_buttons(doc, new_names):
         doc.xref_set_key(x, "Fields", val[:-1] + " " + extra + "]")
 
 
+CONTACT_FIELDS = {"contact": "Contact Name", "contact_phone": "Contact Phone", "contact_email": "Contact Email"}
+
+
+def contact_row(page, widgets, y=199.0, x0=38.4, x1=322.0, size=7.5):
+    """Who to talk to at the property - "Contact: ____ Phone: ____ Email: ____" in the free space under the
+    AIS phone / fax lines (left of the customer box) on the forms that share the Door form's header.
+    Appends the new text boxes to `widgets` (added to the page by the caller)."""
+    font = fitz.Font(fontfile=ARIAL_B)
+    parts = [("Contact:", "contact", 0.29), ("Phone:", "contact_phone", 0.21), ("Email:", "contact_email", 0.50)]
+    labels = sum(font.text_length(lab, size) + 3 for lab, _, _ in parts) + 5 * len(parts)
+    room = x1 - x0 - labels
+    x = x0
+    for lab, key, share in parts:
+        page.insert_text((x, y), lab, fontsize=size, fontname="AISB", fontfile=ARIAL_B)
+        x += font.text_length(lab, size) + 3
+        w_ = room * share
+        page.draw_line((x, y + 1.5), (x + w_, y + 1.5), color=(0, 0, 0), width=0.5)
+        t = fitz.Widget()
+        t.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        t.field_name = CONTACT_FIELDS[key]
+        t.rect = fitz.Rect(x, y - 9, x + w_, y + 1.2)
+        t.text_font, t.text_fontsize = "Helv", 8
+        widgets.append(t)
+        x += w_ + 5
+    return widgets
+
+
 def _heading_box(p, y_head, y_top, y_bot, title):
     p.text(39, y_head, title, 12, bold=True)
     p.page.draw_rect(fitz.Rect(38.3, y_top, 562.1, y_bot), color=(0, 0, 0), width=1.9)
@@ -278,6 +305,8 @@ def patch_door(doc, prehung=False):
     page.show_pdf_page(fitz.Rect(0, MEAS_BOT + low, 612, 594 + low), src, 0, clip=fitz.Rect(0, MEAS_BOT, 612, 594))
     page.show_pdf_page(fitz.Rect(0, 676 + COMMENTS_DROP, 612, 756 + COMMENTS_DROP), src, 0,
                        clip=fitz.Rect(0, 676, 612, 756))
+    contact_row(page, q.widgets)
+    q.new_names += list(CONTACT_FIELDS.values())
     for w in q.widgets:
         page.add_widget(w)
     p.new_names += q.new_names
@@ -403,6 +432,8 @@ def patch_bypass(doc):
                        ("label", "Finish:"), ("field", f"Mirror finish.{i}", 120)], 556)
         if i == 0:
             page.draw_line((38.3, 665), (562.1, 665), color=(0, 0, 0), width=0.75)
+    contact_row(page, p.widgets)
+    p.new_names += list(CONTACT_FIELDS.values())
     p.finish(doc)
 
 

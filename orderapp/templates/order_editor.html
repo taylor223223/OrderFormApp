@@ -29,7 +29,12 @@
       <select id="custSel"><option value="">(not saved / type below)</option>{% for cu in customers %}<option value="{{ cu.id }}" {{ 'selected' if c and cu.id==c.id }}>{{ cu.name }}</option>{% endfor %}</select></div>
     <div><label>P.O. Number</label><input data-h="po"></div>
     <div><label>Date</label><input data-h="date"></div>
+    <div style="grid-column:span 2"><label>Contact (who to talk to)</label><input data-h="contact" id="contactName" list="dl_people" placeholder="Name - pick a saved contact or type one" autocomplete="off"></div>
+    <div><label>Contact phone</label><input data-h="contact_phone" id="contactPhone" inputmode="tel"></div>
+    <div><label>Contact email</label><input data-h="contact_email" id="contactEmail" inputmode="email"></div>
   </div>
+  <datalist id="dl_people"></datalist>
+  <div class="small muted" style="margin-top:2px">Printed on the order form{{ '' if spec.has_contact_boxes else " (in the comments - this paper form has no contact boxes)" }}.</div>
   <details style="margin-top:10px" {{ 'open' if not c }}><summary>Customer details printed on the form</summary>
     <div class="grid g4" style="margin-top:8px">
       {% for k in spec.header if k not in ('po','date') %}
@@ -329,6 +334,18 @@ $('#switchForm').onchange = e => {
   const c = $('#customer_id').value;
   location.href = '{{ url_for("orders.editor") }}?form=' + e.target.value + (c ? '&customer=' + c : '');
 };
+// contact picker: the property's saved people; picking one fills phone + email
+let PEOPLE = {{ (people or [])|tojson }};
+function drawPeople(){
+  const dl = $('#dl_people'); dl.innerHTML = '';
+  PEOPLE.forEach(p => { const o = document.createElement('option'); o.value = p.name;
+    o.label = [p.role, p.phone].filter(Boolean).join(' · '); dl.appendChild(o); });
+}
+drawPeople();
+$('#contactName').addEventListener('input', e => {
+  const p = PEOPLE.find(x => x.name.toLowerCase() === e.target.value.trim().toLowerCase());
+  if (p) { if (p.phone) $('#contactPhone').value = p.phone; if (p.email) $('#contactEmail').value = p.email; }
+});
 $('#custSel').onchange = async e => {
   const id = e.target.value;
   const anyData = [...document.querySelectorAll('#blocks .blk')].some(b => Object.keys(getBlock(b)).length);
@@ -339,6 +356,7 @@ $('#custSel').onchange = async e => {
   if (!id) return;
   const r = await fetch(API_CUST + id).then(r => r.json());
   if (r.ok) document.querySelectorAll('[data-h]').forEach(i => { const k = i.dataset.h; if (k in r.header) i.value = r.header[k]; });
+  if (r.ok) { PEOPLE = r.people || []; drawPeople(); }
   const hb = $('#holdBanner');
   if (r.ok && r.hold) { $('#holdText').innerHTML = r.hold.name.replace(/[<>&]/g, '') + ' owes <b>$' + r.hold.balance + '</b>'; hb.style.display = ''; }
   else hb.style.display = 'none';

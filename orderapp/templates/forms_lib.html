@@ -19,10 +19,11 @@
 <div class="card" style="margin-top:14px"><h3 style="margin-top:0">Email the checked forms</h3>
   <div class="grid g3">
     <div><label>Property (fills the email)</label>
-      <select id="custPick"><option value="">(type an address)</option>{% for c in customers %}<option value="{{ c.id }}" data-email="{{ c.email or '' }}" {{ 'selected' if pre == c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
+      <select id="custPick" name="customer_id"><option value="">(type an address)</option>{% for c in customers %}<option value="{{ c.id }}" data-email="{{ c.email or '' }}" {{ 'selected' if pre == c.id }}>{{ c.name }}</option>{% endfor %}</select></div>
     <div><label>To</label><input name="to" id="toAddr" placeholder="manager@property.com"></div>
     <div><label>Subject</label><input name="subject" placeholder="Order forms - (form names)"></div>
   </div>
+  <p class="small muted" style="margin:6px 0 0">With a property picked, the customer forms go out with the property name and its contact's name, phone and email already filled in (they can change them).</p>
   <label style="margin-top:8px">Message <span class="muted small">(leave blank for the standard note)</span></label>
   <textarea name="body" rows="3"></textarea>
   <div class="row" style="margin-top:8px"><button class="btn primary">Make email draft</button>

@@ -37,6 +37,30 @@ def customer_forms():
     return sorted(out, key=lambda f: f["rank"])
 
 
+def prefilled(path, cust):
+    """A copy of a blank customer form with PROPERTY / YOUR NAME / PHONE / EMAIL filled in for this property
+    (still fillable - the manager can change anything). Returns the copy's path."""
+    import tempfile
+
+    import pymupdf as fitz
+    from .orders import customer_header
+    h = customer_header(cust)
+    vals = {"Property": h.get("name"), "Manager Name": h.get("contact"),
+            "Manager Phone": h.get("contact_phone") or h.get("phone"), "Manager Email": h.get("contact_email")}
+    doc = fitz.open(path)
+    for page in doc:
+        for w in page.widgets():
+            v = vals.get(w.field_name)
+            if v:
+                w.field_value = v
+                w.update()
+    out_dir = tempfile.mkdtemp(prefix="ais_forms_")
+    out = os.path.join(out_dir, os.path.basename(path))
+    doc.save(out, garbage=3, deflate=True)
+    doc.close()
+    return out
+
+
 def _group(fk):
     if fk in ("horizontal_blind", "vertical_blind", "roller_shade"):
         return "Blinds & Shades"
@@ -88,6 +112,10 @@ def email():
         if kind in ("company", "customer"):
             files.append(_path(kind, name))
     to = request.form.get("to", "").strip()
+    cust = q("SELECT * FROM customers WHERE id=?", (request.form.get("customer_id", type=int),), one=True) \
+        if request.form.get("customer_id", "").isdigit() else None
+    if cust:      # customer forms go out with the property + contact already filled in
+        files = [prefilled(f, cust) if os.path.basename(f).startswith(CUSTOMER_PREFIX) else f for f in files]
     if not files:
         flash("Check at least one form to email.", "error")
         return redirect(url_for("library.index"))

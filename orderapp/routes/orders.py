@@ -26,7 +26,22 @@ def today():
 def customer_header(c):
     if not c:
         return {}
-    return {k: (c[k] or "") for k in ("name", "acct", "address", "city", "state", "zip", "mgmt", "phone")}
+    h = {k: (c[k] or "") for k in ("name", "acct", "address", "city", "state", "zip", "mgmt", "phone")}
+    # who to talk to: the property's main contact (Maint. Super first), else the property's own email
+    from ..people import people_at
+    p = next(iter(people_at(c["id"])), None)
+    h.update(contact=(p["name"] if p else "") or "", contact_phone=(p["phone"] if p else "") or "",
+             contact_email=((p["email"] if p else "") or c["email"] or ""))
+    return h
+
+
+def contacts_json(cid):
+    """Saved people at a property, for the editor's contact picker."""
+    if not cid:
+        return []
+    from ..people import people_at
+    return [{"name": p["name"] or "", "role": p["role"] or "", "phone": p["phone"] or "", "email": p["email"] or ""}
+            for p in people_at(cid) if p["name"]]
 
 
 def output_dir():
@@ -121,7 +136,7 @@ def editor():
     return render_template("order_editor.html", spec=public_spec(form_key), form_key=form_key, order=order,
                            data=data, c=c, customers=customers, units=[dict(u) for u in units],
                            fps=[dict(f) for f in fps], sugg=suggestions(form_key, cid), forms=form_list(),
-                           last=last, photos=_photos_for(oid) if oid else [],
+                           last=last, photos=_photos_for(oid) if oid else [], people=contacts_json(cid),
                            kind=((order["kind"] if order else None) or request.args.get("kind") or "order"))
 
 
@@ -639,7 +654,7 @@ def api_customer(cid):
         return jsonify({"ok": False})
     from ..holds import hold_for
     h = hold_for(cid)
-    return jsonify({"ok": True, "header": customer_header(c),
+    return jsonify({"ok": True, "header": customer_header(c), "people": contacts_json(cid),
                     "hold": {"name": h["name"], "balance": f"{h['balance'] or 0:,.2f}"} if h else None})
 
 
