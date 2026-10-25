@@ -1764,6 +1764,8 @@ def main():
     for cls in FORMS:
         f = cls()
         print(f.build(os.path.join(OUT_DIR, f"Customer Order Form - {f.subtitle}.pdf")))
+    from .cabinet_layout import CUSTOMER_FORM, customer_form_pdf     # box-by-box kitchen layout (landscape)
+    print(customer_form_pdf(os.path.join(OUT_DIR, CUSTOMER_FORM)))
 
 
 if __name__ == "__main__":

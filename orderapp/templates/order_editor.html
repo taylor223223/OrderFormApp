@@ -56,6 +56,15 @@
   <span id="qMsg" class="muted small"></span>
 </div>
 
+{% if form_key in ('cabinet_custom', 'cabinet_prefab', 'countertop') %}
+<div class="card row" id="layoutCard" style="gap:8px;flex-wrap:wrap">
+  <b>Cabinet layout:</b>
+  <select id="layoutSel" style="max-width:320px"><option value="">(none attached)</option>{% for l in layouts %}<option value="{{ l.id }}" {{ 'selected' if data.layout_id|string == l.id|string }}>{{ l.name or 'Kitchen' }}{{ ' - unit ' ~ l.unit if l.unit }}</option>{% endfor %}</select>
+  <button type="button" class="btn sm" id="layoutFill">Fill lines from layout</button>
+  {% if c %}<a class="btn sm" href="{{ url_for('kitchen.index', customer=c.id) }}" target="_blank">+ New / edit layouts</a>{% endif %}
+  <span class="small muted" id="layoutMsg">The attached layout's drawing prints at the end of the order PDF.</span>
+</div>
+{% endif %}
 <div id="blocks"></div>
 <div class="row" style="margin-bottom:16px"><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
 
@@ -328,6 +337,17 @@ async function loadUnit(unit, floorplan, targetEl){
 
 $('#qUnitBtn').onclick = () => loadUnit($('#qUnit').value.trim(), null, null);
 $('#qFpBtn').onclick = () => loadUnit(null, $('#qFp').value, null);
+if ($('#layoutFill')) $('#layoutFill').onclick = async () => {
+  const id = $('#layoutSel').value;
+  if (!id) { $('#layoutMsg').textContent = 'Pick a layout first.'; return; }
+  const r = await fetch({{ url_for('kitchen.lines', lid=0)|tojson }}.replace('/0/', '/' + id + '/') + '?form=' + FORM_KEY).then(r => r.json());
+  if (!r.lines || !r.lines.length) { $('#layoutMsg').textContent = 'That layout has no boxes to order.'; return; }
+  document.querySelectorAll('#blocks .blk').forEach(el => { if (!Object.keys(getBlock(el)).length) el.remove(); });
+  r.lines.forEach(b => addBlock(b, Object.keys(b)));
+  renumber && renumber();
+  $('#layoutMsg').textContent = `Added ${r.lines.length} line(s) from the layout - yellow = filled in, check them.`;
+  dirty = true;
+};
 $('#addBlock').onclick = () => { addBlock({}); dirty = true; };
 $('#switchForm').onchange = e => {
   if (dirty && !confirm('Switch form? Unsaved changes on this page will be lost.')) { e.target.value = FORM_KEY; return; }
@@ -376,7 +396,8 @@ $('#orderForm').addEventListener('submit', () => {
   const header = {}; document.querySelectorAll('[data-h]').forEach(i => { if (i.value.trim()) header[i.dataset.h] = i.value.trim(); });
   const blocks = [...document.querySelectorAll('#blocks .blk')].map(getBlock).filter(b => Object.keys(b).length);
   $('#payload').value = JSON.stringify({header, blocks, comments: $('#comments').value.trim(),
-                                        sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : ''});
+                                        sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : '',
+                                        layout_id: $('#layoutSel') ? ($('#layoutSel').value || null) : null});
   dirty = false;
 });
 document.querySelectorAll('.kindtoggle button').forEach(btn => btn.addEventListener('click', () => {

@@ -1,0 +1,163 @@
+{% extends "base.html" %}{% block title %}{{ lay.name or 'Kitchen' }} - cabinet layout{% endblock %}
+{% block body %}
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('kitchen.index', customer=c.id if c else None) }}">← Layouts</a>{% if c %} · <a href="{{ url_for('customers.view', cid=c.id) }}">{{ c.name }}</a>{% endif %}</div>
+<h1>Cabinet &amp; countertop layout</h1>
+<div class="muted">Enter each box left to right, standing facing the wall - uppers on top, lowers underneath. Leave spaces for the dishwasher, stove and fridge. The drawing below updates as you type and is what prints on the PDF and the order.</div></div>
+<div class="row" style="gap:6px"><span class="small muted" id="saved"></span><button class="btn" id="saveBtn">Save</button><button class="btn primary" id="pdfBtn">Save &amp; make PDF</button>
+<a class="btn" href="{{ url_for('kitchen.blank') }}" target="_blank" title="Printable sheet to sketch and measure by hand">Blank sheet</a></div></div>
+
+<div class="card grid g4" style="gap:8px">
+  <div><label>Name</label><input id="f_name" value="{{ lay.name or '' }}" placeholder="Kitchen - B2 floorplan"></div>
+  <div><label>Unit</label><input id="f_unit" value="{{ lay.unit or '' }}" placeholder="e.g. 104"></div>
+  <div><label>Floorplan</label><select id="f_fp"><option value="">(none)</option>{% for f in fps %}<option value="{{ f.id }}" {{ 'selected' if lay.floorplan_id == f.id }}>{{ f.name }}</option>{% endfor %}</select></div>
+  <div><label>Room</label><select id="f_room">{% for r in ['Kitchen','Bath vanity','Laundry','Bar / other'] %}<option {{ 'selected' if data.room == r }}>{{ r }}</option>{% endfor %}</select></div>
+  <div><label>Countertop</label><select id="t_material">{% for m in C.TOP_MATERIALS %}<option {{ 'selected' if data.top.material == m }}>{{ m }}</option>{% endfor %}</select></div>
+  <div><label>Color</label><input id="t_color" list="dl_colors" value="{{ data.top.color }}" placeholder="Pick from the samples"><datalist id="dl_colors">{% for col in C.LAMINATE_COLORS %}<option value="{{ col }}">{% endfor %}</datalist></div>
+  <div><label>Front overhang (in)</label><input id="t_overhang" value="{{ data.top.overhang }}" inputmode="decimal"></div>
+  <div><label>Backsplash rise (in)</label><input id="t_splash" value="{{ data.top.splash }}" inputmode="decimal"></div>
+  <div style="grid-column:span 2"><label>Edge / notes for the top</label><input id="t_edge" value="{{ data.top.edge }}" placeholder="Square edge, wrap the front, end caps..."></div>
+  <div style="grid-column:span 2"><label>Notes</label><input id="f_notes" value="{{ data.notes }}"></div>
+</div>
+
+<div id="walls"></div>
+<div class="row" style="margin:10px 0"><button type="button" class="btn" id="addWall">+ Add a wall (L / U kitchen)</button></div>
+
+<div class="card"><h3 style="margin-top:0">Countertop <span class="small muted" id="sqft"></span></h3>
+<div class="small muted">Worked out from the lowers: one piece per stretch of counter - a stove, fridge, pantry or open space splits it. Depth = the boxes' depth + the front overhang.</div>
+<div class="tablewrap"><table id="pieces"></table></div></div>
+
+<style>
+.cl-wall{margin-top:14px}
+.cl-rows table{font-size:13px}
+.cl-rows td{padding:3px 4px;vertical-align:middle}
+.cl-rows input,.cl-rows select{padding:4px 6px;min-height:0;font-size:13px}
+.cl-rows input.n{width:62px}
+.cl-rows input.s{width:44px}
+.cl-rows .bid{font-weight:700;color:var(--muted)}
+.cl-rows tr.space td.bid{color:#c62828}
+.cl-rows tr.sink td.bid{color:#0b84c6}
+.cl-svg{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px;background:#fff}
+.cl-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+</style>
+<script>
+const LOWER = {{ C.LOWER_TYPES|tojson }}, UPPER = {{ C.UPPER_TYPES|tojson }};
+let DATA = {{ data|tojson }};
+let PAYLOAD = {{ payload|tojson }};
+const SAVE_URL = {{ url_for('kitchen.edit', lid=lay.id)|tojson }}, PREVIEW_URL = {{ url_for('kitchen.preview', lid=lay.id)|tojson }},
+      PDF_URL = {{ url_for('kitchen.pdf', lid=lay.id)|tojson }};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $ = s => document.querySelector(s);
+function newBox(row, type){
+  const t = (row === 'lowers' ? LOWER : UPPER)[type]; const [_, w, h, d, kind] = t;
+  const b = {type, w: String(w), h: String(h), d: String(d), doors: '', drawers: 'No', drawer_n: '', drawer_h: '', hinge: '', label: '', notes: ''};
+  if (['cab','sink','tall'].includes(kind)) b.doors = w >= 24 ? '2' : '1';
+  if (type === 'Drawer base') Object.assign(b, {drawers: 'Yes', drawer_n: '3', doors: '0'});
+  if (type === 'Base cabinet') Object.assign(b, {drawers: 'Yes', drawer_n: '1', drawer_h: '6'});
+  return b;
+}
+function kindOf(row, b){ return ((row === 'lowers' ? LOWER : UPPER)[b.type] || [0,0,0,0,'cab'])[4]; }
+function rowTable(wi, row){
+  const types = row === 'lowers' ? LOWER : UPPER, boxes = DATA.walls[wi][row];
+  const L = row === 'lowers' ? 'L' : 'U';
+  let h = `<table><tr><th></th><th>Type</th><th>Width</th><th>Height</th><th>Depth</th><th>Doors</th><th>Drawers</th><th>#</th><th>Drawer ht</th><th>Hinge</th><th>Label</th><th>Notes</th><th></th></tr>`;
+  boxes.forEach((b, i) => {
+    const k = kindOf(row, b), cab = ['cab','sink','tall'].includes(k);
+    h += `<tr class="${k.startsWith('space') ? 'space' : k}" data-w="${wi}" data-row="${row}" data-i="${i}">
+      <td class="bid">${L}${i + 1}</td>
+      <td><select data-k="type">${Object.keys(types).map(t => `<option ${t === b.type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></td>
+      <td><input class="n" data-k="w" value="${esc(b.w)}" inputmode="decimal"></td>
+      <td><input class="n" data-k="h" value="${esc(b.h)}" inputmode="decimal"></td>
+      <td><input class="n" data-k="d" value="${esc(b.d)}" inputmode="decimal"></td>
+      ${cab ? `<td><input class="s" data-k="doors" value="${esc(b.doors)}" inputmode="numeric"></td>
+      <td><select data-k="drawers"><option ${b.drawers === 'Yes' ? 'selected' : ''}>Yes</option><option ${b.drawers !== 'Yes' ? 'selected' : ''}>No</option></select></td>
+      <td><input class="s" data-k="drawer_n" value="${esc(b.drawer_n)}" inputmode="numeric" ${b.drawers === 'Yes' ? '' : 'disabled'}></td>
+      <td><input class="s" data-k="drawer_h" value="${esc(b.drawer_h)}" inputmode="decimal" placeholder="6" ${b.drawers === 'Yes' ? '' : 'disabled'}></td>
+      <td><select data-k="hinge">${['', 'Left', 'Right', 'Pair'].map(x => `<option ${x === b.hinge ? 'selected' : ''}>${x}</option>`).join('')}</select></td>`
+      : `<td colspan="5" class="small muted">${k.startsWith('space') ? 'space - no cabinet' : 'filler'}</td>`}
+      <td><input data-k="label" value="${esc(b.label)}" style="width:90px" placeholder="optional"></td>
+      <td><input data-k="notes" value="${esc(b.notes)}" style="width:140px"></td>
+      <td class="nowrap"><button type="button" class="btn sm" data-act="up" title="Move left">←</button><button type="button" class="btn sm" data-act="down" title="Move right">→</button><button type="button" class="btn sm" data-act="dup" title="Copy">⧉</button><button type="button" class="btn sm danger" data-act="rm" title="Remove">×</button></td></tr>`;
+  });
+  h += `</table><div class="row" style="gap:6px;margin-top:6px"><select class="addType" style="width:auto">${Object.keys(types).map(t => `<option>${esc(t)}</option>`).join('')}</select>
+    <button type="button" class="btn sm" data-add="${row}" data-w="${wi}">+ Add ${row === 'lowers' ? 'lower' : 'upper'} box</button></div>`;
+  return h;
+}
+function draw(){
+  $('#walls').innerHTML = DATA.walls.map((w, wi) => `<div class="card cl-wall" data-wall="${wi}">
+    <div class="cl-head"><input data-wallname="${wi}" value="${esc(w.name)}" style="max-width:200px;font-weight:700">
+    <span class="small muted">${w.uppers.length} upper, ${w.lowers.length} lower boxes</span><span class="spacer"></span>
+    ${DATA.walls.length > 1 ? `<button type="button" class="btn sm danger" data-rmwall="${wi}">Remove wall</button>` : ''}</div>
+    <h4 style="margin:10px 0 4px">Uppers (wall cabinets)</h4><div class="cl-rows tablewrap">${rowTable(wi, 'uppers')}</div>
+    <h4 style="margin:12px 0 4px">Lowers (base cabinets + appliance spaces)</h4><div class="cl-rows tablewrap">${rowTable(wi, 'lowers')}</div>
+    <div class="cl-svg" id="svg_${wi}">${(PAYLOAD.walls || [])[wi] || ''}</div></div>`).join('');
+  drawPieces();
+}
+function drawPieces(){
+  const p = PAYLOAD.pieces || [];
+  $('#pieces').innerHTML = '<tr><th>Piece</th><th>Wall</th><th>Over boxes</th><th>Length</th><th>Depth</th><th>Sq ft</th><th>Sink cut-out</th></tr>' +
+    (p.length ? p.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.wall)}</td><td>${esc(x.boxes)}</td><td>${esc(x.length_txt)}</td><td>${esc(x.depth_txt)}</td><td>${esc(x.sqft_txt)}</td><td>${esc(x.sink)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="muted">No counter yet - add lower boxes.</td></tr>');
+  const tot = p.reduce((a, x) => a + parseFloat(x.sqft_txt || 0), 0);
+  $('#sqft').textContent = p.length ? `${p.length} piece(s) · ${tot.toFixed(1)} sq ft` : '';
+}
+function collectTop(){
+  DATA.room = $('#f_room').value; DATA.notes = $('#f_notes').value;
+  DATA.top = {material: $('#t_material').value, color: $('#t_color').value, overhang: $('#t_overhang').value,
+              splash: $('#t_splash').value, edge: $('#t_edge').value};
+}
+let timer = null;
+function refresh(){
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    collectTop();
+    const r = await fetch(PREVIEW_URL, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF}, body: JSON.stringify({data: DATA})}).then(r => r.json()).catch(() => null);
+    if (!r) return;
+    PAYLOAD = r;
+    (r.walls || []).forEach((s, i) => { const el = document.getElementById('svg_' + i); if (el) el.innerHTML = s; });
+    drawPieces(); $('#saved').textContent = 'Unsaved changes';
+  }, 350);
+}
+document.addEventListener('input', e => {
+  const tr = e.target.closest('tr[data-row]');
+  if (tr && e.target.dataset.k) { DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i][e.target.dataset.k] = e.target.value; refresh(); return; }
+  if (e.target.dataset.wallname !== undefined) { DATA.walls[+e.target.dataset.wallname].name = e.target.value; refresh(); return; }
+  if (e.target.closest('.card') && e.target.id && /^[ft]_/.test(e.target.id)) refresh();
+});
+document.addEventListener('change', e => {
+  const tr = e.target.closest('tr[data-row]');
+  if (!tr || !e.target.dataset.k) { if (e.target.id && /^[ft]_/.test(e.target.id)) refresh(); return; }
+  const box = DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i];
+  if (e.target.dataset.k === 'type') {            // new type -> its usual sizes, keep the width the user typed
+    const nb = newBox(tr.dataset.row, e.target.value); nb.w = box.w || nb.w; nb.notes = box.notes; nb.label = box.label;
+    DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i] = nb;
+  } else box[e.target.dataset.k] = e.target.value;
+  draw(); refresh();
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.add) {
+    const wi = +b.dataset.w, row = b.dataset.add, type = b.parentElement.querySelector('.addType').value;
+    DATA.walls[wi][row].push(newBox(row, type)); draw(); refresh(); return;
+  }
+  if (b.dataset.rmwall !== undefined) { if (confirm('Remove this wall and its boxes?')) { DATA.walls.splice(+b.dataset.rmwall, 1); draw(); refresh(); } return; }
+  const tr = b.closest('tr[data-row]'); if (!tr || !b.dataset.act) return;
+  const list = DATA.walls[+tr.dataset.w][tr.dataset.row], i = +tr.dataset.i;
+  if (b.dataset.act === 'rm') list.splice(i, 1);
+  if (b.dataset.act === 'dup') list.splice(i + 1, 0, JSON.parse(JSON.stringify(list[i])));
+  if (b.dataset.act === 'up' && i > 0) [list[i - 1], list[i]] = [list[i], list[i - 1]];
+  if (b.dataset.act === 'down' && i < list.length - 1) [list[i + 1], list[i]] = [list[i], list[i + 1]];
+  draw(); refresh();
+});
+$('#addWall').onclick = () => { DATA.walls.push({name: 'Wall ' + (DATA.walls.length + 1), uppers: [], lowers: [newBox('lowers', 'Base cabinet')]}); draw(); refresh(); };
+async function save(){
+  collectTop();
+  const r = await fetch(SAVE_URL, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},
+    body: JSON.stringify({data: DATA, name: $('#f_name').value, unit: $('#f_unit').value, floorplan_id: $('#f_fp').value || null})}).then(r => r.json());
+  if (r.ok) { PAYLOAD = r; $('#saved').textContent = 'Saved'; }
+  return r.ok;
+}
+$('#saveBtn').onclick = save;
+$('#pdfBtn').onclick = async () => { if (await save()) window.open(PDF_URL, '_blank'); };
+draw();
+</script>
+{% endblock %}

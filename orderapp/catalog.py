@@ -47,7 +47,8 @@ FLAT_TRIM_PROFILE = "K: " + TRIM_PROFILES[-1][1]
 FLAT_TRIM_THICK = ['1/2"', '9/16"', '5/8"', '3/4"']
 FLAT_TRIM_HEIGHT = ['2-1/4"', '3-1/4"', '3-1/2"', '4"', '4-1/4"', '5-1/4"', '5-1/2"']
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
-COUNTERTOP_MATERIALS = ["Laminate", "Synthetic", "Thinscape", "Custom"]
+from .cabinet_layout import LAMINATE_COLORS  # noqa: E402  (peel & stick colors AIS has sold)
+COUNTERTOP_MATERIALS = ["Peel & Stick Laminate", "Composite", "Laminate", "Synthetic", "Thinscape", "Custom"]
 PREFAB_KITCHEN_ITEMS = ["Base Cabinet", "Sink Base", "Drawer Base", "Wall Cabinet"]
 PREFAB_VANITY_ITEMS = ["Single Box", "Double Box", "Double Box with Sink", "Extended Double Box with Sink",
                        "Doors Only"]
@@ -876,7 +877,8 @@ GENERATED = {
             _gc("sink", "Sink Cutout", ["None", "Single Bowl", "Double Bowl", "Vanity Bowl"]),
             _g("sink_center", "Sink Center From Left End (in)", measure=True,
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
-            _g("ct_color", "Color / Edge *", placeholder="* countertop samples coming soon - type it in"),
+            _g("ct_color", "Color / Edge", suggest=LAMINATE_COLORS,
+               placeholder="Peel & stick color from the sample book, edge..."),
             _LINE_COMMENTS]],
         "products": ["countertop"],
     },

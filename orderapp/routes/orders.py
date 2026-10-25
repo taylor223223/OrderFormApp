@@ -35,6 +35,16 @@ def customer_header(c):
     return h
 
 
+def _layouts_for(cid):
+    """This property's box-by-box cabinet layouts (to attach to a cabinet / countertop order)."""
+    if not cid:
+        return []
+    from ..cabinet_layout import is_v2
+    from ..db import loads
+    return [r for r in q("SELECT id, name, unit, data FROM kitchen_layouts WHERE customer_id=? ORDER BY updated DESC",
+                         (cid,)) if is_v2(loads(r["data"], {}))]
+
+
 def contacts_json(cid):
     """Saved people at a property, for the editor's contact picker."""
     if not cid:
@@ -137,6 +147,7 @@ def editor():
                            data=data, c=c, customers=customers, units=[dict(u) for u in units],
                            fps=[dict(f) for f in fps], sugg=suggestions(form_key, cid), forms=form_list(),
                            last=last, photos=_photos_for(oid) if oid else [], people=contacts_json(cid),
+                           layouts=_layouts_for(cid),
                            kind=((order["kind"] if order else None) or request.args.get("kind") or "order"))
 
 
@@ -237,6 +248,23 @@ def save():
     return redirect(url_for("orders.view", oid=oid))
 
 
+def _append_layout(pdf, lid, cid):
+    import pymupdf as fitz
+    from .. import cabinet_layout as C
+    from ..db import loads
+    r = q("SELECT * FROM kitchen_layouts WHERE id=?", (lid,), one=True)
+    if not r or not C.is_v2(loads(r["data"], {})):
+        return pdf
+    c = q("SELECT * FROM customers WHERE id=?", (r["customer_id"] or cid,), one=True)
+    lay = dict(r, data=loads(r["data"], {}))
+    extra = C.make_pdf(lay, dict(c) if c else None)
+    doc = fitz.open(stream=pdf, filetype="pdf")
+    doc.insert_pdf(fitz.open(stream=extra, filetype="pdf"))
+    out = doc.tobytes(garbage=3, deflate=True)
+    doc.close()
+    return out
+
+
 def _make_pdf(oid):
     o = q("SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?",
           (oid,), one=True)
@@ -249,6 +277,11 @@ def _make_pdf(oid):
     from ..order_kind import is_quote, kind_title, stamp_quote
     if is_quote(o):
         pdf = stamp_quote(pdf)
+    if data.get("layout_id"):   # the attached cabinet layout's drawing + countertop pages
+        try:
+            pdf = _append_layout(pdf, int(data["layout_id"]), o["customer_id"])
+        except Exception as e:  # noqa: BLE001 - never lose the order form over the drawing
+            warns = list(warns) + [f"The cabinet layout couldn't be added to the PDF: {e}"]
     from ..photos import append_photo_pages
     try:      # photo references go on their own pages at the end of the order
         pdf = append_photo_pages(pdf, oid, f"{cust} - PO {o['po'] or '-'} - Order #{oid}")

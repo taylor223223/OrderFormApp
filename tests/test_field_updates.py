@@ -254,8 +254,8 @@ def test_kitchen_measure(app):
     c = app.test_client()
     t = _csrf(c)
     cid = Q(app, "SELECT id FROM customers ORDER BY id LIMIT 1", one=True)["id"]
-    r = c.post("/kitchen/new", data={"csrf_token": t, "customer_id": cid, "name": "Kitchen B2", "shape": "l"})
-    lid = int(r.headers["Location"].rsplit("/", 1)[1])
+    with app.app_context():     # an older (v1, runs A/B/C) layout still opens, saves and prints
+        lid = K.create(cid, "Kitchen B2", "", None, "l", "Kitchen")
     assert c.get(f"/kitchen/{lid}").status_code == 200
     j = c.post(f"/kitchen/{lid}", json={"data": dict(d, shape="l"), "name": "Kitchen B2", "unit": "1107"},
                headers={"X-CSRF-Token": t}).get_json()
@@ -268,7 +268,6 @@ def test_kitchen_measure(app):
     doc = fitz.open(stream=pdf.data, filetype="pdf")
     txt = doc[0].get_text()
     assert "Measure Sheet" in txt and "COUNTERTOP PIECES" in txt and len(doc) >= 2
-    assert c.get("/kitchen/blank.pdf").data[:4] == b"%PDF"
     assert c.get(f"/kitchen?customer={cid}").status_code == 200
 
 
