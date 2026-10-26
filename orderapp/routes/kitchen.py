@@ -56,7 +56,8 @@ def _raw(lid):
 
 
 def _v2_payload(data):
-    return {"walls": [C.wall_svg(w) for w in data["walls"]], "pieces": [
+    style = (data.get("cab") or {}).get("style") or ""
+    return {"walls": [C.wall_svg(w, style=style) for w in data["walls"]], "pieces": [
         dict(p, length_txt=K.fin(p["length"]), depth_txt=K.fin(p["depth"]), sqft_txt=f"{p['sqft']:.1f}")
         for p in C.countertop(data)], "schedule": C.schedule(data)}
 

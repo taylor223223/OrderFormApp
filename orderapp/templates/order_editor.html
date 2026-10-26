@@ -247,7 +247,7 @@ function addBlock(values, predictedKeys){
   $('#blocks').appendChild(el);
   setBlock(el, values || {}, predictedKeys);
   el.addEventListener('input', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); });
-  el.addEventListener('change', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); });
+  el.addEventListener('change', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); roomDepth(el, ev.target); });
   el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
   el.querySelector('[data-act=clear]').onclick = () => { setBlock(el, {}, null, true); dirty = true; };
   el.querySelector('[data-act=dup]').onclick = () => { const v = getBlock(el); const n = addBlock(v); el.after(n); renumber(); dirty = true; };
@@ -288,17 +288,21 @@ function getBlock(el){
   return v;
 }
 
+// standard depth when the room is picked: kitchen 25-1/2, bathroom vanity 22-1/2. Only fills an empty box (or one
+// still showing the other room's standard), so a measured depth is never written over.
+function roomDepth(el, target){
+  if (!target || !target.dataset || !target.dataset.k) return;
+  SPEC.fields.filter(f => f.room_default && f.room_default.key === target.dataset.k).forEach(f => {
+    const box = el.querySelector(`[data-k="${f.key}"]`); if (!box) return;
+    const vals = Object.values(f.room_default.values), want = f.room_default.values[target.value];
+    if (want && (!box.value.trim() || vals.includes(box.value.trim()))) { box.value = want; box.dispatchEvent(new Event('input', {bubbles: true})); }
+  });
+}
 function onUserEdit(el, target){
   dirty = true;
   if (target && target.classList) target.classList.remove('predicted');
-  if (!el.dataset.touched) {
-    el.dataset.touched = '1';
-    // predict this customer's usual choices for the empty dropdowns of a newly started line
-    for (const [k, val] of Object.entries(SUGG.defaults || {})) {
-      const i = el.querySelector(`[data-k="${k}"]`);
-      if (i && i !== target && i.tagName === 'SELECT' && !i.value) { i.value = val; i.classList.add('predicted'); }
-    }
-  }
+  // nothing is filled in for you while you type: saved info only comes in from the Load buttons (10/26)
+  el.dataset.touched = '1';
   updatePageNote();
 }
 

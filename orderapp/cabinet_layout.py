@@ -45,7 +45,7 @@ UPPER_TYPES = {
 TOP_MATERIALS = ["Peel & stick laminate over MDF", "Composite", "Laminate", "Synthetic", "Thinscape"]
 CAB_MATERIALS = ["MDF", "Particle Board", "Plywood", "Solid Wood", "Thermofoil"]
 BLANK_ORDER_FORM = "OF-Cabinet Order Form (Kitchen Layout).pdf"   # company forms library: the paper version
-DEFAULT_CAB = {"material": "", "color": "", "hw": "", "hw_custom": ""}   # material, color, hardware
+DEFAULT_CAB = {"style": "", "material": "", "color": "", "hw": "", "hw_custom": ""}   # material, color, hardware
 CAB_HARDWARE = ["Satin Square", "Custom"]        # stocked; Custom = special order (described in hw_custom)
 # peel & stick color list: left blank for now (Taylor, 10/26 - about 500 samples); colors are typed in
 LAMINATE_COLORS = []
@@ -90,10 +90,15 @@ def starter():
             "walls": [{"name": "Wall 1", "lowers": lowers, "uppers": uppers}]}
 
 
+STD_LOWER_DEPTH = {"Kitchen": "25-1/2", "Bath vanity": "22-1/2"}   # Taylor, 10/26 - changeable per box
+
+
 def order_starter():
-    """A new cabinet order: one wall with one base cabinet - add boxes as needed."""
+    """A new cabinet order: one wall with one base cabinet (kitchen standard depth) - add boxes as needed."""
     d = starter()
-    d["walls"] = [{"name": "Wall 1", "uppers": [], "lowers": [new_box("lowers", "Base cabinet")]}]
+    b = new_box("lowers", "Base cabinet")
+    b["d"] = STD_LOWER_DEPTH["Kitchen"]
+    d["walls"] = [{"name": "Wall 1", "uppers": [], "lowers": [b]}]
     return d
 
 
@@ -204,7 +209,7 @@ def schedule(d):
 
 
 # ------------------------------------------------------------------ drawing (shared by PDF + on-screen SVG)
-def wall_prims(w, box_w, box_h):
+def wall_prims(w, box_w, box_h, style=""):
     """Primitives for one wall's elevation, scaled into a box_w x box_h area (points, y down).
     ("rect", x0, y0, x1, y1, stroke, fill, width) / ("line", x0, y0, x1, y1, color, width, dash)
     ("text", x, y, s, size, color, anchor, bold)"""
@@ -254,7 +259,7 @@ def wall_prims(w, box_w, box_h):
         color = RED if k.startswith("space") else (BLUE if k == "sink" else INK)
         P.append(("rect", *r, color, None, 1.6 if color != INK else 1.2))
         if k in ("cab", "sink", "tall"):
-            _fronts(P, r, b, s, fs)
+            _fronts(P, r, b, s, fs, style)
         if k == "sink":         # sink bowl in the counter above
             pass
         inner = first_h is not None and abs(bh - first_h) > 0.01 and k != "space-counter"
@@ -297,7 +302,7 @@ def wall_prims(w, box_w, box_h):
         else:
             P.append(("rect", *r, color, None, 1.6 if color != INK else 1.2))
         if k == "cab":
-            _fronts(P, r, b, s, fs)
+            _fronts(P, r, b, s, fs, style)
         inner = first_uh is not None and abs(bh - first_uh) > 0.01
         _label(P, r, short("uppers", b), box_id("uppers", i), color, fs, 0, "left" if inner else None)
         hdim(r[0], r[2], top_line - 14, fin(bw), True)
@@ -342,7 +347,41 @@ def _drawer_band(b, s):
     return min(n * dh * s, 999) if b["type"] != "Drawer base" else 0
 
 
-def _fronts(P, r, b, s, fs):
+CAB_STYLES = ["Shaker", "Shaker Slim", "Italia", "Bradford", "Elegante", "Elegante Gauntlet Supermatte"]
+LIGHT = (0.72, 0.72, 0.72)
+
+
+def _style_face(P, a, b_, c, d_, style, s):
+    """The door / drawer front's look inside its outline (from the style photos):
+    Shaker = wide frame around a flat panel; Shaker Slim = narrow frame; Bradford = shaker frame with
+    beadboard grooves; Italia = smooth slab with soft rounded edges; Elegante = slab with horizontal wood
+    grain; Elegante Gauntlet Supermatte = plain flat slab."""
+    st = (style or "").strip().lower()
+    w, h = c - a, d_ - b_
+    if w < 6 or h < 6 or not st:
+        return
+    if st in ("shaker", "shaker slim", "bradford"):
+        f = (1.1 if st == "shaker slim" else 2.4) * s
+        f = min(f, w * 0.28, h * 0.28)
+        ia, ib, ic, id_ = a + f, b_ + f, c - f, d_ - f
+        P.append(("rect", ia, ib, ic, id_, LIGHT, None, 0.5))
+        if st == "bradford" and ic - ia > 4:
+            step = max(1.25 * s, 2.2)
+            x = ia + step
+            while x < ic - step * 0.5:
+                P.append(("line", x, ib + 0.8, x, id_ - 0.8, LIGHT, 0.4, None))
+                x += step
+    elif st == "italia":
+        f = min(0.7 * s, w * 0.12, h * 0.12)
+        P.append(("rect", a + f, b_ + f, c - f, d_ - f, (0.85, 0.85, 0.85), None, 0.5))
+    elif st == "elegante":
+        n = max(2, int(h / max(2.0 * s, 3)))
+        for i in range(1, n):
+            y = b_ + h * i / n
+            P.append(("line", a + 1, y, c - 1, y, (0.82, 0.82, 0.82), 0.35, None))
+
+
+def _fronts(P, r, b, s, fs, style=""):
     """Drawer fronts across the top (or the whole box for a drawer base), doors under them."""
     x0, y0, x1, y1 = r
     inset = 2.0
@@ -355,6 +394,7 @@ def _fronts(P, r, b, s, fs):
             dh = (num(b.get("drawer_h")) or 6) * s
         for _ in range(n):
             P.append(("rect", x0 + inset, y + inset, x1 - inset, min(y + dh, y1) - inset * 0.5, GREY, None, 0.6))
+            _style_face(P, x0 + inset, y + inset, x1 - inset, min(y + dh, y1) - inset * 0.5, style, s)
             cx = (x0 + x1) / 2
             P.append(("line", cx - 5, y + dh / 2, cx + 5, y + dh / 2, GREY, 1.2, None))
             y += dh
@@ -367,6 +407,7 @@ def _fronts(P, r, b, s, fs):
     for k in range(doors):
         a = x0 + k * dw
         P.append(("rect", a + inset, y + inset, a + dw - inset, y1 - inset, GREY, None, 0.6))
+        _style_face(P, a + inset, y + inset, a + dw - inset, y1 - inset, style, s)
         hx = a + dw - inset - 4 if (k == 0 and doors == 2) or (doors == 1 and b.get("hinge") == "Left") \
             else a + inset + 4
         if doors == 2 and k == 1:
@@ -423,8 +464,8 @@ def to_pdf(page, prims, ox, oy):
                 page.insert_text((xx + ox, b + oy), str(s), fontsize=size, fontname=font, color=color)
 
 
-def wall_svg(w, width=760, height=330):
-    return svg(wall_prims(w, width, height), width, height)
+def wall_svg(w, width=760, height=330, style=""):
+    return svg(wall_prims(w, width, height, style), width, height)
 
 
 # ------------------------------------------------------------------ PDF
@@ -515,7 +556,8 @@ def _order_footer(pg, order):
 def _material_line(pg, d, top=True):
     """Cabinet material + color (and the countertop's, when it's on this order) under the logo."""
     c, t = d["cab"], d["top"]
-    s = f"Cabinet material: {c.get('material') or '____________'}      Cabinet color: {c.get('color') or '____________'}"
+    s = (f"Door style: {c.get('style') or '__________'}      "
+         f"Cabinet material: {c.get('material') or '__________'}      Cabinet color: {c.get('color') or '__________'}")
     hw = c.get("hw") or ""
     if hw == "Custom" and c.get("hw_custom"):
         hw = "Custom - " + c["hw_custom"]
@@ -523,7 +565,11 @@ def _material_line(pg, d, top=True):
         s += f"      Hardware: {hw or '____________'}"
     if top:
         s += f"      Countertop: {t.get('material') or '________'}  ·  {t.get('color') or '________'}"
-    _txt(pg, 214, 63.5, s, 8.5 if not top else 8, True)
+    import pymupdf as fitz
+    size = 8.5 if not top else 8
+    while size > 5.5 and fitz.get_text_length(s, fontname="hebo", fontsize=size) > PW - 30 - 214:
+        size -= 0.25                          # long style names: shrink to fit the page
+    _txt(pg, 214, 63.5, s, size, True)
 
 
 def make_pdf(layout, customer=None, out_path=None, with_top=True, order=None):
@@ -550,7 +596,7 @@ def make_pdf(layout, customer=None, out_path=None, with_top=True, order=None):
         top_y = 66
         if order is not None:
             top_y = _order_strip(pg, order)
-        prims = wall_prims(w, PW - 60, 368 - top_y - 2)
+        prims = wall_prims(w, PW - 60, 368 - top_y - 2, d["cab"].get("style"))
         pg.draw_rect(fitz.Rect(30, top_y, PW - 30, 368), color=GREY, width=0.5)
         to_pdf(pg, prims, 30, top_y + 1)
         _txt(pg, 34, 364, "Red = appliance / open space (no cabinet)   Blue = sink base   Widths left to right, "
@@ -632,6 +678,8 @@ def blank_pdf(order=False):
     cols.append(("Notes", PW - 60 - sum(c[1] for c in cols)))
     _table(pg, 30, 308, cols, [[""] * len(cols) for _ in range(18)], PW - 30, row_h=14)
     if order:
+        _txt(pg, 30, PH - 42, "Door style:  [ ] Shaker   [ ] Shaker Slim   [ ] Italia   [ ] Bradford   [ ] Elegante   "
+             "[ ] Elegante Gauntlet Supermatte", 8.5, True)
         _txt(pg, 30, PH - 28, "Cabinet material: ____________________     Cabinet color: ____________________"
              "     Hardware:  [ ] Satin Square   [ ] Custom: ____________________", 8.5, True)
     else:
@@ -672,9 +720,11 @@ def order_lines(d, form_key):
                     continue
                 bw, bh, bd = dims(row, b)
                 line = {"qty": "1", "width": fin(bw).rstrip('"'), "height": fin(bh).rstrip('"'),
-                        "depth": fin(bd).rstrip('"'), "cab_room": "Kitchen",
+                        "depth": fin(bd).rstrip('"'),
+                        "cab_room": "Bathroom Vanity" if d.get("room") == "Bath vanity" else "Kitchen",
                         "cab_material": d["cab"].get("material") or "", "cab_finish": d["cab"].get("color") or "",
                         "cab_hw": d["cab"].get("hw") or "", "cab_hardware": d["cab"].get("hw_custom") or "",
+                        "style": d["cab"].get("style") or "",
                         "unit": d.get("unit") or "",
                         "line_comments": f"{w['name']} {box_id(row, i)} {b['type']}" +
                                          (f" - {b['notes']}" if b.get("notes") else "")}
@@ -778,7 +828,8 @@ def customer_form_pdf(out_path):
     y += 13
     # cabinets only - the countertop has its own customer form
     xx = 24
-    for lab, name, wdt in (("CABINET MATERIAL:", "Cabinet Material", 150), ("CABINET COLOR:", "Cabinet Color", 130)):
+    for lab, name, wdt in (("DOOR STYLE:", "Door Style", 105), ("MATERIAL:", "Cabinet Material", 105),
+                           ("COLOR:", "Cabinet Color", 95)):
         _txt(pg, xx, y, lab, 8.5, True)
         lw = fitz.get_text_length(lab, fontname="hebo", fontsize=8.5)
         field(name, (xx + lw + 4, y - 9, xx + lw + 4 + wdt, y + 2))

@@ -1051,6 +1051,15 @@ def door_card(pg, k, n, y, item, exterior):
         pg.field(f"{k} Peephole", (CX + lw + 4, yc - 9, CX + lw + 54, yc + 3), size=8.5, align=1)
         pg.text(CX + lw + 58, yc, "in", 7.5)
         yc += 3
+    # bore hole size (both doors) + jamb thickness (only if it comes pre-hung), one row
+    yc += RS
+    xx = CX
+    for lab, name in (("BORE SIZE:", "Bore Size"), ("JAMB (pre-hung):", "Jamb Thickness")):
+        lw = pg.text(xx, yc, lab, 7.5, bold=True)
+        pg.field(f"{k} {name}", (xx + lw + 3, yc - 9, xx + lw + 39, yc + 3), size=8.5, align=1)
+        pg.text(xx + lw + 41, yc, "in", 7)
+        xx += lw + 56
+    yc += 3
     # hinge corners, with a little picture of each
     yc += RS
     pg.text(CX, yc, "HINGE CORNERS:", 8.5, bold=True)

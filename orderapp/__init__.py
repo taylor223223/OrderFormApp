@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.29.1"
+__version__ = "2.29.2"
 
 
 def _secret_key():
@@ -77,6 +77,14 @@ def create_app(db_path=None, testing=False, demo=None):
 
     from .security import csrf_token, parse_flash, verify_csrf
     app.jinja_env.filters["flashparse"] = parse_flash
+
+    def mdy(v):
+        """'2026-10-26 09:12:03' / '2026-10-26' -> '10/26/2026' (anything else shown as it is)."""
+        s = str(v or "").strip()
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            return f"{s[5:7]}/{s[8:10]}/{s[:4]}"
+        return s
+    app.jinja_env.filters["mdy"] = mdy
 
     @app.route("/__version")
     def app_version_route():

@@ -168,7 +168,8 @@ def test_full_flow(client, tmp_path):
     post(c, f"/orders/{oid}/status", {"status": "Sent", "vendor_ref": "SO-55"})
     post(c, "/tracking/add", {"title": "Phone order baseboards", "customer_id": cid, "status": "Confirmed"})
     t = c.get("/tracking").get_data(as_text=True)
-    assert "SO-55" in t and "Phone order baseboards" in t
+    assert "Phone order baseboards" in t          # (vendor # left the tracking table in v2.29.2 - on the order page)
+    assert "SO-55" in c.get(f"/orders/{oid}").get_data(as_text=True)
     # learn sizes from order
     assert post(c, f"/orders/{oid}/learn").status_code == 302
 

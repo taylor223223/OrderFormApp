@@ -133,3 +133,85 @@ def test_countertop_without_sink_drops_the_sink_drawing(app):
         return {w.field_name for w in pymupdf.open(stream=pdf, filetype="pdf")[0].widgets()}
     assert "L0.sink_center" not in names(none) and "L0.sink_center_r" not in names(none)
     assert "L0.sink_center" in names(bowl) and "L0.sink_center" in names(blank)   # blank paper form keeps it
+
+
+def test_door_style_on_cabinet_order_and_drawing(app, c):
+    from orderapp import cabinet_layout as C
+    html = c.get(f"/orders/editor?form=cabinet_prefab&customer={app.cid}").get_data(as_text=True)
+    assert 'id="co_style"' in html and "Shaker Slim" in html
+    d = C.order_starter()
+    counts = {}
+    for st in ("", "Shaker", "Shaker Slim", "Bradford", "Italia", "Elegante", "Elegante Gauntlet Supermatte"):
+        counts[st] = len(C.wall_prims(d["walls"][0], 600, 300, st))
+    assert counts["Shaker"] > counts[""] and counts["Bradford"] > counts["Shaker"]      # panel + grooves
+    assert counts["Elegante Gauntlet Supermatte"] == counts[""]                            # plain slab
+    d["cab"]["style"] = "Shaker Slim"
+    assert all(x["style"] == "Shaker Slim" for x in C.order_lines(d, "cabinet_prefab"))
+    t = _text(C.make_pdf({"data": d, "name": "Kitchen"}, None, order={"header": {"name": "S (made up)"}}))
+    assert "Door style: Shaker Slim" in t
+
+
+def test_prehung_jamb_swing_boxes_bore_size(app):
+    import pymupdf
+    from orderapp.catalog import FORMS
+    from orderapp.pdf_fill import fill_form, validate_catalog
+    assert validate_catalog() == []
+    ph = {f["key"]: f for f in FORMS["prehung"]["blocks"][0]}
+    assert {"jamb_thick", "bore_size"} <= set(ph) and "door_edge" not in ph
+    assert "bore_size" in {f["key"] for f in FORMS["door"]["blocks"][0]}
+    with app.app_context():
+        pdf, _ = fill_form("prehung", {"header": {"name": "Sample (made up)"}, "blocks": [
+            {"qty": "1", "jamb": "Kerfed", "swing_dir": "Swing Out", "jamb_thick": "2 1/4", "bore_size": "2 1/8",
+             "door_edge": "Full Book (square edge)"}]})
+    page = pymupdf.open(stream=pdf, filetype="pdf")[0]
+    on = {w.field_name for w in page.widgets() if w.field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX
+          and w.field_value not in (False, "Off", "")}
+    assert {"JambKerfed.0", "SwingOut.0"} <= on and not {"JambFlat.0", "SwingIn.0"} & on
+    vals = {w.field_name: w.field_value for w in page.widgets()}
+    assert vals["JambThick.0"] == "2 1/4" and vals["BoreSize.0"] == "2 1/8"
+    assert "Door Edge" not in " ".join(str(v) for k, v in vals.items() if k.startswith("Comments"))
+
+
+def test_no_autofill_and_no_auto_prefill(app, c):
+    from orderapp.catalog import FORMS
+    from orderapp.suggest import suggestions
+    html = c.get(f"/orders/editor?form=door&customer={app.cid}").get_data(as_text=True)
+    assert "setAttribute('autocomplete', 'off')" in html          # browser autofill off on every box
+    assert "SUGG.defaults" not in html                             # nothing auto-picked while typing
+    with app.app_context():
+        s = suggestions("door", app.cid)["suggest"]
+    meas = [f["key"] for f in FORMS["door"]["blocks"][0] if f.get("measure")]
+    assert meas and not set(meas) & set(s) and "unit" not in s     # no pick lists for measurements / unit
+
+
+def test_standard_depths_prefill_by_room(app, c):
+    from orderapp import cabinet_layout as C
+    from orderapp.catalog import public_spec
+    for fk in ("countertop", "cabinet_prefab"):
+        dep = next(f for f in public_spec(fk)["fields"] if f["key"] == "depth")
+        assert dep["room_default"]["values"]["Kitchen"] == "25-1/2"
+        assert dep["room_default"]["values"]["Bathroom Vanity"] == "22-1/2"
+    html = c.get("/orders/editor?form=countertop").get_data(as_text=True)
+    assert "function roomDepth" in html
+    d = C.order_starter()
+    assert d["walls"][0]["lowers"][0]["d"] == "25-1/2"
+    d["room"] = "Bath vanity"
+    assert C.order_lines(d, "cabinet_prefab")[0]["cab_room"] == "Bathroom Vanity"
+    html = c.get(f"/orders/editor?form=cabinet_prefab&customer={app.cid}").get_data(as_text=True)
+    assert 'id="co_room"' in html and "'Bath vanity': '22-1/2'" in html
+
+
+def test_tracking_ordered_and_sent_dates(app, c):
+    import json
+    payload = {"header": {"name": "Sample Gardens (made up)", "po": "TRK-1", "date": "01/02/2026"}, "blocks": [{"qty": "1"}]}
+    r = c.post("/orders/save", data={"csrf_token": c.t, "form_key": "door", "customer_id": app.cid,
+                                     "payload": json.dumps(payload), "action": "save"})
+    oid = int(r.headers["Location"].rsplit("/", 1)[1])
+    page = c.get("/tracking?status=all").get_data(as_text=True)
+    assert "Vendor #" not in page and ">Sent</th>" in page and "not sent" in page
+    with app.app_context():
+        from orderapp.db import x
+        x("UPDATE orders SET created='2026-10-20 09:00:00', sent_at='2026-10-23 14:05:00' WHERE id=?", (oid,))
+    page = c.get("/tracking?status=all").get_data(as_text=True)
+    row = page[page.index(f"#{oid}</a>"):][:900]
+    assert "10/20/2026" in row and "10/23/2026" in row and "01/02/2026" not in row

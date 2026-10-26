@@ -57,6 +57,21 @@
 {% block body %}{% endblock %}
 </main>
 <script>
+// No browser autofill / remembered entries anywhere in the app: the browser was filling whole order lines with
+// another property's numbers from one typed digit. Only what you pick in the app fills a box. Login keeps
+// the browser's saved username / password.
+(function(){
+  const off = el => {
+    if (el.matches('input[type=password], input[name=username]')) return;
+    if (el.tagName === 'FORM') { if (!el.querySelector('input[type=password]')) el.setAttribute('autocomplete', 'off'); return; }
+    if (el.matches('input, textarea')) el.setAttribute('autocomplete', 'off');
+  };
+  const sweep = root => { if (root.nodeType !== 1) return; off(root); root.querySelectorAll('form, input, textarea').forEach(off); };
+  sweep(document.body);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(sweep))).observe(document.body, {childList: true, subtree: true});
+})();
+</script>
+<script>
 const CSRF = document.querySelector('meta[name=csrf-token]').content;
 document.querySelectorAll('form[method=post], form[method=POST]').forEach(f => {
   if (!f.querySelector('input[name=csrf_token]')) {

@@ -597,7 +597,10 @@ def tracking():
     month = request.args.get("month", "").strip()[:7]
     st = request.args.get("status", "all" if month else "open")
     s = request.args.get("q", "").strip()
-    sql = """SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE 1=1"""
+    # sent_on: when it was sent off (older orders: the first time it was marked Sent)
+    sql = """SELECT o.*, c.name AS cname, coalesce(nullif(o.sent_at, ''), (SELECT MIN(h.ts) FROM order_status_history h
+                    WHERE h.order_id=o.id AND h.status='Sent')) AS sent_on
+             FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE 1=1"""
     args = []
     if month:   # dashboard "Orders this month"
         sql += """ AND o.status<>'Draft'
@@ -669,6 +672,8 @@ def tracking_add():
             (cid, None, title, request.form.get("po", "").strip(), request.form.get("order_date", "").strip() or today(),
              st, "{}", "manual-tracking", request.form.get("vendor_ref", "").strip(),
              request.form.get("due_date", "").strip(), request.form.get("notes", "").strip(), now(), now(), kind))
+    if st == "Sent":       # placed outside the app: it went out on its order date
+        x("UPDATE orders SET sent_at=? WHERE id=?", (request.form.get("order_date", "").strip() or now(), oid))
     add_status(oid, st, "Added manually")
     flash("Tracking entry added.", "ok")
     return redirect(url_for("orders.tracking"))

@@ -47,6 +47,9 @@ FLAT_TRIM_PROFILE = "K: " + TRIM_PROFILES[-1][1]
 FLAT_TRIM_THICK = ['1/2"', '9/16"', '5/8"', '3/4"']
 FLAT_TRIM_HEIGHT = ['2-1/4"', '3-1/4"', '3-1/2"', '4"', '4-1/4"', '5-1/4"', '5-1/2"']
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
+# standard depths (Taylor, 10/26): kitchen 25-1/2", bathroom vanity 22-1/2" - filled in when the room is picked,
+# always changeable
+STD_DEPTH = {"Kitchen": "25-1/2", "Bathroom": "22-1/2", "Bathroom Vanity": "22-1/2"}
 CABINET_HARDWARE = ["Satin Square", "Custom"]          # stocked; anything else is special order
 CABINET_MATERIALS = ["MDF", "Particle Board", "Plywood", "Solid Wood", "Thermofoil", "Custom"]
 COUNTERTOP_MATERIALS = ["Peel & Stick Laminate", "Composite", "Laminate", "Synthetic", "Thinscape", "Custom"]
@@ -191,11 +194,11 @@ def _door_common(prehung=False):
     ]
     if prehung:
         f += [
-            _c("swing_dir", "Swing In / Out", [("Swing In", {"mark": (106, 335)}),
-                                               ("Swing Out", {"mark": (106, 346)})]),
-            _c("jamb", "Jamb Type", [("Flat", {"mark": (450, 287)}), ("Kerfed", {"mark": (450, 298)})]),
+            _c("swing_dir", "Swing In / Out", [("Swing In", "SwingIn.0"), ("Swing Out", "SwingOut.0")]),
+            _c("jamb", "Jamb Type", [("Flat", "JambFlat.0"), ("Kerfed", "JambKerfed.0")]),
             _t("rough_width", "Rough Opening Width (in)", "RoughWidth.0", measure=True),
             _t("rough_height", "Rough Opening Height (in)", "RoughHeight.0", measure=True),
+            _t("jamb_thick", "Jamb Thickness / Width (in)", "JambThick.0", measure=True, placeholder='e.g. 2-1/4"'),
         ]
     f += [
         _t("hinge1", "Top of door to top of 1st hinge (in)", "Hinge1.0", measure=True),
@@ -212,6 +215,7 @@ def _door_common(prehung=False):
            "OneSided_Deadbolt.0", measure=True),
         _t("deadbolt", "Top of door to center of deadbolt (in)", "Deadbolt.0", measure=True),
         _t("entry_lock", "Top of door to center of entry lock (in)", "EntryLock.0", measure=True),
+        _t("bore_size", "Bore Hole Size (diameter, in)", "BoreSize.0", placeholder='e.g. 2-1/8"'),
     ]
     if prehung:
         peep = ("peephole_yn", ["Y", "Yes", "y", "yes", "YES"])
@@ -701,7 +705,7 @@ def _fire_after_location(block):
 
 for _fk in ("door", "prehung"):
     FORMS[_fk]["blocks"] = [_fire_after_location(b) for b in FORMS[_fk]["blocks"]]
-for _fk in ("door", "new_door", "prehung"):   # full book vs beveled edge (from the size)
+for _fk in ("door", "new_door"):   # full book vs beveled edge (from the size); not pre-hung (Taylor, 10/26)
     FORMS[_fk]["blocks"] = [_after_height(b, [_door_edge_field()]) for b in FORMS[_fk]["blocks"]]
 # the New Door form has no comments box: print the edge under the Width box
 FORMS["new_door"]["blocks"] = [[dict(f, **_ov(48, 670, 215, 9.5)) if f["key"] == "door_edge" else f for f in b]
@@ -1115,6 +1119,13 @@ for _spec in FORMS.values():
     _spec["header"] = dict(_spec["header"], contact="Contact Name", contact_phone="Contact Phone",
                            contact_email="Contact Email")
 
+for _fk, _room in (("countertop", "ct_room"), ("cabinet_prefab", "cab_room"), ("cabinet_custom", "cab_room"),
+                  ("cabinet", "cab_room")):
+    for _b in FORMS[_fk]["blocks"]:
+        for _f in _b:
+            if _f["key"] == "depth":
+                _f["room_default"] = (_room, STD_DEPTH)
+
 for _fk in FORMS:
     FORMS[_fk]["blocks"] = [_lwh_order(b) for b in FORMS[_fk]["blocks"]]
 GENERIC_FIELDS = _lwh_order(GENERIC_FIELDS)
@@ -1359,6 +1370,8 @@ def public_spec(form_key):
         for k in ("placeholder", "extra"):
             if fd.get(k):
                 d[k] = fd[k]
+        if fd.get("room_default"):        # e.g. depth: 25-1/2 for Kitchen, 22-1/2 for Bathroom Vanity
+            d["room_default"] = {"key": fd["room_default"][0], "values": fd["room_default"][1]}
         if fd.get("show_if"):
             d["show_if"] = {"key": fd["show_if"][0], "in": list(fd["show_if"][1])}
         if fd.get("photos") and fd["kind"] == "choice":

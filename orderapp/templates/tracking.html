@@ -13,12 +13,12 @@
   <a class="tag {{ 'st-' ~ k.split()[0] if k not in ('open','all') }}" style="{{ 'outline:2px solid var(--brand)' if st==k }}" href="{{ url_for('orders.tracking', status=k, q=s) }}">{{ k|capitalize if k in ('open','all') else k }}{% if k in counts %} ({{ counts[k] }}){% endif %}</a>
   {% endfor %}
   <span class="spacer"></span>
-  <form class="row"><input type="hidden" name="status" value="{{ st }}"><input name="q" value="{{ s }}" placeholder="Search customer, PO, vendor #" style="width:240px"><button class="btn sm">Search</button></form>
+  <form class="row"><input type="hidden" name="status" value="{{ st }}"><input name="q" value="{{ s }}" placeholder="Search customer, PO, notes" style="width:240px"><button class="btn sm">Search</button></form>
 </div>
 <div class="tablewrap"><table>
-<tr><th>#</th><th>Customer</th><th>Order</th><th>PO</th><th>Ordered</th><th>Vendor #</th><th>Due</th><th>Status</th><th></th></tr>
+<tr><th>#</th><th>Customer</th><th>Order</th><th>PO</th><th title="When the order was made in the app">Ordered</th><th title="When it was sent off (marked Order sent / emailed)">Sent</th><th>Due</th><th>Status</th><th></th></tr>
 {% for o in rows %}
-<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td><td>{% if o.kind == 'quote' %}<span class="tag" style="background:#fee2e2;color:#991b1b">Estimate</span> {% endif %}{{ o.title }}<div class="small muted">{{ (o.notes or '')[:60] }}</div></td><td>{{ o.po or '' }}</td><td class="nowrap">{{ o.order_date or '' }}</td><td>{{ o.vendor_ref or '' }}</td><td class="nowrap">{{ o.due_date or '' }}</td>
+<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td><td>{% if o.kind == 'quote' %}<span class="tag" style="background:#fee2e2;color:#991b1b">Estimate</span> {% endif %}{{ o.title }}<div class="small muted">{{ (o.notes or '')[:60] }}</div></td><td>{{ o.po or '' }}</td><td class="nowrap">{{ ((o.order_date if o.source == 'manual-tracking' else o.created) or o.order_date or '')|mdy }}</td><td class="nowrap">{% if o.sent_on %}{{ o.sent_on|mdy }}{% else %}<span class="muted small">not sent</span>{% endif %}</td><td class="nowrap">{{ o.due_date or '' }}</td>
 <td><form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}"><input type="hidden" name="next" value="{{ request.full_path }}">
 <div class="taps sm">{% set cur = tap_for(o.status, o.kind) %}{% for t in tap_labels %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}">{{ t }}</button>{% endfor %}</div>{% if not cur %}<div class="small muted">{{ status_label(o.status, o.kind) }}</div>{% endif %}</form></td>
 <td><div class="row" style="gap:4px;flex-wrap:nowrap">{% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}"><button class="btn sm" title="One click: same items, new draft">↻</button></form>{% endif %}

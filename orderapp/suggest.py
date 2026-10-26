@@ -43,7 +43,9 @@ def suggestions(form_key, customer_id=None, limit=15):
     out, defaults = {}, {}
     for f in spec["blocks"][0]:
         k = f["key"]
-        if k in SKIP_KEYS:
+        # no pick list for measurements (and unit / quantity): a measurement is always typed from the tape,
+        # never offered from another property's orders (Taylor, 10/26)
+        if k in SKIP_KEYS or k in ("unit", "qty", "room") or f.get("measure"):
             continue
         seq = [v for v, _ in mine[k].most_common()] + [v for v, _ in every[k].most_common()]
         if f.get("suggest"):

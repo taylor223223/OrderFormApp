@@ -96,7 +96,13 @@ def open_window():
         for exe in candidates:
             if os.path.exists(exe):
                 try:
-                    subprocess.Popen([exe, f"--app={URL}", "--window-size=1320,900"])
+                    # its own browser profile: none of the browser's saved addresses / form entries can
+                    # fill the order forms (they were dropping another property's numbers into new orders)
+                    prof = os.path.join(data_dir(), "browser-profile")
+                    os.makedirs(prof, exist_ok=True)
+                    subprocess.Popen([exe, f"--app={URL}", "--window-size=1320,900", f"--user-data-dir={prof}",
+                                      "--no-first-run", "--no-default-browser-check",
+                                      "--disable-features=AutofillServerCommunication"])
                     return
                 except OSError:
                     pass

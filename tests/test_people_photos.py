@@ -300,9 +300,10 @@ def test_door_edge_full_book_vs_beveled(app, c):
     assert guess("29-3/4", "79-1/2") == BEVELED and guess("35 3/4", "79 1/2") == BEVELED
     assert guess("31", "78") == "" and standard_size("30", "80") == "29-3/4 x 79-1/2"
     from orderapp.catalog import FORMS
-    for fk in ("door", "new_door", "prehung"):
+    for fk in ("door", "new_door"):
         keys = [f["key"] for f in FORMS[fk]["blocks"][0]]
         assert keys.index("door_edge") == keys.index("height") + 1, fk
+    assert "door_edge" not in [f["key"] for f in FORMS["prehung"]["blocks"][0]]   # pre-hung: no edge (10/26)
     # saving fills the edge from the size when it wasn't picked; a picked one is kept
     payload = {"header": {"name": "Mesa Ridge Homes", "po": "E-1"}, "blocks": [
         {"qty": "1", "unit": "11", "width": "30", "height": "80"},

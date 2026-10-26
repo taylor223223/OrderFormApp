@@ -78,4 +78,5 @@ def test_kitchen_layout_material_and_color():
     assert lines and lines[0]["cab_material"] == "Plywood" and lines[0]["cab_finish"] == "White"
     ct = C.order_lines(d, "countertop")
     assert ct[0]["ct_material"] == "Custom" and ct[0]["ct_material_other"] == "Quartz remnant"
-    assert C.normalize({"v": 2, "walls": []})["cab"] == {"material": "", "color": "", "hw": "", "hw_custom": ""}
+    assert C.normalize({"v": 2, "walls": []})["cab"] == {"style": "", "material": "", "color": "", "hw": "",
+                                                         "hw_custom": ""}

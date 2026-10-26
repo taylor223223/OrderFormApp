@@ -3,7 +3,9 @@
    Everything here is scoped to #cabOrder so it doesn't touch the order editor's own handlers. #}
 <div class="card" id="cabOrder">
   <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+    <div><label>Room</label><select id="co_room" style="max-width:150px"><option>Kitchen</option><option>Bath vanity</option></select></div>
     <div><label>Unit #</label><input id="co_unit" list="dl_units" placeholder="e.g. 104" style="max-width:110px"></div>
+    <div><label>Door style</label><select id="co_style" style="max-width:230px"><option value=""></option>{% for st in C.CAB_STYLES %}<option>{{ st }}</option>{% endfor %}</select></div>
     <div><label>Cabinet material</label><input id="co_material" list="dl_co_mat" placeholder="MDF, plywood, solid wood..." style="max-width:220px"></div>
     <div><label>Cabinet color</label><input id="co_color" placeholder="White, espresso..." style="max-width:200px"></div>
     <div><label>Hardware</label><select id="co_hw" style="max-width:160px"><option value=""></option>{% for h in C.CAB_HARDWARE %}<option>{{ h }}</option>{% endfor %}</select></div>
@@ -40,9 +42,13 @@ window.CAB_ORDER = (function(){
   const root = document.getElementById('cabOrder');
   const q = s => root.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // standard lower-cabinet depth by room (kitchen 25-1/2, bath vanity 22-1/2) - always changeable
+  const STD = {'Kitchen': '25-1/2', 'Bath vanity': '22-1/2'};
+  const stdDepth = () => STD[(L && L.room) || 'Kitchen'] || STD.Kitchen;
   function newBox(row, type){
     const [_, w, h, d, kind] = (row === 'lowers' ? LOWER : UPPER)[type];
     const b = {type, w: String(w), h: String(h), d: String(d), doors: '', drawers: 'No', drawer_n: '', drawer_h: '', hinge: '', label: '', notes: ''};
+    if (row === 'lowers' && ['cab', 'sink'].includes(kind)) b.d = stdDepth();
     if (['cab','sink','tall'].includes(kind)) b.doors = w >= 24 ? '2' : '1';
     if (type === 'Drawer base') Object.assign(b, {drawers: 'Yes', drawer_n: '3', doors: '0'});
     return b;
@@ -83,8 +89,8 @@ window.CAB_ORDER = (function(){
       <div class="cl-svg" id="co_svg_${wi}">${svgs[wi] || ''}</div></div>`).join('');
   }
   function collect(){
-    L.unit = q('#co_unit').value.trim();
-    L.cab = {material: q('#co_material').value.trim(), color: q('#co_color').value.trim(), hw: q('#co_hw').value,
+    L.unit = q('#co_unit').value.trim(); L.room = q('#co_room').value;
+    L.cab = {style: q('#co_style').value, material: q('#co_material').value.trim(), color: q('#co_color').value.trim(), hw: q('#co_hw').value,
              hw_custom: q('#co_hw').value === 'Custom' ? q('#co_hw_custom').value.trim() : ''};
     return L;
   }
@@ -103,8 +109,8 @@ window.CAB_ORDER = (function(){
   }
   function fillTop(){
     const c = L.cab || {};
-    q('#co_unit').value = L.unit || '';
-    q('#co_material').value = c.material || ''; q('#co_color').value = c.color || ''; q('#co_hw').value = c.hw || '';
+    q('#co_unit').value = L.unit || ''; q('#co_room').value = L.room === 'Bath vanity' ? 'Bath vanity' : 'Kitchen';
+    q('#co_style').value = c.style || ''; q('#co_material').value = c.material || ''; q('#co_color').value = c.color || ''; q('#co_hw').value = c.hw || '';
     q('#co_hw_custom').value = c.hw_custom || ''; q('#co_hw_custom_wrap').hidden = q('#co_hw').value !== 'Custom';
   }
   root.addEventListener('input', e => {
@@ -114,6 +120,16 @@ window.CAB_ORDER = (function(){
     if (e.target.id && e.target.id.startsWith('co_')) refresh();
   });
   root.addEventListener('change', e => {
+    if (e.target.id === 'co_style') { refresh(); return; }
+    if (e.target.id === 'co_room') {     // switch the lowers still at a standard / blank depth to this room's
+      L.room = e.target.value;
+      const std = Object.values(STD);
+      L.walls.forEach(w => w.lowers.forEach(b => {
+        if (['cab', 'sink'].includes(kindOf('lowers', b)) && (!String(b.d || '').trim() || std.includes(String(b.d).trim())))
+          b.d = stdDepth();
+      }));
+      draw(); refresh(); return;
+    }
     if (e.target.id === 'co_hw') { q('#co_hw_custom_wrap').hidden = e.target.value !== 'Custom'; refresh(); return; }
     const tr = e.target.closest('tr[data-row]');
     if (!tr || !e.target.dataset.k) return;

@@ -11,6 +11,7 @@
   <div><label>Unit</label><input id="f_unit" value="{{ lay.unit or '' }}" placeholder="e.g. 104"></div>
   <div><label>Floorplan</label><select id="f_fp"><option value="">(none)</option>{% for f in fps %}<option value="{{ f.id }}" {{ 'selected' if lay.floorplan_id == f.id }}>{{ f.name }}</option>{% endfor %}</select></div>
   <div><label>Room</label><select id="f_room">{% for r in ['Kitchen','Bath vanity','Laundry','Bar / other'] %}<option {{ 'selected' if data.room == r }}>{{ r }}</option>{% endfor %}</select></div>
+  <div><label>Door style</label><select id="c_style"><option value=""></option>{% for st in C.CAB_STYLES %}<option {{ 'selected' if data.cab.style == st }}>{{ st }}</option>{% endfor %}</select></div>
   <div><label>Cabinet material</label><input id="c_material" list="dl_cabmat" value="{{ data.cab.material }}" placeholder="MDF, plywood, solid wood..."><datalist id="dl_cabmat">{% for m in C.CAB_MATERIALS %}<option value="{{ m }}">{% endfor %}</datalist></div>
   <div><label>Cabinet color</label><input id="c_color" value="{{ data.cab.color }}" placeholder="White, espresso..."></div>
   <div><label>Countertop material</label><input id="t_material" list="dl_topmat" value="{{ data.top.material }}" placeholder="Peel & stick, composite..."><datalist id="dl_topmat">{% for m in C.TOP_MATERIALS %}<option value="{{ m }}">{% endfor %}</datalist></div>
@@ -104,7 +105,7 @@ function drawPieces(){
 }
 function collectTop(){
   DATA.room = $('#f_room').value; DATA.notes = $('#f_notes').value;
-  DATA.cab = {material: $('#c_material').value, color: $('#c_color').value};
+  DATA.cab = Object.assign({}, DATA.cab || {}, {style: $('#c_style').value, material: $('#c_material').value, color: $('#c_color').value});
   DATA.top = {material: $('#t_material').value, color: $('#t_color').value, overhang: $('#t_overhang').value,
               splash: $('#t_splash').value, edge: $('#t_edge').value};
 }
@@ -124,11 +125,11 @@ document.addEventListener('input', e => {
   const tr = e.target.closest('tr[data-row]');
   if (tr && e.target.dataset.k) { DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i][e.target.dataset.k] = e.target.value; refresh(); return; }
   if (e.target.dataset.wallname !== undefined) { DATA.walls[+e.target.dataset.wallname].name = e.target.value; refresh(); return; }
-  if (e.target.closest('.card') && e.target.id && /^[ft]_/.test(e.target.id)) refresh();
+  if (e.target.closest('.card') && e.target.id && /^[ftc]_/.test(e.target.id)) refresh();
 });
 document.addEventListener('change', e => {
   const tr = e.target.closest('tr[data-row]');
-  if (!tr || !e.target.dataset.k) { if (e.target.id && /^[ft]_/.test(e.target.id)) refresh(); return; }
+  if (!tr || !e.target.dataset.k) { if (e.target.id && /^[ftc]_/.test(e.target.id)) refresh(); return; }
   const box = DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i];
   if (e.target.dataset.k === 'type') {            // new type -> its usual sizes, keep the width the user typed
     const nb = newBox(tr.dataset.row, e.target.value); nb.w = box.w || nb.w; nb.notes = box.notes; nb.label = box.label;

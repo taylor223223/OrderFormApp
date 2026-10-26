@@ -187,6 +187,35 @@ CONTACT_SPOTS = {
 }
 
 
+def prehung_boxes(doc):
+    """Jamb Type (Flat / Kerfed) and Swing In / Out get real check boxes, like Core Type and Door Location (the
+    company form only prints the words). The words show twice in the page text (the original, covered, and the
+    moved-down copy you see) - the boxes go by the lower one."""
+    page = doc[0]
+    words = page.get_text("words")
+
+    def last(word, after=None):
+        hits = [w for w in words if w[4] == word and (after is None or w[0] > after - 1)]
+        return max(hits, key=lambda w: w[1]) if hits else None
+    jt = last("Type:", after=400)                       # "Jamb Type:"
+    spots = [("JambFlat.0", last("Flat")), ("JambKerfed.0", last("Kerfed"))]
+    sw = sorted((w for w in words if w[4] == "Swing" and w[0] < 200), key=lambda w: w[1])[-2:]
+    spots += [("SwingIn.0", sw[0] if sw else None), ("SwingOut.0", sw[1] if len(sw) > 1 else None)]
+    for name, w in spots:
+        if not w:
+            continue
+        x1 = w[0] - 3.5
+        if name.startswith("Jamb") and jt:
+            x1 = max(x1, jt[2] + 14)
+        cb = fitz.Widget()
+        cb.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+        cb.field_name = name
+        cb.rect = fitz.Rect(x1 - 10.2, w[1] + 0.7, x1, w[1] + 9.7)
+        cb.border_color, cb.border_width, cb.fill_color = (0, 0, 0), 1.0, (1, 1, 1)
+        cb.field_value = False
+        page.add_widget(cb)
+
+
 def contact_only(fn):
     return lambda doc: add_contact(doc[0], *CONTACT_SPOTS[fn])
 
@@ -337,8 +366,9 @@ def patch_door(doc, prehung=False):
 def _measure_rows(sp, prehung):
     """Redraw the company Measurements rows (same wording, Arial 10) a little tighter, on the source page that is
     then copied onto the form. Returns {box name: rect} in source coordinates.
-    Door:     hinges 1-4 | width / height | one-sided deadbolt | deadbolt | entry lock | peephole
-    Pre-Hung: rough opening | width / height | hinges 1-4 | one-sided deadbolt + deadbolt + entry lock
+    Door:     hinges 1-4 | width / height | one-sided deadbolt | deadbolt | entry lock | peephole | bore size
+    Pre-Hung: rough opening + jamb thickness | width / height | hinges 1-4 | one-sided deadbolt + deadbolt +
+              entry lock + bore size
               | threshold type, color, size, thickness | hinge color, self closing, NRP | glass, peep hole + location"""
     font = fitz.Font(fontfile=ARIAL)
     sp.draw_rect(fitz.Rect(37.4, MEAS_TOP, 561.1, MEAS_BOT), color=None, fill=(1, 1, 1))
@@ -348,11 +378,13 @@ def _measure_rows(sp, prehung):
             ("label", "Actual door height in inches:"), ("box", "DoorHeight.0", 58)]
     if prehung:
         rows = [
-            [("label", "Rough Opening Width:"), ("box", "RoughWidth.0", 70), ("gap", 16),
-             ("label", "Rough Opening Height:"), ("box", "RoughHeight.0", 70)],
+            [("label", "Rough Opening Width:"), ("box", "RoughWidth.0", 58), ("gap", 6),
+             ("label", "Rough Opening Height:"), ("box", "RoughHeight.0", 58), ("gap", 6),
+             ("label", "Jamb Thickness:"), ("box", "JambThick.0", 0)],
             size, hinges,
             [("label", "Top of door to center of:"), ("label", "One-sided deadbolt"), ("box", "OneSided_Deadbolt.0", 44),
-             ("label", "Deadbolt"), ("box", "Deadbolt.0", 44), ("label", "Entry lock"), ("box", "EntryLock.0", 44)],
+             ("label", "Deadbolt"), ("box", "Deadbolt.0", 44), ("label", "Entry lock"), ("box", "EntryLock.0", 44),
+             ("label", "Bore size:"), ("box", "BoreSize.0", 0)],
             [("label", "Threshold Type:"), ("box", "ThresholdType.0", 0), ("label", "Color:"),
              ("box", "ThresholdColor.0", 0), ("label", "Size (W x L):"), ("box", "ThresholdSize.0", 0),
              ("label", "Thickness:"), ("box", "ThresholdThick.0", 0)],
@@ -367,7 +399,8 @@ def _measure_rows(sp, prehung):
         rows = [hinges, size] + [
             [("label", f"Distance in inches from top of door to center of {t}:"), ("box", n, 58)]
             for t, n in (("one-sided deadbolt", "OneSided_Deadbolt.0"), ("deadbolt", "Deadbolt.0"),
-                         ("entry lock", "EntryLock.0"), ("peephole", "Peephole.0"))]
+                         ("entry lock", "EntryLock.0"), ("peephole", "Peephole.0"))] + [
+            [("label", "Bore hole size (diameter):"), ("box", "BoreSize.0", 58)]]
     pitch = (MEAS_BOT - SHRINK - MEAS_TOP) / len(rows)
     out = {}
     for n, row in enumerate(rows):
@@ -576,7 +609,7 @@ PATCHES = {
     "OrderFormVert.pdf": contact_only("OrderFormVert.pdf"),
     "OF-New Door Order Form.pdf": contact_only("OF-New Door Order Form.pdf"),
     "OF-Door.pdf": patch_door,
-    "OF-Pre-Hung.pdf": lambda d: patch_door(d, prehung=True),
+    "OF-Pre-Hung.pdf": lambda d: (patch_door(d, prehung=True), prehung_boxes(d)),
     "OF-Bypass Door.pdf": patch_bypass,
     "OF-Screen Door.pdf": patch_screen_door,
     "OF-Window Screen.pdf": patch_window_screen,
