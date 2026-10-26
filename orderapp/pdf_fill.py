@@ -176,6 +176,12 @@ def _place_photo(page, idx, fields, block, ref):
 def check_order(form_key, data):
     """Warnings about combinations we don't carry."""
     warns = []
+    h = data.get("header")
+    if h is not None:   # every order carries who to talk to at the property
+        if not str(h.get("contact") or "").strip():
+            warns.append("No contact name - add who to talk to at the property.")
+        if not str(h.get("contact_phone") or "").strip():
+            warns.append("No contact phone number - add the contact's number.")
     for i, b in enumerate(data.get("blocks") or [], 1):
         if form_key in ("vertical_blind", "vertical_blind_2"):
             sw, st, col = (str(b.get(k) or "").lower() for k in ("slat_width", "slat_style", "color"))

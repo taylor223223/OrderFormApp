@@ -151,7 +151,7 @@ def contact_row(page, widgets, y=199.0, x0=38.4, x1=322.0, size=7.5):
     AIS phone / fax lines (left of the customer box) on the forms that share the Door form's header.
     Appends the new text boxes to `widgets` (added to the page by the caller)."""
     font = fitz.Font(fontfile=ARIAL_B)
-    parts = [("Contact:", "contact", 0.29), ("Phone:", "contact_phone", 0.21), ("Email:", "contact_email", 0.50)]
+    parts = [("Contact:", "contact", 0.28), ("Phone:", "contact_phone", 0.28), ("Email:", "contact_email", 0.44)]
     labels = sum(font.text_length(lab, size) + 3 for lab, _, _ in parts) + 5 * len(parts)
     room = x1 - x0 - labels
     x = x0

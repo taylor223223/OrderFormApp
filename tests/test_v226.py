@@ -45,15 +45,16 @@ def test_countertop_plan_boxes(app):
     from orderapp.pdf_fill import fill_form, validate_catalog
     assert validate_catalog() == []
     plan = {f["key"]: f["plan"] for f in FORMS["countertop"]["blocks"][0] if f.get("plan")}
-    assert plan == {"length": "back", "depth": "depth", "overhang": "overhang", "sink_size": "sink_size",
+    assert plan == {"length": "back", "depth": "depth", "overhang": "overhang",
                     "sink_center": "sink_left", "sink_center_r": "sink_right", "sink_front": "sink_front"}
     data = {"header": H, "blocks": [{"qty": "1", "ct_layout": "Straight", "sink": "Single Bowl", "length": "96-1/4",
-                                     "depth": "25-1/2", "overhang": "1", "sink_size": "33 x 22",
+                                     "depth": "25-1/2", "overhang": "1", "sink_shape": "Square",
+                                     "sink_length": "33", "sink_width": "22",
                                      "sink_center": "41-3/8", "sink_center_r": "54-7/8", "sink_front": "12-3/4"}]}
     with app.app_context():
         pdf, _ = fill_form("countertop", data)
     t = _text(pdf)
-    for v in ("96-1/4", "25-1/2", "33 x 22", "41-3/8", "54-7/8", "12-3/4", "BACK WALL", "FRONT EDGE"):
+    for v in ("96-1/4", "25-1/2", "33", "22", "41-3/8", "54-7/8", "12-3/4", "BACK WALL", "FRONT EDGE"):
         assert v in t, v
 
 
@@ -63,3 +64,19 @@ def test_layout_fills_sink_spots():
     lines = C.order_lines(d, "countertop")
     sinks = [ln for ln in lines if ln["sink"] != "None"]
     assert sinks and "sink_center" in sinks[0] and "sink_center_r" in sinks[0]
+
+
+def test_warns_without_contact_name_or_number():
+    from orderapp.pdf_fill import check_order
+    w = check_order("countertop", {"header": {"name": "Sample Gardens (made up)"}, "blocks": [{"qty": "1"}]})
+    assert any("contact name" in x for x in w) and any("phone number" in x for x in w)
+    assert check_order("countertop", {"header": H, "blocks": [{"qty": "1"}]}) == []
+
+
+def test_sink_shapes():
+    from orderapp.catalog import FORMS
+    f = {x["key"]: x for x in FORMS["countertop"]["blocks"][0]}
+    assert [o[0] for o in f["sink_shape"]["options"]] == ["Square", "Round", "Oval"]
+    assert f["sink_length"]["show_if"] == ("sink_shape", ["Square", "Oval"])
+    assert f["sink_width"]["show_if"] == ("sink_shape", ["Square", "Oval"])
+    assert f["sink_diameter"]["show_if"] == ("sink_shape", ["Round"])
