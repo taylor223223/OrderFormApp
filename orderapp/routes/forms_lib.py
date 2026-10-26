@@ -18,8 +18,11 @@ CUSTOMER_PREFIX = "Customer Order Form - "
 
 def company_forms():
     out = []
+    from ..cabinet_layout import BLANK_ORDER_FORM
     for fk in FORM_ORDER:
-        p = resource_path(os.path.join("forms", FORMS[fk]["file"]))
+        # the Cabinet Order Form is the kitchen layout: its paper version is the blank layout sheet
+        fn = BLANK_ORDER_FORM if FORMS[fk].get("layout_editor") else FORMS[fk]["file"]
+        p = resource_path(os.path.join("forms", fn))
         if os.path.exists(p):
             out.append({"kind": "company", "name": os.path.basename(p), "title": FORMS[fk]["title"],
                         "group": _group(fk)})
@@ -27,11 +30,14 @@ def company_forms():
 
 
 def customer_forms():
+    from ..cabinet_layout import CUSTOMER_FORM
     from ..manager_forms import FORMS as CF
-    order = [c.subtitle for c in CF]
+    order = [c.subtitle for c in CF] + [CUSTOMER_FORM[len(CUSTOMER_PREFIX):-4]]
     out = []
     for p in glob.glob(resource_path(os.path.join("forms", "manager", CUSTOMER_PREFIX + "*.pdf"))):
         sub = os.path.basename(p)[len(CUSTOMER_PREFIX):-4]
+        if sub not in order:          # retired customer forms (Pre-Fab / Custom Cabinets -> Kitchen Cabinet Layout)
+            continue
         out.append({"kind": "customer", "name": os.path.basename(p), "title": sub,
                     "rank": order.index(sub) if sub in order else 99})
     return sorted(out, key=lambda f: f["rank"])

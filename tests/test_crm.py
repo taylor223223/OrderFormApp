@@ -277,10 +277,13 @@ def test_account_holds(client):
 def test_order_forms_library(client):
     c = client
     html = c.get("/forms").get_data(as_text=True)
-    for t in ("Countertop Order Form", "Pre-Fab Cabinet Order Form", "Custom Cabinet Order Form",
+    for t in ("Countertop Order Form", "Cabinet Order Form", "Kitchen Cabinet Layout",
               "Sliding Patio Door Order Form", "Closet &amp; Bi-Fold Door Order Form", "Countertops",
-              "Pre-Fab Cabinets", "Custom Cabinets", "Closet &amp; Bi-Fold Doors", "Door Hardware"):
+              "Closet &amp; Bi-Fold Doors", "Door Hardware"):
         assert t in html, t
+    # one cabinet form since v2.29 (pre-fab boxes, drawn as the kitchen layout)
+    assert "Custom Cabinet Order Form" not in html and "Pre-Fab Cabinets" not in html
+    assert "OF-Cabinet Order Form (Kitchen Layout).pdf" in html
     r = c.get("/forms/file/customer/Customer Order Form - Countertops.pdf")
     assert r.status_code == 200 and r.data[:4] == b"%PDF"
     r = c.get("/forms/file/company/OF-Countertop.pdf?dl=1")

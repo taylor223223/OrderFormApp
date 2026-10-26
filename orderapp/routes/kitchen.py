@@ -149,6 +149,16 @@ def blank():
                     headers={"Content-Disposition": 'inline; filename="Cabinet & Countertop Layout (blank).pdf"'})
 
 
+@bp.route("/kitchen/<int:lid>/data")
+@login_required
+def layout_data(lid):
+    """A saved layout's boxes, to start a cabinet order from (the order keeps its own copy)."""
+    raw = _raw(lid) or abort(404)
+    if not C.is_v2(raw["data"]):
+        return jsonify({"data": None})
+    return jsonify({"data": C.normalize(raw["data"]), "name": raw["name"], "unit": raw["unit"]})
+
+
 @bp.route("/kitchen/<int:lid>/lines")
 @login_required
 def lines(lid):
@@ -156,4 +166,4 @@ def lines(lid):
     raw = _raw(lid) or abort(404)
     if not C.is_v2(raw["data"]):
         return jsonify({"lines": []})
-    return jsonify({"lines": C.order_lines(raw["data"], request.args.get("form", "cabinet_custom"))})
+    return jsonify({"lines": C.order_lines(raw["data"], request.args.get("form", "cabinet_prefab"))})

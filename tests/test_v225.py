@@ -102,7 +102,8 @@ def test_layout_routes_and_order_pdf(app, c):
         from orderapp.db import q
         path = q("SELECT pdf_path FROM orders WHERE id=?", (oid,), one=True)["pdf_path"]
     out = fitz.open(path)
-    assert len(out) >= 3 and "Cabinet & Countertop Layout" in out[-2].get_text()
+    # v2.28: a cabinet order gets the cabinets-only layout (the countertop has its own order form)
+    assert len(out) >= 2 and "Cabinet Order - Kitchen Layout" in out[-1].get_text()
 
 
 def test_customer_layout_form_in_library(c):

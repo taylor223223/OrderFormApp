@@ -389,9 +389,10 @@ def test_new_products_and_app_made_forms():
     from orderapp import option_photos
     keys = [k for k, _ in form_list()]
     for fk in ("roller_shade", "trim", "door_hardware", "bath_hardware", "countertop", "cabinet_prefab",
-               "cabinet_custom", "sliding_patio_door", "closet_bifold"):
+               "sliding_patio_door", "closet_bifold"):
         assert fk in keys
-    assert "cabinet" not in keys and "closet_shower" not in keys        # retired: old orders still open
+    # retired: old orders still open (one cabinet form since v2.29 - pre-fab boxes only)
+    assert "cabinet" not in keys and "closet_shower" not in keys and "cabinet_custom" not in keys
     spec = public_spec("door")
     style = next(f for f in spec["fields"] if f["key"] == "style")
     assert style["photos"] == "door_style" and "2-panel-arch" in spec["door_photo_slugs"]

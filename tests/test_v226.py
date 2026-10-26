@@ -46,7 +46,8 @@ def test_countertop_plan_boxes(app):
     assert validate_catalog() == []
     plan = {f["key"]: f["plan"] for f in FORMS["countertop"]["blocks"][0] if f.get("plan")}
     assert plan == {"length": "back", "depth": "depth", "overhang": "overhang",
-                    "sink_center": "sink_left", "sink_center_r": "sink_right", "sink_front": "sink_front"}
+                    "sink_center": "sink_left", "sink_center_r": "sink_right", "sink_front": "sink_front",
+                    "bs_back": "bs_back", "bs_left": "bs_left", "bs_right": "bs_right"}
     data = {"header": H, "blocks": [{"qty": "1", "ct_layout": "Straight", "sink": "Single Bowl", "length": "96-1/4",
                                      "depth": "25-1/2", "overhang": "1", "sink_shape": "Square",
                                      "sink_length": "33", "sink_width": "22",

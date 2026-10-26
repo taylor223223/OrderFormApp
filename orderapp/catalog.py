@@ -512,8 +512,9 @@ FORMS = {
 # the app prints whichever paper version fits what was ordered.
 FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
               "roller_shade", "trim", "door_hardware", "bath_hardware", "countertop", "cabinet_prefab",
-              "cabinet_custom", "sliding_patio_door", "closet_bifold", "shower_door", "mirror_frame"]
-RETIRED_FORMS = ["cabinet", "closet_shower"]   # still open old orders; no longer offered for new ones
+              "sliding_patio_door", "closet_bifold", "shower_door", "mirror_frame"]
+# still open old orders; no longer offered for new ones (AIS only sells the pre-fab boxes - Taylor, 10/26)
+RETIRED_FORMS = ["cabinet", "closet_shower", "cabinet_custom"]
 
 # --------------------------------------------------------------------------
 # Products serviced (for saved unit / floorplan measurements)
@@ -550,8 +551,8 @@ PRODUCTS = {
     "casing": {"label": "Casing", "forms": ["trim"]},
     "door_hardware": {"label": "Door Hardware", "forms": ["door_hardware"]},
     "bath_hardware": {"label": "Bath Hardware", "forms": ["bath_hardware"]},
-    "cabinet": {"label": "Cabinet (kitchen / vanity)", "forms": ["cabinet_prefab", "cabinet_custom"]},
-    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet_custom", "cabinet_prefab"]},
+    "cabinet": {"label": "Cabinet (kitchen / vanity)", "forms": ["cabinet_prefab"]},
+    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet_prefab"]},
     "countertop": {"label": "Countertop", "forms": ["countertop"]},
     "wardrobe_door": {"label": "Mirrored / Wardrobe Door", "forms": ["closet_bifold"]},
     "shower_door": {"label": "Shower Door / Enclosure", "forms": ["shower_door"]},
@@ -749,13 +750,21 @@ _LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
 
 
 def upgrade_blocks(data):
-    """Orders saved before v2.28 typed the hardware / countertop in a box: keep them showing under the new
-    choices (typed hardware -> Custom; a countertop note -> Countertop: Yes)."""
+    """Orders saved before v2.28 typed the hardware in a box: keep it showing under the new choice
+    (typed hardware -> Custom)."""
     for b in (data or {}).get("blocks") or []:
+        # countertops before v2.29: one Backsplash Yes/No (the back wall) + End Splash None/Left/Right/Both
+        if "backsplash" in b or "end_splash" in b:
+            if str(b.get("backsplash") or "").lower().startswith("y"):
+                b.setdefault("bs_back", "Yes")
+            es = str(b.pop("end_splash", "") or "").lower()
+            if es in ("left", "both"):
+                b.setdefault("bs_left", "Yes")
+            if es in ("right", "both"):
+                b.setdefault("bs_right", "Yes")
+            b.pop("backsplash", None)
         if str(b.get("cab_hardware") or "").strip() and not b.get("cab_hw"):
             b["cab_hw"] = "Satin Square" if b["cab_hardware"].strip().lower() == "satin square" else "Custom"
-        if str(b.get("countertop") or "").strip() and not b.get("ct_yn"):
-            b["ct_yn"] = "Yes"
     return data
 
 
@@ -876,17 +885,14 @@ GENERATED = {
             _gc("cab_item", "Item", ["Doors", "Single Box", "Double Box", "Double Box with Sink",
                                      "Extended Double Box with Sink"]),
             _gc("style", "Door Style", CABINET_STYLES, photos="cabinet_style"),
-            *_cab_material_fields(),
             _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
             _g("height", "Height (in)", measure=True),
             _gc("drawers", "Drawers Included", ["Yes", "No"]),
             *_hinge_cut_fields(),
-            *_cab_hardware_fields(),
+            _g("cab_hardware", "Cabinet Hardware"),
             _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
             _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
-            _gc("ct_yn", "Countertop", ["Yes", "No"]),
-            *_ct_fields(show_if=("ct_yn", ["Yes"]), boxes=False),
-            _g("countertop", "Countertop Notes", pdf_label="Top Notes", show_if=("ct_yn", ["Yes"])),
+            _g("countertop", "Countertop"),
             ] + _mirror_frame_fields() + [_LINE_COMMENTS]],
         "products": ["cabinet", "cabinet_door", "countertop"],
     },
@@ -914,33 +920,36 @@ GENERATED = {
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
             _gc("ct_room", "Room", ["Kitchen", "Bathroom Vanity"]),
             *_ct_fields()[:2],
-            _gc("ct_layout", "Layout", ["Straight", "L-Shape", "U-Shape", "Island"]),
-            # measurement boxes sit on a top-view drawing of the countertop (form_builder._countertop_plan)
+            # measurement boxes sit on a top-view drawing of the countertop (form_builder._countertop_plan):
+            # Taylor measures the back wall length and the side wall length (back wall to the front edge)
             _g("length", "Back Wall Length (in)", measure=True, plan="back"),
-            _g("depth", "Depth - Wall to Front Edge (in)", measure=True, plan="depth"),
+            _g("depth", "Side Wall Length (in)", measure=True, plan="depth"),
             _g("overhang", "Front Overhang (in)", measure=True, plan="overhang"),
-            _gc("backsplash", "Backsplash", ["Yes", "No"]),
-            _gc("end_splash", "End Splash", ["None", "Left", "Right", "Both"]),
+            # backsplash per side (never the front edge) - checked on the drawing at each wall
+            _gc("bs_back", "Backsplash - Back Wall", ["Yes"], plan="bs_back"),
+            _gc("bs_left", "Backsplash - Left Side", ["Yes"], plan="bs_left"),
+            _gc("bs_right", "Backsplash - Right Side", ["Yes"], plan="bs_right"),
             _gc("sink", "Sink Cutout", ["None", "Single Bowl", "Double Bowl", "Vanity Bowl"]),
             _gc("sink_shape", "Sink Shape", ["Square", "Round", "Oval"],
                 show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
             _g("sink_length", "Sink Length (in)", measure=True, show_if=("sink_shape", ["Square", "Oval"])),
             _g("sink_width", "Sink Width (in)", measure=True, show_if=("sink_shape", ["Square", "Oval"])),
             _g("sink_diameter", "Sink Diameter - Across (in)", measure=True, show_if=("sink_shape", ["Round"])),
-            _g("length_b", "Run B Length (in)", measure=True, show_if=("ct_layout", ["L-Shape", "U-Shape"])),
-            _g("length_c", "Run C Length (in)", measure=True, show_if=("ct_layout", ["U-Shape"])),
             _g("sink_center", "Sink Center to Left Wall (in)", measure=True, plan="sink_left",
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
             _g("sink_center_r", "Sink Center to Right Wall (in)", measure=True, plan="sink_right",
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
             _g("sink_front", "Sink Center to Front Edge (in)", measure=True, plan="sink_front",
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
-            *_ct_fields()[2:],
+            _ct_fields()[3],
             _LINE_COMMENTS]],
         "products": ["countertop"],
     },
     "cabinet_prefab": {   # same look as the company's Door / Bi-Pass forms
-        "title": "Pre-Fab Cabinet Order Form", "style": "door", "section": "Cabinet Information",
+        "title": "Cabinet Order Form", "style": "door", "section": "Cabinet Information",
+        # new cabinet orders are drawn as the kitchen layout (cabinet_layout); these line blocks are what the
+        # layout's boxes are listed as (tracking, history) and how orders from before v2.29 still open
+        "layout_editor": True,
         "blocks": [[
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
             _gc("cab_room", "Cabinet Type", ["Kitchen", "Bathroom Vanity"]),
@@ -1367,6 +1376,7 @@ def public_spec(form_key):
                    if k in f["header"] or (k in ("city", "state", "zip") and f.get("address_combined"))],
         "has_sales_rep": bool(f.get("sales_rep")),
         "has_contact_boxes": "contact" in f["header"],
+        "layout_editor": bool(f.get("layout_editor")),
         "has_comments": bool(f.get("comments")),
         "blocks_per_page": len(f["blocks"]),
         "fields": fields,

@@ -348,6 +348,7 @@ class _Pen:
 def _door_info_rows(pen, n, fields, y, x_max):
     """Quantity / Unit / Location row and one row per choice. Returns the y after the last row."""
     top, choices, meas, other, comments = _parts(fields)
+    choices = [f for f in choices if not f.get("plan")]      # these are checked on the drawing
     x = D_L + 4
     y += D_ROW
     widths = {"qty": 95, "item_no": 110, "unit": 110, "room": 200}
@@ -490,7 +491,7 @@ def _countertop_plan(pen, n, fields, top):
     if "back" in by:
         _plan_box(pen, n, by["back"], mid - 38, back - 26.5, mid + 38, "Back wall length")
     if "depth" in by:      # outside the right wall, beside the top
-        _plan_box(pen, n, by["depth"], WR + 14, cy - 6.5, WR + 82, "Depth (wall to front)", "above")
+        _plan_box(pen, n, by["depth"], WR + 14, cy - 6.5, WR + 82, "Side wall length", "above")
         if pg:
             xd = WR + 92
             pg.draw_line((xd, back), (xd, front), color=ink, width=0.6)
@@ -507,6 +508,13 @@ def _countertop_plan(pen, n, fields, top):
         _plan_box(pen, n, by["sink_front"], cx - 30, cy + r + 4, cx + 30, "Center to front edge", "right")
         if pg:
             pg.draw_line((cx, cy + r), (cx, cy + r + 4), color=ink, width=0.6, dashes="[2 2] 0")
+    # backsplash: a box at each wall (back, left side, right side - never the front edge)
+    for key, x, y in (("bs_back", mid + 48, back - 10), ("bs_left", WL - 7 - 62, back + 58),
+                      ("bs_right", WR + 14, back + 20)):
+        if key in by:
+            f = by[key]
+            pen.cb(cname(n, f["key"], _opts(f)[0]), x, y)
+            pen.text(x + pen.box + 3, y - 1, "Backsplash", 7, True)
     if "overhang" in by:   # bottom right corner, past the front edge
         _plan_box(pen, n, by["overhang"], WR + 14, front + 2, WR + 64, "Overhang", "right")
     return top + PLAN_H
@@ -619,6 +627,10 @@ def build_all():
     from .catalog import FORMS
     from .paths import resource_path
     forms_dir = resource_path("forms")
+    from .cabinet_layout import BLANK_ORDER_FORM, blank_pdf
+    with open(os.path.join(forms_dir, BLANK_ORDER_FORM), "wb") as fh:     # the Cabinet Order Form, on paper
+        fh.write(blank_pdf(order=True))
+    print("built", BLANK_ORDER_FORM)
     for fk, spec in FORMS.items():
         if not spec.get("app_made"):
             continue

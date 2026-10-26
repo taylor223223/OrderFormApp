@@ -1437,49 +1437,57 @@ def counter_plan(pg, r, layout, labels=True):
         pg.rect(s_, color=DARK, fill=top, width=0.6)
 
 
+def counter_walls(pg, r):
+    """Top view the way Taylor draws it: back wall + both side walls (thick), the top between them."""
+    r = fitz.Rect(r)
+    wall = (0.35, 0.35, 0.35)
+    pg.rect((r.x0 - 5, r.y0 - 5, r.x1 + 5, r.y0), color=None, fill=wall)
+    pg.rect((r.x0 - 5, r.y0, r.x0, r.y1 + 8), color=None, fill=wall)
+    pg.rect((r.x1, r.y0, r.x1 + 5, r.y1 + 8), color=None, fill=wall)
+    pg.rect(r, color=DARK, fill=(0.93, 0.92, 0.89), width=0.8)
+
+
 class Countertops(Form):
     subtitle, item, prefix = "Countertops", "COUNTERTOP", "K"
     max_pages = 2
     steps = [
-        ("1  PICK THE SHAPE", "Straight, L or U - the side against the wall is A, then B, then C.",
-         lambda pg, x, y, w: counter_plan(pg, fitz.Rect(x + w / 2 - 30, y, x + w / 2 + 30, y + 42), "U-Shape")),
-        ("2  MEASURE ALONG THE WALL", "Measure each run along the wall, end to end - include the corner.",
-         None),
+        ("1  BACK WALL", "Measure the back wall, side wall to side wall (or to the end of the counter).",
+         lambda pg, x, y, w: counter_walls(pg, fitz.Rect(x + w / 2 - 28, y + 6, x + w / 2 + 28, y + 30))),
+        ("2  SIDE WALL", "Measure the side wall, back wall to the front edge of the counter.", None),
         ('3  READ TO 1/8"', None, tile_ruler),
-        ("4  DEPTH + SINK", "Depth = wall to front edge. Sink = left end to the CENTER of the sink.", None),
+        ("4  SINK + BACKSPLASH", "Sink = left wall to the CENTER of the sink. Check each wall that gets a "
+         "backsplash.", None),
     ]
 
     def card(self, pg, n, y):
         k = f"{self.prefix}{n}"
         y = card_bar(pg, y, f"{self.item} {n}", k)
         top = y + 8
-        # big U drawing with a box on each run (fill the ones you have)
-        r = fitz.Rect(L + 40, top + 18, L + 330, top + 180)
-        counter_plan(pg, r, "U-Shape")
-        d = min(r.width, r.height) * 0.28
-        pg.text(r.x0 + r.width / 2, r.y0 - 4, "WALL", 6.5, bold=True, color=DARK, center=True)
-        ay = r.y0 + 4 + d / 2
-        pg.arrow((r.x0 + 1, ay), (r.x1 - 1, ay))
-        pg.inches(f"{k} Run A", r.x0 + r.width / 2, ay, "A  (back wall)")
-        bx = r.x0 + d / 2
-        pg.arrow((bx, r.y0 + 5), (bx, r.y1 - 1), color=BLUE)
-        pg.inches(f"{k} Run B", bx + 46, r.y0 + r.height * 0.70, "B  (left side)", BLUE)
-        cx_ = r.x1 - d / 2
-        pg.arrow((cx_, r.y0 + 5), (cx_, r.y1 - 1), color=GREEN)
-        pg.inches(f"{k} Run C", cx_ - 46, r.y0 + r.height * 0.70, "C  (right side)", GREEN)
-        pg.text(L + 40, r.y1 + 12, "Straight top? Fill A only.  L-shape? Fill A + B.", 7, color=DARK)
-        y2 = r.y1 + 30
-        lw = pg.text(L + 22, y2 + 3, "DEPTH:", 8.5, bold=True)
-        pg.inches(f"{k} Depth", L + 22 + lw + 40, y2)
-        pg.text(L + 150, y2 + 3, "SINK CENTER FROM LEFT END:", 8.5, bold=True)
-        pg.inches(f"{k} Sink Center", L + 318, y2)
+        r = fitz.Rect(L + 60, top + 40, L + 300, top + 140)
+        counter_walls(pg, r)
+        pg.text(r.x0 + r.width / 2, r.y0 - 9, "BACK WALL", 6.5, bold=True, color=DARK, center=True)
+        pg.text(r.x0 + r.width / 2, r.y1 + 9, "FRONT EDGE", 6.5, bold=True, color=DARK, center=True)
+        ay = r.y0 - 27
+        pg.arrow((r.x0, ay), (r.x1, ay))
+        pg.inches(f"{k} Back Wall", r.x0 + r.width / 2, ay, "BACK WALL LENGTH")
+        sx = r.x1 + 22
+        pg.arrow((sx, r.y0), (sx, r.y1), color=BLUE)
+        pg.inches(f"{k} Side Wall", sx, r.y1 + 14, "SIDE WALL LENGTH", BLUE)
+        # sink center from the left wall
+        cx, cy = r.x0 + r.width * 0.42, r.y0 + r.height * 0.5
+        pg.line((r.x0, cy), (cx, cy), color=GREY, width=0.6, dashes="[2 2] 0")
+        if not pg.dry:
+            pg.p.draw_circle((cx, cy), 16, color=DARK, width=0.8, fill=(1, 1, 1))
+        pg.text(cx, cy + 3, "SINK", 6.5, bold=True, color=DARK, center=True)
+        y2 = r.y1 + 26
+        pg.text(L + 22, y2 + 3, "SINK CENTER FROM LEFT WALL:", 8.5, bold=True)
+        pg.inches(f"{k} Sink Center", L + 200, y2)
         yc = choices(pg, k, CX, top - 4, [
             ("ROOM:", ["Kitchen", "Bathroom vanity"], 2),
-            ("SHAPE:", ["Straight", "L-Shape", "U-Shape", "Island"], 2),
-            ("MATERIAL:", ["Laminate", "Synthetic", "Thinscape", "Custom", NOT_SURE], 2),
+            ("MATERIAL:", ["Peel & stick laminate", "Composite", "Other", NOT_SURE], 2),
             ("SINK:", ["Single bowl", "Double bowl", "Vanity bowl", "No sink"], 2),
-            ("BACKSPLASH (on the wall):", ["Yes", "No"], 2),
-            ("END SPLASH:", ["None", "Left", "Right", "Both"], 2),
+            ("SINK SHAPE:", ["Square", "Round", "Oval"], 3),
+            ("BACKSPLASH (check each wall):", ["Back wall", "Left side", "Right side", "None"], 2),
         ])
         pg.text(CX, yc + 12, "Color: we'll bring samples.", 7.5, color=DARK)
         yc += 16
@@ -1756,7 +1764,7 @@ class MirrorFrames(Form):
 
 FORMS = [HorizontalBlinds, VerticalBlinds, RollerShades, InteriorDoors, ExteriorDoors, ClosetDoors,
          WindowScreens, PatioScreens, SlidingPatioDoors, Trim, DoorHardware, BathHardware, Countertops,
-         PrefabCabinets, CustomCabinets, ShowerDoors, MirrorFrames]
+         ShowerDoors, MirrorFrames]      # cabinets: the Kitchen Cabinet Layout form (built in main)
 
 
 def main():

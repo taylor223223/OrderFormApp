@@ -46,7 +46,8 @@
   <div class="field" style="margin-top:10px"><label>Comments {% if not spec.has_comments %}<span class="muted">(this form has no comments box - printed in the last line's comments)</span>{% endif %}</label><textarea id="comments" rows="2" placeholder="Notes for the order. Units and anything that doesn't fit a box get added here automatically."></textarea></div>
 </div>
 
-<div class="card row" id="quickfill">
+{% if layout_mode %}{% include "_cabinet_order_editor.html" %}{% endif %}
+<div class="card row" id="quickfill" {% if layout_mode %}hidden{% endif %}>
   <b>Fill from saved info:</b>
   <input id="qUnit" list="dl_units" placeholder="Unit #" style="max-width:130px">
   <button type="button" class="btn sm" id="qUnitBtn">Load unit</button>
@@ -56,7 +57,7 @@
   <span id="qMsg" class="muted small"></span>
 </div>
 
-{% if form_key in ('cabinet_custom', 'cabinet_prefab', 'countertop') %}
+{% if form_key in ('cabinet_custom', 'cabinet_prefab', 'countertop') and not layout_mode %}
 <div class="card row" id="layoutCard" style="gap:8px;flex-wrap:wrap">
   <b>Cabinet layout:</b>
   <select id="layoutSel" style="max-width:320px"><option value="">(none attached)</option>{% for l in layouts %}<option value="{{ l.id }}" {{ 'selected' if data.layout_id|string == l.id|string }}>{{ l.name or 'Kitchen' }}{{ ' - unit ' ~ l.unit if l.unit }}</option>{% endfor %}</select>
@@ -65,8 +66,8 @@
   <span class="small muted" id="layoutMsg">The attached layout's drawing prints at the end of the order PDF.</span>
 </div>
 {% endif %}
-<div id="blocks"></div>
-<div class="row" style="margin-bottom:16px"><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
+<div id="blocks" {% if layout_mode %}hidden{% endif %}></div>
+<div class="row" style="margin-bottom:16px" {% if layout_mode %}hidden{% endif %}><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
 
 <div class="card" id="photoRef"><h3 style="margin-top:0">📷 Photo reference <span class="small muted">(optional - printed on their own pages at the end of the order PDF)</span></h3>
   {% if photos %}<div class="photogrid" style="margin-bottom:8px">{% for p in photos %}<div class="ph"><a href="{{ url_for('photos.show', pid=p.id) }}" target="_blank"><img src="{{ url_for('photos.show', pid=p.id) }}" alt="{{ p.caption or p.filename }}" loading="lazy"></a>{% if p.caption %}<div class="small">{{ p.caption }}</div>{% endif %}</div>{% endfor %}</div>
@@ -397,7 +398,8 @@ $('#orderForm').addEventListener('submit', () => {
   const blocks = [...document.querySelectorAll('#blocks .blk')].map(getBlock).filter(b => Object.keys(b).length);
   $('#payload').value = JSON.stringify({header, blocks, comments: $('#comments').value.trim(),
                                         sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : '',
-                                        layout_id: $('#layoutSel') ? ($('#layoutSel').value || null) : null});
+                                        layout_id: $('#layoutSel') ? ($('#layoutSel').value || null) : null,
+                                        layout: window.CAB_ORDER ? window.CAB_ORDER.data() : undefined});
   dirty = false;
 });
 document.querySelectorAll('.kindtoggle button').forEach(btn => btn.addEventListener('click', () => {

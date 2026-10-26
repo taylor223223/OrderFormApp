@@ -11,7 +11,7 @@ The countertop is worked out from the lowers: one piece per stretch of counter (
 splits it), depth = the boxes' depth + the front overhang, with the backsplash rise.
 
 Data (kitchen_layouts.data with "v": 2):
-  {"v": 2, "room", "notes", "top": {material, color, overhang, splash, edge},
+  {"v": 2, "room", "notes", "top": {material, color, overhang, splash, edge}, "cab": {material, color},
    "walls": [{"name", "lowers": [box...], "uppers": [box...]}]}
   box = {"type", "w", "h", "d", "doors", "drawers": "Yes"/"No", "drawer_n", "drawer_h", "hinge", "label", "notes"}
 """
@@ -42,7 +42,11 @@ UPPER_TYPES = {
     "Window (no cabinet)": ("WINDOW", 36, 30, 0, "space"),
     "Filler": ("FILLER", 3, 30, 12, "filler"),
 }
-TOP_MATERIALS = ["Peel & stick laminate over MDF", "Composite", "Other"]
+TOP_MATERIALS = ["Peel & stick laminate over MDF", "Composite", "Laminate", "Synthetic", "Thinscape"]
+CAB_MATERIALS = ["MDF", "Particle Board", "Plywood", "Solid Wood", "Thermofoil"]
+BLANK_ORDER_FORM = "OF-Cabinet Order Form (Kitchen Layout).pdf"   # company forms library: the paper version
+DEFAULT_CAB = {"material": "", "color": "", "hw": "", "hw_custom": ""}   # material, color, hardware
+CAB_HARDWARE = ["Satin Square", "Custom"]        # stocked; Custom = special order (described in hw_custom)
 # peel & stick color list: left blank for now (Taylor, 10/26 - about 500 samples); colors are typed in
 LAMINATE_COLORS = []
 UPPER_GAP = 18.0          # counter to bottom of the uppers (standard)
@@ -82,8 +86,15 @@ def starter():
     uppers = [new_box("uppers", "Wall cabinet") for _ in range(2)] + [new_box("uppers", "Window (no cabinet)"),
                                                                        new_box("uppers", "Wall cabinet")]
     uppers[0]["w"], uppers[1]["w"], uppers[2]["w"], uppers[3]["w"] = "18", "24", "36", "18"
-    return {"v": V, "room": "Kitchen", "notes": "", "top": dict(DEFAULT_TOP),
+    return {"v": V, "room": "Kitchen", "notes": "", "top": dict(DEFAULT_TOP), "cab": dict(DEFAULT_CAB),
             "walls": [{"name": "Wall 1", "lowers": lowers, "uppers": uppers}]}
+
+
+def order_starter():
+    """A new cabinet order: one wall with one base cabinet - add boxes as needed."""
+    d = starter()
+    d["walls"] = [{"name": "Wall 1", "uppers": [], "lowers": [new_box("lowers", "Base cabinet")]}]
+    return d
 
 
 def normalize(d):
@@ -91,6 +102,7 @@ def normalize(d):
     d.setdefault("room", "Kitchen")
     d.setdefault("notes", "")
     d["top"] = dict(DEFAULT_TOP, **(d.get("top") or {}))
+    d["cab"] = dict(DEFAULT_CAB, **(d.get("cab") or {}))
     walls = []
     for i, w in enumerate(d.get("walls") or []):
         w = dict(w)
@@ -466,34 +478,102 @@ def _table(pg, x0, y, cols, rows, x1, row_h=12, size=7.2):
     return y
 
 
-def make_pdf(layout, customer=None, out_path=None):
-    """One landscape page per wall (elevation + its boxes), then the countertop pieces."""
+def _order_strip(pg, order):
+    """Customer / PO / date / contact boxes across the top of a cabinet order page. Returns the y under it."""
+    import pymupdf as fitz
+    h = order.get("header") or {}
+    city = " ".join(p for p in [h.get("city"), h.get("state"), h.get("zip")] if p)
+    addr = ", ".join(p for p in [h.get("address"), city] if p)
+    contact = "  ·  ".join(p for p in [h.get("contact"), h.get("contact_phone"), h.get("contact_email")] if p)
+    rows = [[("Property", h.get("name"), 230), ("Acct #", h.get("acct"), 70), ("Address", addr, 262),
+             ("P.O. #", h.get("po"), 85), ("Date", h.get("date"), 85)],
+            [("Mgmt Co.", h.get("mgmt"), 170), ("Phone", h.get("phone"), 100),
+             ("Contact (who to talk to)", contact, 292), ("Sales Rep", order.get("sales_rep"), 170)]]
+    y = 70
+    for row in rows:
+        x0 = 30
+        for lab, val, w in row:
+            pg.draw_rect(fitz.Rect(x0, y, x0 + w, y + 22), color=GREY, width=0.6)
+            _txt(pg, x0 + 3, y + 7, lab.upper(), 5.8, True, GREY)
+            v = str(val or "")
+            size = 9
+            while size > 5.5 and fitz.get_text_length(v, fontname="helv", fontsize=size) > w - 6:
+                size -= 0.5
+            _txt(pg, x0 + 3, y + 18, v, size, False, INK)
+            x0 += w
+        y += 22
+    return y + 4
+
+
+def _order_footer(pg, order):
+    """Comments under the last page's box table."""
+    c = (order.get("comments") or "").strip()
+    if c:
+        _txt(pg, 30, PH - 34, "Comments: " + c[:220], 8.5, True)
+
+
+def _material_line(pg, d, top=True):
+    """Cabinet material + color (and the countertop's, when it's on this order) under the logo."""
+    c, t = d["cab"], d["top"]
+    s = f"Cabinet material: {c.get('material') or '____________'}      Cabinet color: {c.get('color') or '____________'}"
+    hw = c.get("hw") or ""
+    if hw == "Custom" and c.get("hw_custom"):
+        hw = "Custom - " + c["hw_custom"]
+    if not top:
+        s += f"      Hardware: {hw or '____________'}"
+    if top:
+        s += f"      Countertop: {t.get('material') or '________'}  ·  {t.get('color') or '________'}"
+    _txt(pg, 214, 63.5, s, 8.5 if not top else 8, True)
+
+
+def make_pdf(layout, customer=None, out_path=None, with_top=True, order=None):
+    """One landscape page per wall (elevation + its boxes), then the countertop pieces.
+    with_top=False: cabinets only (the countertop has its own order form).
+    order={header, comments, sales_rep}: this IS the cabinet order - the customer / PO / contact strip goes on
+    every page and the title is Cabinet Order Form."""
     import pymupdf as fitz
     d = normalize(layout["data"] if "data" in layout else layout)
     doc = fitz.open()
-    cname = (customer or {}).get("name") or ""
+    if order is not None:
+        with_top = False
+    cname = (customer or {}).get("name") or ((order or {}).get("header") or {}).get("name") or ""
     where = " - ".join(p for p in [cname, ("Unit " + layout.get("unit")) if layout.get("unit") else "",
                                    layout.get("name") or d.get("room")] if p)
     rows_all = schedule(d)
     cols = [("Box", 34), ("Row", 40), ("Type", 170), ("Width", 50), ("Height", 50), ("Depth", 46),
             ("Doors", 38), ("Drawers", 70), ("Hinge", 42), ("Notes", PW - 60 - 540)]
     for w in d["walls"]:
-        pg = _header(doc, "Cabinet & Countertop Layout", f"{where}  ·  {w['name']}")
-        prims = wall_prims(w, PW - 60, 300)
-        pg.draw_rect(fitz.Rect(30, 66, PW - 30, 368), color=GREY, width=0.5)
-        to_pdf(pg, prims, 30, 67)
+        title = ("Cabinet Order Form" if order is not None else
+                 "Cabinet & Countertop Layout" if with_top else "Cabinet Order - Kitchen Layout")
+        pg = _header(doc, title, f"{where}  ·  {w['name']}")
+        _material_line(pg, d, with_top)
+        top_y = 66
+        if order is not None:
+            top_y = _order_strip(pg, order)
+        prims = wall_prims(w, PW - 60, 368 - top_y - 2)
+        pg.draw_rect(fitz.Rect(30, top_y, PW - 30, 368), color=GREY, width=0.5)
+        to_pdf(pg, prims, 30, top_y + 1)
         _txt(pg, 34, 364, "Red = appliance / open space (no cabinet)   Blue = sink base   Widths left to right, "
              "standing facing the wall. Inches.", 6.6, False, GREY)
         rows = [[r[0], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10]] for r in rows_all if r[1] == w["name"]]
         y, first = 376, True
         while rows or first:
-            fit = int((PH - 30 - y) // 11.5) - 1
+            fit = int((PH - (46 if order is not None else 30) - y) // 11.5) - 1
             chunk, rows = rows[:fit], rows[fit:]
             _table(pg, 30, y, cols, chunk, PW - 30, row_h=11.5)
             first = False
             if rows:
-                pg = _header(doc, "Cabinet & Countertop Layout", f"{where}  ·  {w['name']} (boxes, continued)")
+                pg = _header(doc, title, f"{where}  ·  {w['name']} (boxes, continued)")
                 y = 66
+    if not with_top:
+        if order is not None:
+            _order_footer(doc[-1], order)
+        pdf = doc.tobytes(garbage=3, deflate=True)
+        doc.close()
+        if out_path:
+            with open(out_path, "wb") as fh:
+                fh.write(pdf)
+        return pdf
     # countertop page
     pg = _header(doc, "Countertop", where)
     t = d["top"]
@@ -525,13 +605,16 @@ def make_pdf(layout, customer=None, out_path=None):
     return pdf
 
 
-def blank_pdf():
-    """Paper version (also the customer form's layout page): a grid to sketch on + a box list to fill in."""
+def blank_pdf(order=False):
+    """Paper version (also the customer form's layout page): a grid to sketch on + a box list to fill in.
+    order=True: the blank Cabinet Order Form (customer / PO / contact boxes on top, cabinets only)."""
     import pymupdf as fitz
     doc = fitz.open()
-    pg = _header(doc, "Cabinet & Countertop Layout", "Draw each wall: UPPER boxes on top, LOWER boxes under them, "
-                 "left to right. Number them U1, U2... and L1, L2...")
-    g = fitz.Rect(30, 66, PW - 30, 300)
+    pg = _header(doc, "Cabinet Order Form" if order else "Cabinet & Countertop Layout",
+                 "Draw each wall: UPPER boxes on top, LOWER boxes under them, left to right. "
+                 "Number them U1, U2... and L1, L2...")
+    gy = _order_strip(pg, {}) if order else 66
+    g = fitz.Rect(30, gy, PW - 30, 300)
     step = 9
     x = g.x0
     while x <= g.x1:
@@ -548,8 +631,13 @@ def blank_pdf():
             ("Width", 54), ("Height", 54), ("Depth", 54), ("Doors", 40), ("Drawers? how many / tall", 110)]
     cols.append(("Notes", PW - 60 - sum(c[1] for c in cols)))
     _table(pg, 30, 308, cols, [[""] * len(cols) for _ in range(18)], PW - 30, row_h=14)
-    _txt(pg, 30, PH - 28, "Countertop:  [ ] Peel & stick laminate over MDF   [ ] Composite     Color: ______________"
-         "     Front overhang: ____     Backsplash rise: ____", 8.5, True)
+    if order:
+        _txt(pg, 30, PH - 28, "Cabinet material: ____________________     Cabinet color: ____________________"
+             "     Hardware:  [ ] Satin Square   [ ] Custom: ____________________", 8.5, True)
+    else:
+        _txt(pg, 30, PH - 42, "Cabinets:  Material: ______________________     Color: ______________________", 8.5, True)
+        _txt(pg, 30, PH - 28, "Countertop:  Material: ____________________     Color: ______________"
+             "     Front overhang: ____     Backsplash rise: ____", 8.5, True)
     pdf = doc.tobytes(garbage=3, deflate=True)
     doc.close()
     return pdf
@@ -562,13 +650,15 @@ def order_lines(d, form_key):
     out = []
     if form_key == "countertop":
         t = d["top"]
-        mat = t.get("material") or ""
-        mat = "Peel & Stick Laminate" if mat.startswith("Peel") else ("Composite" if mat == "Composite" else "Custom")
+        typed = (t.get("material") or "").strip()
+        from .catalog import COUNTERTOP_MATERIALS
+        mat = ("Peel & Stick Laminate" if typed.lower().startswith("peel") else
+               next((m for m in COUNTERTOP_MATERIALS if m.lower() == typed.lower()), "Custom" if typed else ""))
         for p in countertop(d):
-            out.append({"qty": "1", "ct_room": "Kitchen" if d.get("room") == "Kitchen" else "Bathroom Vanity",
-                        "ct_material": mat, "ct_layout": "Straight", "length": fin(p["length"]).rstrip('"'),
+            out.append({"ct_material_other": typed if mat == "Custom" else "","qty": "1", "ct_room": "Kitchen" if d.get("room") == "Kitchen" else "Bathroom Vanity",
+                        "ct_material": mat, "length": fin(p["length"]).rstrip('"'),
                         "depth": fin(p["depth"]).rstrip('"'),
-                        "backsplash": "Yes" if (num(t.get("splash")) or 0) > 0 else "No",
+                        "bs_back": "Yes" if (num(t.get("splash")) or 0) > 0 else "",
                         "sink": "Single Bowl" if p["sink"] else "None", "ct_color": t.get("color") or "",
                         **_sink_spots(p),
                         "line_comments": f"{p['wall']} over {p['boxes']}" + (f"; {p['sink']}" if p["sink"] else "") +
@@ -583,6 +673,9 @@ def order_lines(d, form_key):
                 bw, bh, bd = dims(row, b)
                 line = {"qty": "1", "width": fin(bw).rstrip('"'), "height": fin(bh).rstrip('"'),
                         "depth": fin(bd).rstrip('"'), "cab_room": "Kitchen",
+                        "cab_material": d["cab"].get("material") or "", "cab_finish": d["cab"].get("color") or "",
+                        "cab_hw": d["cab"].get("hw") or "", "cab_hardware": d["cab"].get("hw_custom") or "",
+                        "unit": d.get("unit") or "",
                         "line_comments": f"{w['name']} {box_id(row, i)} {b['type']}" +
                                          (f" - {b['notes']}" if b.get("notes") else "")}
                 if b.get("hinge") in ("Left", "Right", "Pair"):
@@ -683,16 +776,17 @@ def customer_form_pdf(out_path):
         y += 14
     pg.draw_rect(fitz.Rect(24, 306, PW - 24, y), color=INK, width=0.7)
     y += 13
-    _txt(pg, 24, y, "COUNTERTOP:", 8.5, True)
-    check("Top Peel and Stick", 96, y, "Peel & stick laminate over MDF")
-    check("Top Composite", 248, y, "Composite")
-    xx = 320
-    for lab, name, wdt in (("COLOR:", "Top Color", 110), ("FRONT OVERHANG:", "Top Overhang", 40),
-                           ("BACKSPLASH RISE:", "Top Splash", 40)):
+    # cabinets only - the countertop has its own customer form
+    xx = 24
+    for lab, name, wdt in (("CABINET MATERIAL:", "Cabinet Material", 150), ("CABINET COLOR:", "Cabinet Color", 130)):
         _txt(pg, xx, y, lab, 8.5, True)
         lw = fitz.get_text_length(lab, fontname="hebo", fontsize=8.5)
         field(name, (xx + lw + 4, y - 9, xx + lw + 4 + wdt, y + 2))
         xx += lw + wdt + 16
+    _txt(pg, xx, y, "HARDWARE:", 8.5, True)
+    xx += fitz.get_text_length("HARDWARE:", fontname="hebo", fontsize=8.5) + 6
+    check("Hardware Satin Square", xx, y, "Satin Square")
+    check("Hardware Custom", xx + 78, y, "Custom")
     _txt(pg, 24, PH - 10, f"WHEN DONE: click \"Email Form\" (or save and email it) to {REP_EMAIL}.  Questions? Call "
          "(480) 964-7600.", 8, True, (0.0, 0.0, 0.4))
     b = fitz.Widget()

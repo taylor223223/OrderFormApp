@@ -156,7 +156,13 @@ def editor():
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
     last = q("""SELECT id, po, order_date FROM orders WHERE customer_id=? AND form_key=? AND id<>?
                 ORDER BY id DESC LIMIT 1""", (cid, form_key, oid or 0), one=True) if cid else None
+    # Cabinet Order Form: the order IS the kitchen layout (new orders, and orders saved that way); cabinet
+    # orders from before v2.29 (typed line by line) still open in the line editor
+    from .. import cabinet_layout as CL
+    layout_mode = bool(FORMS[form_key].get("layout_editor")) and (not oid or bool(data.get("layout")))
+    ldata = CL.normalize(data["layout"]) if data.get("layout") else CL.order_starter()
     return render_template("order_editor.html", spec=public_spec(form_key), form_key=form_key, order=order,
+                           layout_mode=layout_mode, ldata=ldata, C=CL,
                            data=data, c=c, customers=customers, units=[dict(u) for u in units],
                            fps=[dict(f) for f in fps], sugg=suggestions(form_key, cid), forms=form_list(),
                            last=last, photos=_photos_for(oid) if oid else [], people=contacts_json(cid),
@@ -171,6 +177,14 @@ def save():
     if form_key not in FORMS:
         abort(400)
     data = loads(request.form.get("payload"), {})
+    if FORMS[form_key].get("layout_editor") and isinstance(data.get("layout"), dict):
+        # the cabinet order's boxes (kitchen layout) -> its lines, so tracking / history see each box
+        from .. import cabinet_layout as CL
+        data["layout"] = CL.normalize(dict(data["layout"], v=CL.V))
+        data["blocks"] = CL.order_lines(data["layout"], form_key)
+        data.pop("layout_id", None)
+    elif "layout" in data:
+        data.pop("layout")
     if any(f["key"] == "door_edge" for f in FORMS[form_key]["blocks"][0]):
         from ..door_edge import fill_blocks
         fill_blocks(data.get("blocks"))      # 30 x 80 -> Full Book, 29-3/4 x 79-1/2 -> Beveled (if not picked)
@@ -261,7 +275,7 @@ def save():
     return redirect(url_for("orders.view", oid=oid))
 
 
-def _append_layout(pdf, lid, cid):
+def _append_layout(pdf, lid, cid, form_key=None):
     import pymupdf as fitz
     from .. import cabinet_layout as C
     from ..db import loads
@@ -270,7 +284,8 @@ def _append_layout(pdf, lid, cid):
         return pdf
     c = q("SELECT * FROM customers WHERE id=?", (r["customer_id"] or cid,), one=True)
     lay = dict(r, data=loads(r["data"], {}))
-    extra = C.make_pdf(lay, dict(c) if c else None)
+    # a cabinet order gets the cabinets-only layout; the countertop is its own order form
+    extra = C.make_pdf(lay, dict(c) if c else None, with_top=not str(form_key or "").startswith("cabinet"))
     doc = fitz.open(stream=pdf, filetype="pdf")
     doc.insert_pdf(fitz.open(stream=extra, filetype="pdf"))
     out = doc.tobytes(garbage=3, deflate=True)
@@ -285,6 +300,15 @@ def _make_pdf(oid):
     cust = o["cname"] or data.get("header", {}).get("name") or "Customer"
     if o["form_key"] == RO.FORM_KEY:
         pdf, warns = RO.render(o, data, cust), []
+    elif data.get("layout") and FORMS.get(o["form_key"], {}).get("layout_editor"):
+        from .. import cabinet_layout as CL     # the Cabinet Order Form: the kitchen layout drawing + box list
+        from ..pdf_fill import check_order
+        h = data.get("header") or {}
+        pdf = CL.make_pdf({"data": data["layout"], "name": data["layout"].get("room") or "Kitchen",
+                           "unit": data["layout"].get("unit") or ""},
+                          None, order={"header": dict(h, name=h.get("name") or cust), "comments": data.get("comments"),
+                                       "sales_rep": data.get("sales_rep")})
+        warns = check_order(o["form_key"], data)
     else:
         pdf, warns = fill_form(o["form_key"], data)
     from ..order_kind import is_quote, kind_title, stamp_quote
@@ -292,7 +316,7 @@ def _make_pdf(oid):
         pdf = stamp_quote(pdf)
     if data.get("layout_id"):   # the attached cabinet layout's drawing + countertop pages
         try:
-            pdf = _append_layout(pdf, int(data["layout_id"]), o["customer_id"])
+            pdf = _append_layout(pdf, int(data["layout_id"]), o["customer_id"], o["form_key"])
         except Exception as e:  # noqa: BLE001 - never lose the order form over the drawing
             warns = list(warns) + [f"The cabinet layout couldn't be added to the PDF: {e}"]
     from ..photos import append_photo_pages

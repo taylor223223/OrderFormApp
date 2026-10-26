@@ -1,0 +1,153 @@
+{# The cabinet order: the kitchen layout itself - walls of pre-fab boxes (uppers on top, lowers underneath),
+   drawers optional on each box, as many boxes as needed. Used by order_editor.html for the Cabinet Order Form.
+   Everything here is scoped to #cabOrder so it doesn't touch the order editor's own handlers. #}
+<div class="card" id="cabOrder">
+  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+    <div><label>Unit #</label><input id="co_unit" list="dl_units" placeholder="e.g. 104" style="max-width:110px"></div>
+    <div><label>Cabinet material</label><input id="co_material" list="dl_co_mat" placeholder="MDF, plywood, solid wood..." style="max-width:220px"></div>
+    <div><label>Cabinet color</label><input id="co_color" placeholder="White, espresso..." style="max-width:200px"></div>
+    <div><label>Hardware</label><select id="co_hw" style="max-width:160px"><option value=""></option>{% for h in C.CAB_HARDWARE %}<option>{{ h }}</option>{% endfor %}</select></div>
+    <div id="co_hw_custom_wrap" hidden><label>Custom hardware (special order)</label><input id="co_hw_custom" placeholder="Describe it" style="max-width:240px"></div>
+    <datalist id="dl_co_mat">{% for m in C.CAB_MATERIALS %}<option value="{{ m }}">{% endfor %}</datalist>
+  </div>
+  {% if layouts %}<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+    <b class="small">Start from a saved layout:</b>
+    <select id="co_from" style="max-width:300px"><option value="">Pick a unit / floorplan layout...</option>{% for l in layouts %}<option value="{{ l.id }}">{{ l.name or 'Kitchen' }}{{ ' - unit ' ~ l.unit if l.unit }}</option>{% endfor %}</select>
+    <button type="button" class="btn sm" id="co_load">Load</button><span class="small muted" id="co_msg"></span>
+  </div>{% endif %}
+  <div class="small muted" style="margin-top:8px">Enter each box left to right, standing facing the wall - uppers on top, lowers underneath. Leave spaces for the dishwasher, stove and fridge. Add as many boxes and walls as the kitchen needs. The drawing is what prints on the order.</div>
+  <div id="co_walls"></div>
+  <div class="row" style="margin-top:10px"><button type="button" class="btn" id="co_addWall">+ Add a wall</button></div>
+</div>
+<style>
+#cabOrder .cl-wall{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:8px}
+#cabOrder table{font-size:13px}
+#cabOrder td{padding:3px 4px;vertical-align:middle}
+#cabOrder td input,#cabOrder td select{padding:4px 6px;min-height:0;font-size:13px}
+#cabOrder input.n{width:62px}
+#cabOrder input.s{width:44px}
+#cabOrder .bid{font-weight:700;color:var(--muted)}
+#cabOrder tr.space td.bid{color:#c62828}
+#cabOrder tr.sink td.bid{color:#0b84c6}
+#cabOrder .cl-svg{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px;background:#fff}
+</style>
+<script>
+window.CAB_ORDER = (function(){
+  const LOWER = {{ C.LOWER_TYPES|tojson }}, UPPER = {{ C.UPPER_TYPES|tojson }};
+  const PREVIEW_URL = {{ url_for('kitchen.preview', lid=0)|tojson }};
+  const DATA_URL = {{ url_for('kitchen.layout_data', lid=0)|tojson }};
+  let L = {{ ldata|tojson }};
+  const root = document.getElementById('cabOrder');
+  const q = s => root.querySelector(s);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function newBox(row, type){
+    const [_, w, h, d, kind] = (row === 'lowers' ? LOWER : UPPER)[type];
+    const b = {type, w: String(w), h: String(h), d: String(d), doors: '', drawers: 'No', drawer_n: '', drawer_h: '', hinge: '', label: '', notes: ''};
+    if (['cab','sink','tall'].includes(kind)) b.doors = w >= 24 ? '2' : '1';
+    if (type === 'Drawer base') Object.assign(b, {drawers: 'Yes', drawer_n: '3', doors: '0'});
+    return b;
+  }
+  const kindOf = (row, b) => ((row === 'lowers' ? LOWER : UPPER)[b.type] || [0,0,0,0,'cab'])[4];
+  function rowTable(wi, row){
+    const types = row === 'lowers' ? LOWER : UPPER, boxes = L.walls[wi][row], P = row === 'lowers' ? 'L' : 'U';
+    let h = `<table><tr><th></th><th>Box</th><th>Width</th><th>Height</th><th>Depth</th><th>Doors</th><th>Drawers</th><th>How many</th><th>Drawer ht</th><th>Hinge</th><th>Notes</th><th></th></tr>`;
+    boxes.forEach((b, i) => {
+      const k = kindOf(row, b), cab = ['cab','sink','tall'].includes(k);
+      h += `<tr class="${k.startsWith('space') ? 'space' : k}" data-w="${wi}" data-row="${row}" data-i="${i}">
+        <td class="bid">${P}${i + 1}</td>
+        <td><select data-k="type">${Object.keys(types).map(t => `<option ${t === b.type ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></td>
+        <td><input class="n" data-k="w" value="${esc(b.w)}" inputmode="decimal"></td>
+        <td><input class="n" data-k="h" value="${esc(b.h)}" inputmode="decimal"></td>
+        <td><input class="n" data-k="d" value="${esc(b.d)}" inputmode="decimal"></td>
+        ${cab ? `<td><input class="s" data-k="doors" value="${esc(b.doors)}" inputmode="numeric"></td>
+        <td><select data-k="drawers"><option ${b.drawers === 'Yes' ? 'selected' : ''}>Yes</option><option ${b.drawers !== 'Yes' ? 'selected' : ''}>No</option></select></td>
+        <td><input class="s" data-k="drawer_n" value="${esc(b.drawer_n)}" inputmode="numeric" ${b.drawers === 'Yes' ? '' : 'disabled'}></td>
+        <td><input class="s" data-k="drawer_h" value="${esc(b.drawer_h)}" inputmode="decimal" placeholder="6" ${b.drawers === 'Yes' ? '' : 'disabled'}></td>
+        <td><select data-k="hinge">${['', 'Left', 'Right', 'Pair'].map(x => `<option ${x === b.hinge ? 'selected' : ''}>${x}</option>`).join('')}</select></td>`
+        : `<td colspan="5" class="small muted">${k.startsWith('space') ? 'space - no cabinet' : 'filler'}</td>`}
+        <td><input data-k="notes" value="${esc(b.notes)}" style="width:150px"></td>
+        <td style="white-space:nowrap"><button type="button" class="btn sm" data-act="up" title="Move left">←</button><button type="button" class="btn sm" data-act="down" title="Move right">→</button><button type="button" class="btn sm" data-act="dup" title="Copy">⧉</button><button type="button" class="btn sm danger" data-act="rm" title="Remove">×</button></td></tr>`;
+    });
+    const dflt = row === 'lowers' ? 'Base cabinet' : 'Wall cabinet';
+    return h + `</table><div class="row" style="gap:6px;margin-top:6px"><select class="addType" style="width:auto">${Object.keys(types).map(t => `<option ${t === dflt ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <button type="button" class="btn sm" data-add="${row}" data-w="${wi}">+ Add ${row === 'lowers' ? 'lower' : 'upper'} box</button></div>`;
+  }
+  let svgs = [];
+  function draw(){
+    q('#co_walls').innerHTML = L.walls.map((w, wi) => `<div class="cl-wall">
+      <div class="row" style="gap:8px"><input data-wallname="${wi}" value="${esc(w.name)}" style="max-width:200px;font-weight:700">
+      <span class="small muted">${w.uppers.length} upper, ${w.lowers.length} lower</span><span class="spacer"></span>
+      ${L.walls.length > 1 ? `<button type="button" class="btn sm danger" data-rmwall="${wi}">Remove wall</button>` : ''}</div>
+      <h4 style="margin:8px 0 4px">Uppers (wall cabinets)</h4><div class="tablewrap">${rowTable(wi, 'uppers')}</div>
+      <h4 style="margin:10px 0 4px">Lowers (base cabinets + appliance spaces)</h4><div class="tablewrap">${rowTable(wi, 'lowers')}</div>
+      <div class="cl-svg" id="co_svg_${wi}">${svgs[wi] || ''}</div></div>`).join('');
+  }
+  function collect(){
+    L.unit = q('#co_unit').value.trim();
+    L.cab = {material: q('#co_material').value.trim(), color: q('#co_color').value.trim(), hw: q('#co_hw').value,
+             hw_custom: q('#co_hw').value === 'Custom' ? q('#co_hw_custom').value.trim() : ''};
+    return L;
+  }
+  let timer = null;
+  function refresh(){
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      collect();
+      const r = await fetch(PREVIEW_URL, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},
+                                          body: JSON.stringify({data: L})}).then(r => r.json()).catch(() => null);
+      if (!r) return;
+      svgs = r.walls || [];
+      svgs.forEach((s, i) => { const el = document.getElementById('co_svg_' + i); if (el) el.innerHTML = s; });
+    }, 300);
+    if (typeof dirty !== 'undefined') dirty = true;
+  }
+  function fillTop(){
+    const c = L.cab || {};
+    q('#co_unit').value = L.unit || '';
+    q('#co_material').value = c.material || ''; q('#co_color').value = c.color || ''; q('#co_hw').value = c.hw || '';
+    q('#co_hw_custom').value = c.hw_custom || ''; q('#co_hw_custom_wrap').hidden = q('#co_hw').value !== 'Custom';
+  }
+  root.addEventListener('input', e => {
+    const tr = e.target.closest('tr[data-row]');
+    if (tr && e.target.dataset.k) { L.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i][e.target.dataset.k] = e.target.value; refresh(); return; }
+    if (e.target.dataset.wallname !== undefined) { L.walls[+e.target.dataset.wallname].name = e.target.value; refresh(); return; }
+    if (e.target.id && e.target.id.startsWith('co_')) refresh();
+  });
+  root.addEventListener('change', e => {
+    if (e.target.id === 'co_hw') { q('#co_hw_custom_wrap').hidden = e.target.value !== 'Custom'; refresh(); return; }
+    const tr = e.target.closest('tr[data-row]');
+    if (!tr || !e.target.dataset.k) return;
+    const list = L.walls[+tr.dataset.w][tr.dataset.row], i = +tr.dataset.i;
+    if (e.target.dataset.k === 'type') {
+      const nb = newBox(tr.dataset.row, e.target.value); nb.w = list[i].w || nb.w; nb.notes = list[i].notes; list[i] = nb;
+    } else list[i][e.target.dataset.k] = e.target.value;
+    draw(); refresh();
+  });
+  root.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'co_addWall') { L.walls.push({name: 'Wall ' + (L.walls.length + 1), uppers: [], lowers: [newBox('lowers', 'Base cabinet')]}); draw(); refresh(); return; }
+    if (b.id === 'co_load') {
+      const id = q('#co_from').value; if (!id) return;
+      if (!confirm('Replace the boxes on this order with that layout?')) return;
+      const r = await fetch(DATA_URL.replace('/0/', '/' + id + '/')).then(r => r.json()).catch(() => null);
+      if (!r || !r.data) { q('#co_msg').textContent = "Couldn't load that layout."; return; }
+      const keep = collect();
+      L = r.data; L.unit = keep.unit || r.unit || ''; const keepCab = keep.cab;
+      if (!(L.cab && (L.cab.material || L.cab.color || L.cab.hw))) L.cab = keepCab;
+      fillTop(); draw(); refresh(); q('#co_msg').textContent = 'Loaded - check the boxes.'; return;
+    }
+    if (b.dataset.add) { L.walls[+b.dataset.w][b.dataset.add].push(newBox(b.dataset.add, b.parentElement.querySelector('.addType').value)); draw(); refresh(); return; }
+    if (b.dataset.rmwall !== undefined) { if (confirm('Remove this wall and its boxes?')) { L.walls.splice(+b.dataset.rmwall, 1); draw(); refresh(); } return; }
+    const tr = b.closest('tr[data-row]'); if (!tr || !b.dataset.act) return;
+    const list = L.walls[+tr.dataset.w][tr.dataset.row], i = +tr.dataset.i;
+    if (b.dataset.act === 'rm') list.splice(i, 1);
+    if (b.dataset.act === 'dup') list.splice(i + 1, 0, JSON.parse(JSON.stringify(list[i])));
+    if (b.dataset.act === 'up' && i > 0) [list[i - 1], list[i]] = [list[i], list[i - 1]];
+    if (b.dataset.act === 'down' && i < list.length - 1) [list[i + 1], list[i]] = [list[i], list[i + 1]];
+    draw(); refresh();
+  });
+  fillTop(); draw(); refresh();
+  if (typeof dirty !== 'undefined') setTimeout(() => { dirty = false; }, 400);
+  return {data: collect};
+})();
+</script>

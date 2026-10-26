@@ -29,14 +29,15 @@ def test_fields():
     from orderapp.cabinet_layout import LAMINATE_COLORS
     from orderapp.pdf_fill import validate_catalog
     assert validate_catalog() == [] and LAMINATE_COLORS == []
-    for fk in ("cabinet", "cabinet_prefab", "cabinet_custom"):
+    for fk in ("cabinet_prefab", "cabinet_custom"):
         f = _keys(fk)
         assert [o[0] for o in f["cab_hw"]["options"]] == ["Satin Square", "Custom"], fk
         assert f["cab_hardware"]["show_if"] == ("cab_hw", ["Custom"]), fk
         assert {"style", "cab_material", "cab_finish"} <= set(f), fk
     ct = _keys("countertop")
-    assert {"ct_material", "ct_material_other", "ct_style", "ct_color"} <= set(ct) and "suggest" not in ct["ct_color"]
-    assert {"ct_yn", "ct_material", "ct_style", "ct_color"} <= set(_keys("cabinet"))
+    assert {"ct_material", "ct_material_other", "ct_color"} <= set(ct) and "suggest" not in ct["ct_color"]
+    assert "ct_style" not in ct                                    # material + color only
+    assert not {"ct_yn", "ct_material", "cab_material"} & set(_keys("cabinet"))   # retired combined form as it was
 
 
 def test_pdfs_print_them(app):
@@ -48,20 +49,33 @@ def test_pdfs_print_them(app):
         t = _text(pdf)
         assert "Plywood" in t and "White" in t and "Matte black bar pull 5 in" in t
         pdf, _ = fill_form("countertop", {"header": {"name": "Sample (made up)"}, "blocks": [
-            {"qty": "1", "ct_material": "Custom", "ct_material_other": "Quartz remnant", "ct_style": "Bullnose",
-             "ct_color": "Sample Gray"}]})
+            {"qty": "1", "ct_material": "Custom", "ct_material_other": "Quartz remnant", "ct_color": "Sample Gray"}]})
         t = _text(pdf)
-        assert "Quartz remnant" in t and "Bullnose" in t and "Sample Gray" in t
+        assert "Quartz remnant" in t and "Sample Gray" in t
 
 
 def test_old_orders_keep_typed_hardware_and_countertop(app):
     from orderapp.catalog import upgrade_blocks
-    d = upgrade_blocks({"blocks": [{"cab_hardware": "Brushed knob"}, {"cab_hardware": "satin square"},
-                                   {"countertop": "Oyster Bay 96 in"}]})
+    d = upgrade_blocks({"blocks": [{"cab_hardware": "Brushed knob"}, {"cab_hardware": "satin square"}]})
     assert d["blocks"][0]["cab_hw"] == "Custom" and d["blocks"][1]["cab_hw"] == "Satin Square"
-    assert d["blocks"][2]["ct_yn"] == "Yes"
     from orderapp.pdf_fill import fill_form
     with app.app_context():
         pdf, _ = fill_form("cabinet", {"header": {"name": "Sample (made up)"},
                                        "blocks": [{"qty": "1", "cab_hardware": "Brushed knob"}]})
     assert "Brushed knob" in _text(pdf)
+
+
+def test_kitchen_layout_material_and_color():
+    from orderapp import cabinet_layout as C
+    d = C.starter()
+    d["cab"] = {"material": "Plywood", "color": "White"}
+    d["top"]["material"], d["top"]["color"] = "Quartz remnant", "Sample Gray"
+    t = _text(C.make_pdf({"data": d, "name": "Sample kitchen (made up)"}, with_top=False))
+    assert "Cabinet material: Plywood" in t and "Cabinet color: White" in t
+    assert "Quartz remnant" not in t and "Cabinet Order - Kitchen Layout" in t     # countertop is its own form
+    assert "Quartz remnant" in _text(C.make_pdf({"data": d, "name": "Sample kitchen (made up)"}))
+    lines = C.order_lines(d, "cabinet_prefab")
+    assert lines and lines[0]["cab_material"] == "Plywood" and lines[0]["cab_finish"] == "White"
+    ct = C.order_lines(d, "countertop")
+    assert ct[0]["ct_material"] == "Custom" and ct[0]["ct_material_other"] == "Quartz remnant"
+    assert C.normalize({"v": 2, "walls": []})["cab"] == {"material": "", "color": "", "hw": "", "hw_custom": ""}

@@ -280,9 +280,7 @@ def test_cabinet_hinge_cuts(app):
     for fk in ("cabinet", "cabinet_custom", "cabinet_prefab"):
         keys = [f["key"] for f in FORMS[fk]["blocks"][0]]
         assert {"hinge_cut", "hinge_top", "hinge_bottom", "hinge_center", "hinge_cut_dia"} <= set(keys), fk
-        # two cabinets per page (the Cabinet & Countertop form is one per page since it got the countertop's
-        # material / style / color boxes in v2.28)
-        assert len(FORMS[fk]["blocks"]) == (1 if fk == "cabinet" else 2), fk
+        assert len(FORMS[fk]["blocks"]) == 2                    # still two cabinets per page
     with app.app_context():
         from orderapp.pdf_fill import fill_form
         pdf, _ = fill_form("cabinet_custom", {"header": {"name": "Test Place"}, "blocks": [
