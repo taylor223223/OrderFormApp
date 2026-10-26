@@ -496,9 +496,8 @@ def _countertop_plan(pen, n, fields, top):
             for y, d in ((back, 1), (front, -1)):
                 pg.draw_line((xd - 4, y), (xd + 4, y), color=ink, width=0.6)
                 pg.draw_polyline([(xd - 2.5, y + 5 * d), (xd, y), (xd + 2.5, y + 5 * d)], color=ink, width=0.6)
-    if "sink_size" in by:  # inside the bowl
-        _plan_box(pen, n, by["sink_size"], cx - 19, cy - 19, cx + 19, "", "above")
-        pen.text(cx - pen.w("Sink size W x D", 6.5) / 2, cy - r - 3, "Sink size W x D", 6.5, color=(0.25, 0.25, 0.25))
+    if pg:   # shape, length / width or diameter are in the rows under the drawing
+        pen.text(cx - pen.w("SINK", 6.5, True) / 2, cy - 8, "SINK", 6.5, True, color=grey)
     if "sink_left" in by:  # left of the bowl
         _plan_box(pen, n, by["sink_left"], WL + 14, cy - 6.5, cx - r - 12, "Center to left wall")
     if "sink_right" in by:  # under the line to the right wall
