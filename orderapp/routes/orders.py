@@ -128,6 +128,8 @@ def editor():
         flash("This order has no order form (it is a tracking-only entry).", "info")
         return redirect(url_for("orders.view", oid=oid)) if oid else redirect(url_for("orders.new"))
     c = q("SELECT * FROM customers WHERE id=?", (cid,), one=True) if cid else None
+    from ..catalog import upgrade_blocks
+    upgrade_blocks(data)
     h = data.setdefault("header", {})
     if not oid:
         ch = customer_header(c)

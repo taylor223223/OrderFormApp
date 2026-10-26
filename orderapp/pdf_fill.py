@@ -258,6 +258,8 @@ def _fill_block(page, idx, fields, block, notes, line_no):
 
 def fill_form(form_key, data):
     """Return (pdf_bytes, warnings). data = {header:{}, sales_rep, comments, blocks:[{}]}"""
+    from .catalog import upgrade_blocks
+    upgrade_blocks(data)
     pdf, warns = _fill_any(form_key, data)
     return pdf, check_order(form_key, data) + list(warns)
 

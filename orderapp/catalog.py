@@ -47,7 +47,8 @@ FLAT_TRIM_PROFILE = "K: " + TRIM_PROFILES[-1][1]
 FLAT_TRIM_THICK = ['1/2"', '9/16"', '5/8"', '3/4"']
 FLAT_TRIM_HEIGHT = ['2-1/4"', '3-1/4"', '3-1/2"', '4"', '4-1/4"', '5-1/4"', '5-1/2"']
 DOOR_MATERIALS = ["Wood", "Metal", "Fiberglass"]
-from .cabinet_layout import LAMINATE_COLORS  # noqa: E402  (peel & stick colors AIS has sold)
+CABINET_HARDWARE = ["Satin Square", "Custom"]          # stocked; anything else is special order
+CABINET_MATERIALS = ["MDF", "Particle Board", "Plywood", "Solid Wood", "Thermofoil", "Custom"]
 COUNTERTOP_MATERIALS = ["Peel & Stick Laminate", "Composite", "Laminate", "Synthetic", "Thinscape", "Custom"]
 PREFAB_KITCHEN_ITEMS = ["Base Cabinet", "Sink Base", "Drawer Base", "Wall Cabinet"]
 PREFAB_VANITY_ITEMS = ["Single Box", "Double Box", "Double Box with Sink", "Extended Double Box with Sink",
@@ -747,6 +748,49 @@ def _gc(key, label, names, **kw):
 _LINE_COMMENTS = _g("line_comments", "Line Comments", "lines", chars=[95])
 
 
+def upgrade_blocks(data):
+    """Orders saved before v2.28 typed the hardware / countertop in a box: keep them showing under the new
+    choices (typed hardware -> Custom; a countertop note -> Countertop: Yes)."""
+    for b in (data or {}).get("blocks") or []:
+        if str(b.get("cab_hardware") or "").strip() and not b.get("cab_hw"):
+            b["cab_hw"] = "Satin Square" if b["cab_hardware"].strip().lower() == "satin square" else "Custom"
+        if str(b.get("countertop") or "").strip() and not b.get("ct_yn"):
+            b["ct_yn"] = "Yes"
+    return data
+
+
+def _cab_hardware_fields():
+    """Satin Square (stocked) or Custom (special order - describe it)."""
+    return [_gc("cab_hw", "Cabinet Hardware", CABINET_HARDWARE),
+            _g("cab_hardware", "Custom Hardware (describe / special order)", pdf_label="Custom Hardware",
+               show_if=("cab_hw", ["Custom"]))]
+
+
+def _cab_material_fields(color=True):
+    """What the cabinets are made of, and their color / finish (style is the Door Style). Typed boxes with a
+    pick list in the app, so two cabinets still fit on a page."""
+    out = [_g("cab_material", "Cabinet Material", suggest=CABINET_MATERIALS,
+              placeholder="MDF, particle board, plywood, solid wood, thermofoil...")]
+    if color:
+        out.append(_g("cab_finish", "Cabinet Color / Finish", pdf_label="Color / Finish"))
+    return out
+
+
+def _ct_fields(show_if=None, boxes=True):
+    """Countertop material, style and color (the peel & stick sample list is left blank for now).
+    boxes=False: the material is a typed box with a pick list (the Cabinet & Countertop form, to save room)."""
+    kw = {"show_if": show_if} if show_if else {}
+    if boxes:
+        mat = [_gc("ct_material", "Countertop Material", COUNTERTOP_MATERIALS, other_option="Custom",
+                   other_field="ct_material_other", **kw),
+               _g("ct_material_other", "Countertop Material - Custom", show_if=("ct_material", ["Custom"]))]
+    else:
+        mat = [_g("ct_material", "Countertop Material", pdf_label="Top Material", suggest=COUNTERTOP_MATERIALS,
+                  placeholder="Peel & stick laminate, composite...", **kw)]
+    return mat + [_g("ct_style", "Countertop Style / Edge", pdf_label=None if boxes else "Top Style / Edge", placeholder="e.g. square edge, bullnose, waterfall", **kw),
+                  _g("ct_color", "Countertop Color", pdf_label=None if boxes else "Top Color", placeholder="Color / sample name", **kw)]
+
+
 def _hinge_cut_fields():
     """Concealed (cup) hinge bores on cabinet doors: yes/no, cup size, and where each hinge goes - top hinge from the
     top of the door to the hinge center, bottom hinge from the bottom of the door to its center, a center hinge (if
@@ -832,14 +876,17 @@ GENERATED = {
             _gc("cab_item", "Item", ["Doors", "Single Box", "Double Box", "Double Box with Sink",
                                      "Extended Double Box with Sink"]),
             _gc("style", "Door Style", CABINET_STYLES, photos="cabinet_style"),
+            *_cab_material_fields(),
             _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
             _g("height", "Height (in)", measure=True),
             _gc("drawers", "Drawers Included", ["Yes", "No"]),
             *_hinge_cut_fields(),
-            _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
+            *_cab_hardware_fields(),
             _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
             _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
-            _g("countertop", "Countertop *", placeholder="* countertop samples coming soon - type it in"),
+            _gc("ct_yn", "Countertop", ["Yes", "No"]),
+            *_ct_fields(show_if=("ct_yn", ["Yes"]), boxes=False),
+            _g("countertop", "Countertop Notes", pdf_label="Top Notes", show_if=("ct_yn", ["Yes"])),
             ] + _mirror_frame_fields() + [_LINE_COMMENTS]],
         "products": ["cabinet", "cabinet_door", "countertop"],
     },
@@ -866,7 +913,7 @@ GENERATED = {
         "blocks": [[
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
             _gc("ct_room", "Room", ["Kitchen", "Bathroom Vanity"]),
-            _gc("ct_material", "Material", COUNTERTOP_MATERIALS),
+            *_ct_fields()[:2],
             _gc("ct_layout", "Layout", ["Straight", "L-Shape", "U-Shape", "Island"]),
             # measurement boxes sit on a top-view drawing of the countertop (form_builder._countertop_plan)
             _g("length", "Back Wall Length (in)", measure=True, plan="back"),
@@ -888,8 +935,7 @@ GENERATED = {
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
             _g("sink_front", "Sink Center to Front Edge (in)", measure=True, plan="sink_front",
                show_if=("sink", ["Single Bowl", "Double Bowl", "Vanity Bowl"])),
-            _g("ct_color", "Color / Edge", suggest=LAMINATE_COLORS,
-               placeholder="Peel & stick color from the sample book, edge..."),
+            *_ct_fields()[2:],
             _LINE_COMMENTS]],
         "products": ["countertop"],
     },
@@ -900,12 +946,13 @@ GENERATED = {
             _gc("cab_room", "Cabinet Type", ["Kitchen", "Bathroom Vanity"]),
             _gc("cab_item", "Item", PREFAB_KITCHEN_ITEMS + PREFAB_VANITY_ITEMS),
             _gc("style", "Door Style", CABINET_STYLES, photos="cabinet_style"),
+            *_cab_material_fields(),
             _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
             _g("height", "Height (in)", measure=True),
             _gc("hinge_side", "Door Hinge Side", ["Left", "Right", "Pair"]),
             _gc("drawers", "Drawers Included", ["Yes", "No"]),
             *_hinge_cut_fields(),
-            _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
+            *_cab_hardware_fields(),
             _LINE_COMMENTS]],
         "products": ["cabinet", "cabinet_door"],
     },
@@ -918,7 +965,8 @@ GENERATED = {
             _gc("style", "Door Style", CABINET_STYLES + ["Other"], photos="cabinet_style",
                 other_option="Other", other_field="style_other"),
             _g("style_other", "Style - Other", show_if=("style", ["Other"])),
-            _g("cab_finish", "Finish / Color"),
+            *_cab_material_fields(color=False),
+            _g("cab_finish", "Cabinet Color / Finish", pdf_label="Color / Finish"),
             _g("width", "Width (in)", measure=True), _g("depth", "Depth (in)", measure=True),
             _g("height", "Height (in)", measure=True),
             _g("doors_qty", "Number of Doors", w=4), _g("drawers_qty", "Number of Drawers", w=4),
@@ -926,7 +974,7 @@ GENERATED = {
             *_hinge_cut_fields(),
             _gc("refacing", "Refacing (Thermofoil)", ["Yes", "No"]),
             _g("thermofoil_color", "Thermofoil Color", show_if=("refacing", ["Yes"])),
-            _g("cab_hardware", "Cabinet Hardware *", placeholder="* hardware list coming soon - type it in"),
+            *_cab_hardware_fields(),
             _LINE_COMMENTS]],
         "products": ["cabinet", "cabinet_door"],
     },

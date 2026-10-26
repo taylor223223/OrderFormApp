@@ -12,7 +12,7 @@
   <div><label>Floorplan</label><select id="f_fp"><option value="">(none)</option>{% for f in fps %}<option value="{{ f.id }}" {{ 'selected' if lay.floorplan_id == f.id }}>{{ f.name }}</option>{% endfor %}</select></div>
   <div><label>Room</label><select id="f_room">{% for r in ['Kitchen','Bath vanity','Laundry','Bar / other'] %}<option {{ 'selected' if data.room == r }}>{{ r }}</option>{% endfor %}</select></div>
   <div><label>Countertop</label><select id="t_material">{% for m in C.TOP_MATERIALS %}<option {{ 'selected' if data.top.material == m }}>{{ m }}</option>{% endfor %}</select></div>
-  <div><label>Color</label><input id="t_color" list="dl_colors" value="{{ data.top.color }}" placeholder="Pick from the samples"><datalist id="dl_colors">{% for col in C.LAMINATE_COLORS %}<option value="{{ col }}">{% endfor %}</datalist></div>
+  <div><label>Color</label><input id="t_color" list="dl_colors" value="{{ data.top.color }}" placeholder="Color / sample name"><datalist id="dl_colors">{% for col in C.LAMINATE_COLORS %}<option value="{{ col }}">{% endfor %}</datalist></div>
   <div><label>Front overhang (in)</label><input id="t_overhang" value="{{ data.top.overhang }}" inputmode="decimal"></div>
   <div><label>Backsplash rise (in)</label><input id="t_splash" value="{{ data.top.splash }}" inputmode="decimal"></div>
   <div style="grid-column:span 2"><label>Edge / notes for the top</label><input id="t_edge" value="{{ data.top.edge }}" placeholder="Square edge, wrap the front, end caps..."></div>

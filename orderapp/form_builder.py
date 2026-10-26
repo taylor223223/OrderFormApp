@@ -408,7 +408,8 @@ def _door_meas_rows(pen, n, fields, y):
     """Measurements three across, then other boxes two across, then the line's comments."""
     top, choices, meas, other, comments = _parts(fields)
     first = True
-    for group, per in ((meas, 3), (other, 2)):
+    # typed boxes go two across; three or more (the cabinet forms) go three across
+    for group, per in ((meas, 3), (other, 3 if len(other) >= 3 else 2)):
         for i in range(0, len(group), per):
             if not first:
                 pen.line(y + 3.5)
@@ -417,7 +418,7 @@ def _door_meas_rows(pen, n, fields, y):
             col = (D_R - D_L) / per
             for j, f in enumerate(group[i:i + per]):
                 x0 = D_L + 4 + j * col
-                lw = pen.text(x0, y, f.get("pdf_label", f["label"]) + ":")
+                lw = pen.text(x0, y, (f.get("pdf_label") or f["label"]) + ":")
                 pen.field(tname(n, f["key"]), x0 + lw + 4, y, x0 + col - 10)
     if comments:
         if not first:

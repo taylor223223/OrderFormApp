@@ -43,11 +43,8 @@ UPPER_TYPES = {
     "Filler": ("FILLER", 3, 30, 12, "filler"),
 }
 TOP_MATERIALS = ["Peel & stick laminate over MDF", "Composite", "Other"]
-# peel & stick laminate colors AIS has sold (company invoices 2023-2026) - confirm against the sample book
-LAMINATE_COLORS = ["Oyster Bay (#9013)", "Chocolate Pear", "Kasei Maple", "Kona (#9014)", "Candlelight", "White",
-                   "Hard Rock Maple", "Valencia (#2196)", "Summerflame", "Havana (#2195)", "Dolce Vita",
-                   "Shadow Oak (#2049)", "Copa Cabana", "Coffee Bean", "Gibraltar (#2372)",
-                   "Dark Oak Melinga (#9012)", "Rogue Valley Pear"]
+# peel & stick color list: left blank for now (Taylor, 10/26 - about 500 samples); colors are typed in
+LAMINATE_COLORS = []
 UPPER_GAP = 18.0          # counter to bottom of the uppers (standard)
 TOP_THICK = 1.5           # countertop thickness drawn on the elevation
 DEFAULT_TOP = {"material": TOP_MATERIALS[0], "color": "", "overhang": "1", "splash": "4", "edge": ""}

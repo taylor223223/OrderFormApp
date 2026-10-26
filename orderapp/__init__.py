@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.27.0"
+__version__ = "2.28.0"
 
 
 def _secret_key():
