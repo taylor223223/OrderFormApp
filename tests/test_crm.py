@@ -72,7 +72,7 @@ def test_crm_and_routes(client):
         cids.append(int(r.headers["Location"].rsplit("/", 1)[1]))
     for page in ["/crm", "/crm/activities", "/crm/tasks", "/crm/pipeline", "/crm/report", "/routes",
                  f"/customers/{cids[0]}?tab=crm", "/customers?status=Active", "/settings"]:
-        assert c.get(page).status_code == 200, page
+        assert c.get(page, follow_redirects=True).status_code == 200, page
 
     today = date.today().isoformat()
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
@@ -113,14 +113,14 @@ def test_crm_and_routes(client):
         from orderapp.db import q
         assert q("SELECT COUNT(*) n FROM activities WHERE kind='Site visit'", one=True)["n"] == 1
         assert q("SELECT COUNT(*) n FROM route_stops WHERE day=?", (tomorrow,), one=True)["n"] == 1
-    assert "Next 7 days" in c.get("/routes").get_data(as_text=True)
+    assert "Week plan" in c.get("/routes", follow_redirects=True).get_data(as_text=True)
     # estimate + notes on a stop, then the stop list
     post(c, f"/routes/stop/{stops[2]['id']}", {"act": "notes", "products": ["Doors", "Blinds"],
                                                "notes": "Unit 104 vacant, 212 occupied"})
     sheet = c.get(f"/routes/day/{today}/sheet").get_data(as_text=True)
     assert "Doors, Blinds" in sheet and "Unit 104 vacant" in sheet and "Estimating: Doors, Blinds" in sheet
     r = post(c, "/routes/add", {"customer_id": cids[1], "day": tomorrow, "products": ["Verticals"], "notes": "gate 4411"})
-    assert "Verticals" in c.get("/routes?week=" + tomorrow).get_data(as_text=True)
+    assert "Verticals" in c.get(f"/routes/day/{tomorrow}").get_data(as_text=True)
 
     # tasks + deals
     post(c, "/crm/tasks", {"title": "Call back Ironwood", "due_date": today, "customer_id": cids[2]})
@@ -235,11 +235,15 @@ def test_rolling_week_and_trip_log():
         x("INSERT INTO route_stops(day, customer_id, label, status) VALUES (?,?,?,?)", (yday, cid, "Sunrise Villas", "Done"))
         x("INSERT INTO route_stops(day, label, status) VALUES (?,?,?)", (yday, "Somewhere", "Skipped"))
         x("INSERT INTO route_days(day, total_m, total_drive_s, estimated) VALUES (?,?,?,1)", (yday, 16093.4, 1800))
-    html = c.get("/routes").get_data(as_text=True)
-    assert today.strftime("%m/%d") in html and (today + timedelta(days=6)).strftime("%m/%d") in html
-    assert f'href="/routes/day/{yday}"' not in html          # yesterday has rolled off the planner
-    nxt = c.get(f"/routes?start={(today + timedelta(days=7)).isoformat()}").get_data(as_text=True)
-    assert (today + timedelta(days=13)).strftime("%m/%d") in nxt
+    # v2.29.3: one Routes tab - /routes goes to the Week plan (this week, Mon-Sun) with the add-a-stop tools;
+    # Today's route is its own view
+    r = c.get("/routes")
+    assert r.status_code == 302 and "/plan" in r.headers["Location"]
+    html = c.get("/routes", follow_redirects=True).get_data(as_text=True)
+    monday = today - timedelta(days=today.weekday())
+    assert monday.strftime("%m/%d") in html and "Add a stop to a day" in html and "Today&#39;s route" in html
+    day = c.get(f"/routes/day/{today.isoformat()}").get_data(as_text=True)
+    assert "Week plan" in day and f'/routes/day/{(today + timedelta(days=1)).isoformat()}' in day
     log = c.get(f"/routes/log?month={yday[:7]}").get_data(as_text=True)
     assert "Sunrise Villas" in log and "10.0" in log and "1 of 2" in log
     csv = c.get(f"/routes/log?month={yday[:7]}&csv=1")

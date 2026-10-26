@@ -1,7 +1,8 @@
 {% extends "base.html" %}{% block title %}Route {{ day }}{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">{% endblock %}
 {% block body %}
-<div class="pagehead"><div><div class="small"><a href="{{ url_for('plan.week') }}">← Route planner</a> · <a href="{{ url_for('plan.trip_log', month=day[:7]) }}">Trip log</a></div>
+{% include '_routes_tabs.html' %}
+<div class="pagehead"><div>
 <h1>{{ d.strftime('%A, %b %d') }}</h1>
 <div class="row">{% if rows %}<span class="tag">🚗 {{ total }} driving</span><span class="tag">{{ miles }} mi</span><span class="tag">Start {{ res.start_time }}</span><span class="tag">Back ~{{ finish.strftime('%I:%M %p').lstrip('0') }}</span>{% if res.estimated %}<span class="tag warn" title="Add a free OpenRouteService key in Settings for real road times">estimated</span>{% endif %}{% endif %}</div></div>
 <div class="row"><form method="post" action="{{ url_for('plan.optimize', day=day) }}">{% set n_done = rows|selectattr('s.status', 'equalto', 'Done')|list|length %}<button class="btn primary" {{ 'disabled' if rows|length < 2 }} title="{{ 'Re-orders only the stops you have not visited yet, starting from your last visited stop' if n_done else 'Puts the stops in the order with the least driving' }} (📌 pinned stops stay where they are)">{{ '🔄 Re-plan rest of day' if n_done else 'Optimize route' }}</button></form>
@@ -106,6 +107,7 @@
       const ctl = box.querySelector('form.alongctl');
       const go = (page) => { if (!ctl) return; const f = new FormData(ctl); if (page) f.set('page', page); load(ctl.dataset.url + '?' + new URLSearchParams(f)); };
       if (ctl) ctl.querySelectorAll('select').forEach(s => s.addEventListener('change', () => go(1)));
+      if (ctl) ctl.querySelectorAll('input[name=near]').forEach(cb => cb.addEventListener('change', () => go(1)));
       if (ctl) ctl.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => {
         const f = new FormData(ctl); f.set('page', 1); f.delete('radius'); f.set('switched', 1);
         load(ctl.dataset.url + '?' + new URLSearchParams(f));

@@ -1,0 +1,11 @@
+{# One "Routes" tab with two views: the day's route, and the week plan builder (plus the trip log). #}
+{% set _ep = request.endpoint or '' %}{% set _today = today_iso() %}
+<div class="tabs" style="margin-bottom:12px">
+  <a href="{{ url_for('plan.day', day=_today) }}" class="{{ 'on' if _ep in ('plan.day', 'plan.sheet') }}">🗺️ {{ "Today's route" if not (day is defined and day and day != _today) else 'Day route' }}</a>
+  <a href="{{ url_for('plan.overview') }}" class="{{ 'on' if _ep in ('plan.overview', 'plan.plan_near') }}">🗓️ Week plan</a>
+  <a href="{{ url_for('plan.trip_log') }}" class="{{ 'on' if _ep == 'plan.trip_log' }}">🧾 Trip log</a>
+  {% if _ep == 'plan.day' and day is defined and day %}<span class="spacer"></span>
+  <span class="row small" style="gap:4px;align-items:center"><a class="btn sm" href="{{ url_for('plan.day', day=day_shift(day, -1)) }}" title="Day before">←</a>
+  <input type="date" value="{{ day }}" onchange="location.href={{ url_for('plan.day', day='DAY')|tojson }}.replace('DAY', this.value)" style="width:auto">
+  <a class="btn sm" href="{{ url_for('plan.day', day=day_shift(day, 1)) }}" title="Next day">→</a></span>{% endif %}
+</div>

@@ -2,7 +2,8 @@
 {% block body %}
 {% set hold = hold_for(c.id) %}{% if hold %}{% include '_hold_banner.html' %}{% endif %}
 <div class="pagehead">
-  <div><h1>{{ c.name }}{% if acct.type != 'Property' %} <span class="tag" style="vertical-align:middle">{{ acct.icons[acct.type] }} {{ acct.type }}</span>{% endif %}{% if c.status %} <span class="tag" style="vertical-align:middle">{{ c.status }}</span>{% endif %}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{% if acct.mgmt_acct %}<a href="{{ url_for('customers.view', cid=acct.mgmt_acct.id) }}">{{ c.mgmt }}</a>{% else %}{{ c.mgmt or '' }}{% endif %}{% if c.services %}{{ ' · ' if c.mgmt }}{{ c.services }}{% endif %}{% if c.city %} · {{ c.city }}{% endif %}</div></div>
+  <div><h1>{{ c.name }}{% if acct.type != 'Property' %} <span class="tag" style="vertical-align:middle">{{ acct.icons[acct.type] }} {{ acct.type }}</span>{% endif %}{% if c.status %} <span class="tag" style="vertical-align:middle">{{ c.status }}</span>{% endif %}</h1><div class="muted">{% if c.acct %}Acct # {{ c.acct }} · {% endif %}{% if acct.mgmt_acct %}<a href="{{ url_for('customers.view', cid=acct.mgmt_acct.id) }}">{{ c.mgmt }}</a>{% else %}{{ c.mgmt or '' }}{% endif %}{% if c.services %}{{ ' · ' if c.mgmt }}{{ c.services }}{% endif %}{% if c.city %} · {{ c.city }}{% endif %}</div>
+<div class="small">👤 Sales rep: {% if rep %}<b>{{ 'Me (' ~ rep ~ ')' if rep_me else rep }}</b> <span class="muted">· {{ rep_why }}</span>{% else %}<span class="muted">not assigned - {{ rep_why }} · <a href="{{ url_for('settings.territory') }}">reps' ZIPs</a></span>{% endif %}</div></div>
   <div class="row">
     <a class="btn primary" href="{{ url_for('orders.new', customer=c.id) }}">+ New order</a>
     <a class="btn" href="{{ url_for('customers.view', cid=c.id, tab='crm') }}#quicklog">Log call/visit</a>

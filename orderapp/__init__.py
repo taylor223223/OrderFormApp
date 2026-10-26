@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.29.2"
+__version__ = "2.29.3"
 
 
 def _secret_key():
@@ -85,6 +85,18 @@ def create_app(db_path=None, testing=False, demo=None):
             return f"{s[5:7]}/{s[8:10]}/{s[:4]}"
         return s
     app.jinja_env.filters["mdy"] = mdy
+
+    def today_iso():
+        from datetime import date as _d
+        return _d.today().isoformat()
+
+    def day_shift(day, n):
+        from datetime import date as _d, timedelta as _td
+        try:
+            return (_d.fromisoformat(str(day)[:10]) + _td(days=n)).isoformat()
+        except ValueError:
+            return today_iso()
+    app.jinja_env.globals.update(today_iso=today_iso, day_shift=day_shift)
 
     @app.route("/__version")
     def app_version_route():

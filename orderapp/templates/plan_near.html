@@ -1,8 +1,9 @@
 {% extends "base.html" %}{% block title %}Accounts around {{ label or 'an account' }}{% endblock %}
 {% block body %}
+{% include '_routes_tabs.html' %}
 <div class="pagehead"><div><h1>Accounts around {{ label or '...' }}</h1>
 <div class="muted">Pick an account you have to visit (or a city / zip / part of town) and see who else is close by - with their sales, last order and last contact - then add the ones you want to a day.</div></div>
-<div class="row"><a class="btn sm" href="{{ url_for('plan.overview', view='week') }}">← Plan my week</a></div></div>
+<div class="row"><a class="btn sm" href="{{ url_for('plan.overview', view='week') }}">← Week plan</a></div></div>
 
 <form class="card row" method="get" style="gap:8px;flex-wrap:wrap">
 <input name="account" list="dl_accounts" value="{{ acct }}" placeholder="Account" style="max-width:320px">

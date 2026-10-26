@@ -80,7 +80,10 @@ def index():
         except Exception:   # noqa: BLE001
             billed = {}
         rows = [c for c in rows if T.classify(c, mine, partial, others, billed) == terr]
-    return render_template("customers.html", customers=rows, search=s, status=st, statuses=CUSTOMER_STATUSES, terr=terr,
+    from .. import territory as _T
+    _zm = _T.zip_rep_map()
+    reps = {c["id"]: _T.rep_for(c, _zm) for c in rows}      # sales rep by ZIP
+    return render_template("customers.html", customers=rows, reps=reps, me=_T.me(), search=s, status=st, statuses=CUSTOMER_STATUSES, terr=terr,
                            typ=typ, type_counts=counts(), plural=PLURAL, icons=ICON, acct_types=ACCOUNT_TYPES)
 
 
@@ -163,7 +166,9 @@ def view(cid):
                 mgmt_acct=A.mgmt_account_for(c) if A.type_of(c) == A.PROPERTY else None,
                 link_options=q("SELECT id, name, acct_type FROM customers WHERE id<>? ORDER BY name COLLATE NOCASE",
                                (cid,)))
-    return render_template("customer.html", c=c, contacts=contacts, fps=fps, units=units, orders=orders, acct=acct,
+    from .. import territory as _T
+    rep, rep_why = _T.rep_for(c)
+    return render_template("customer.html", rep=rep, rep_why=rep_why, rep_me=rep and rep == _T.me(), c=c, contacts=contacts, fps=fps, units=units, orders=orders, acct=acct,
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
                            tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid),

@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Plan my {{ view }}{% endblock %}
 {% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
 {% block body %}
+{% include '_routes_tabs.html' %}
 <div class="pagehead"><div><h1>Plan my {{ view }}</h1>
 <div class="muted">{{ label }} at a glance, who to see and why, and where the month is heading. Nothing is added to your routes until you tick it.</div>
 <div class="small">{% if terr_on %}🗺️ Only accounts in your territory ({{ terr_n }}) · <a href="{{ url_for('settings.territory') }}">change</a>{% else %}<span style="color:#b45309">Showing every account (territory filter off)</span> · <a href="{{ url_for('settings.territory') }}">set my territory</a>{% endif %}</div></div>
@@ -9,7 +10,8 @@
   <a class="btn sm {{ 'primary' if view == 'month' }}" href="{{ url_for('plan.overview', view='month') }}">Month</a>
   {% if view == 'week' %}<a class="btn sm" href="{{ url_for('plan.overview', view='week', start=prev) }}">←</a><a class="btn sm" href="{{ url_for('plan.overview', view='week', start=nxt) }}">→</a>
   {% else %}<a class="btn sm" href="{{ url_for('plan.overview', view='month', month=prev) }}">←</a><a class="btn sm" href="{{ url_for('plan.overview', view='month', month=nxt) }}">→</a>{% endif %}
-  <a class="btn sm" href="{{ url_for('plan.week') }}">Routes</a></div></div>
+</div></div>
+{% if view == 'week' %}{% include '_route_tools.html' %}{% endif %}
 
 {% if view == 'week' %}
 <div class="weekgrid">

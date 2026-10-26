@@ -98,6 +98,31 @@ def _zip5(z):
     return m.group(0) if m else ""
 
 
+def zip_rep_map():
+    """{zip: rep} from every rep's territory ZIPs (Settings > Territory); mine wins a ZIP that's listed twice."""
+    out = dict(other_zips())
+    for z in my_zips():
+        out[z] = me()
+    return out
+
+
+def rep_for(c, zmap=None):
+    """(rep, why) - the sales rep a customer belongs to, by its ZIP code. Split ZIPs (partial) go by the side of
+    the 202 the property is on. ("", why) when no rep has that ZIP yet."""
+    z = _zip5(c["zip"] if "zip" in c.keys() else "")
+    if not z:
+        return "", "no ZIP code on the account"
+    zmap = zip_rep_map() if zmap is None else zmap
+    if z in partial_zips():
+        lat = c["lat"] if "lat" in c.keys() else None
+        if lat is None or lat >= NORTH_OF_202_LAT:
+            return me(), f"ZIP {z} (north of the 202)" if lat is not None else f"ZIP {z}"
+        return zmap.get(z, "") if zmap.get(z) != me() else "", f"ZIP {z} (south of the 202)"
+    if z in zmap:
+        return zmap[z], f"ZIP {z}"
+    return "", f"no rep has ZIP {z} yet"
+
+
 def classify(c, mine=None, partial=None, others=None, billed=None, include_billed=None):
     """'mine' / 'other' / 'unknown' for a customer row (needs name, zip, lat)."""
     mine = my_zips() if mine is None else mine

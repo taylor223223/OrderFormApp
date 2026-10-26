@@ -278,35 +278,12 @@ def log_past_days():
 @bp.route("/routes")
 @login_required
 def week():
-    """Rolling planner: today and the next 6 days (past days drop off into the trip log)."""
-    today = date.today()
-    start = _day(request.args.get("start")) or today
-    if start < today:
-        start = today
+    """The old 7-day route page is part of the Week plan now (one Routes tab: Today's route | Week plan)."""
     try:
         log_past_days()
     except Exception:   # noqa: BLE001 - never block the planner on the log
         pass
-    days = []
-    for i in range(ROLLING_DAYS):
-        dd = start + timedelta(days=i)
-        ds = dd.isoformat()
-        st = stops_for(ds)
-        rd = q("SELECT * FROM route_days WHERE day=?", (ds,), one=True)
-        days.append({"date": dd, "iso": ds, "name": DAYS[dd.weekday()], "stops": st,
-                     "drive": fmt_dur(rd["total_drive_s"]) if rd and rd["total_drive_s"] else "",
-                     "miles": round(rd["total_m"] / 1609.34, 1) if rd and rd["total_m"] and st else None,
-                     "estimated": bool(rd and rd["estimated"]), "today": dd == today})
-    customers = q("SELECT id, name, city FROM customers ORDER BY name COLLATE NOCASE")
-    nxt = start + timedelta(days=ROLLING_DAYS)
-    prev = start - timedelta(days=ROLLING_DAYS)
-    return render_template("route_week.html", days=days, start=start, end=start + timedelta(days=ROLLING_DAYS - 1),
-                           prev=(prev if prev > today else today).isoformat(), at_today=start == today,
-                           nxt=nxt.isoformat(), customers=customers, today=today.isoformat(),
-                           has_key=bool(_key()), items=ESTIMATE_ITEMS, map_error=setting("map_last_error"),
-                           mapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NOT NULL", one=True)["n"],
-                           unmapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''",
-                                      one=True)["n"])
+    return redirect(url_for("plan.overview", view="week", start=request.args.get("start", "")))
 
 
 @bp.route("/routes/log")
@@ -608,8 +585,14 @@ def along(day):
     radius = a.get("radius", type=float)
     if a.get("switched"):                             # each mode has its own distances
         radius = None
+    # which stops to search near: picked on the page, remembered for that day (none picked = every stop)
+    if "near_set" in a:
+        only = [int(v) for v in a.getlist("near") if v.isdigit()]
+        set_setting(f"along_near:{day}", ",".join(map(str, only)))
+    else:
+        only = [int(v) for v in (setting(f"along_near:{day}") or "").split(",") if v.isdigit()]
     res = AL.suggest(day, skip=skip, wide=bool(a.get("wide")), sort=a.get("sort", "best"),
-                     page=a.get("page", 1, type=int), radius=radius, mode=mode)
+                     page=a.get("page", 1, type=int), radius=radius, mode=mode, only=only)
     return render_template("_along.html", day=day, res=res, sorts=AL.SORTS, modes=AL.MODES,
                            radii=AL.NEAR_RADII if res["mode"] == "stops" else AL.RADII)
 
@@ -835,7 +818,11 @@ def overview():
         r["addr"] = crow[r["customer_id"]]["address"] if r.get("customer_id") in crow else ""
     proj = PL.projection(today)
     from .. import territory as T
-    return render_template("plan.html", terr_on=T.enabled(), terr_n=len(T.my_ids()) if T.enabled() else 0, view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
+    route_tools = dict(items=ESTIMATE_ITEMS, has_key=bool(_key()), map_error=setting("map_last_error"),
+                       mapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NOT NULL", one=True)["n"],
+                       unmapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''",
+                                  one=True)["n"])
+    return render_template("plan.html", **route_tools, terr_on=T.enabled(), terr_n=len(T.my_ids()) if T.enabled() else 0, view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
                            prev=prev_m, nxt=next_m, today=today.isoformat(), monday=today.weekday() == 0,
                            areas=areas, start=request.args.get("start", ""),
                            customers=q("SELECT id, name, acct_type FROM customers ORDER BY name COLLATE NOCASE"))

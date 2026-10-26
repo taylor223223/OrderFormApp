@@ -20,8 +20,9 @@ def _mi(a, b):
     return geo.haversine_m(a, b) / 1609.34
 
 
-def route_points(day):
-    """[start, stop1, stop2, ... (, start)] as (lat, lon), skipping stops without a map point."""
+def route_points(day, ids=None):
+    """[start, stop1, stop2, ... (, start)] as (lat, lon), skipping stops without a map point.
+    ids: a list that gets each point's stop id (None for the start)."""
     from .routes.routes_plan import _key, _start, stops_for
     start_addr, _ = _start(day)
     pts = []
@@ -29,8 +30,10 @@ def route_points(day):
         sp = geo.geocode(start_addr, _key(), get_db()) if start_addr else None
     except geo.GeoError:
         sp = None
+    ids = [] if ids is None else ids
     if sp:
         pts.append(tuple(sp))
+        ids.append(None)
     else:
         return []          # without the start point "on the way" means nothing - the page says why
     for s in stops_for(day):
@@ -38,30 +41,37 @@ def route_points(day):
             continue
         if s["lat"] is not None:
             pts.append((s["lat"], s["lon"]))
+            ids.append(s["id"])
         elif s["customer_id"]:
             c = q("SELECT lat, lon FROM customers WHERE id=?", (s["customer_id"],), one=True)
             if c and c["lat"] is not None:
                 pts.append((c["lat"], c["lon"]))
+                ids.append(s["id"])
     if sp and len(pts) > 1 and setting("route_return_to_start") == "1":
         pts.append(tuple(sp))
+        ids.append(None)
     return pts
 
 
-def detour(pts, c):
-    """(extra road miles, index of the leg it fits after) to visit point c on the way."""
+def detour(pts, c, legs=None, tail_ok=True):
+    """(extra road miles, index of the leg it fits after) to visit point c on the way.
+    legs: only these leg indexes (the drives to / from the stops picked); tail_ok: also "after the last stop"."""
     if len(pts) == 1:
         return 2 * _mi(pts[0], c) * ROAD, 0
     best = (None, 0)
     for i in range(len(pts) - 1):
+        if legs is not None and i not in legs:
+            continue
         a, b = pts[i], pts[i + 1]
         extra = (_mi(a, c) + _mi(c, b) - _mi(a, b)) * ROAD
         if best[0] is None or extra < best[0]:
             best = (extra, i)
     # also "after the last stop" when the day doesn't return home
-    tail = _mi(pts[-1], c) * ROAD
-    if tail < best[0]:
-        best = (tail, len(pts) - 1)
-    return best
+    if tail_ok:
+        tail = _mi(pts[-1], c) * ROAD
+        if best[0] is None or tail < best[0]:
+            best = (tail, len(pts) - 1)
+    return best if best[0] is not None else (float("inf"), 0)
 
 
 def facts(customers):
@@ -144,12 +154,24 @@ NEAR_RADII = [0.5, 1, 2, 3, 5, 8]
 NEAR_MI = 2.0       # default "near my stops" distance (straight-line miles from a stop)
 
 
-def stop_points(day):
-    """[(lat, lon, stop name)] for the day's stops that are on the map (no start address needed)."""
+def day_stops(day):
+    """[(stop id, number, name)] - the day's stops in route order, for the "search near" picker."""
     from .routes.routes_plan import stops_for
     out = []
     for s in stops_for(day):
         if s["status"] == "Skipped":
+            continue
+        out.append((s["id"], len(out) + 1, s["cname"] or s["label"] or "a stop"))
+    return out
+
+
+def stop_points(day, only=None):
+    """[(lat, lon, stop name)] for the day's stops that are on the map (no start address needed).
+    only: just these stop ids (the ones picked in "search near")."""
+    from .routes.routes_plan import stops_for
+    out = []
+    for s in stops_for(day):
+        if s["status"] == "Skipped" or (only is not None and s["id"] not in only):
             continue
         lat, lon = s["lat"], s["lon"]
         if lat is None and s["customer_id"]:
@@ -161,18 +183,25 @@ def stop_points(day):
     return out
 
 
-def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None, mode="route"):
+def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None, mode="route", only=None):
     """Every property near the day's route (within `radius` extra miles), with its sales, last order and last
     contact as information - nothing is left out for missing data. Sorted by `sort`, `n` per page.
     Returns {"rows", "page", "pages", "total", "no_points", "mapped", "unmapped", ...}."""
     n = n or int(setting("along_count") or 10)
     mode = mode if mode in MODES else "route"
+    stops = day_stops(day)
+    only = {i for i in (only or []) if i in {st[0] for st in stops}} or None     # None = every stop
+    legs, tail_ok = None, True
     if mode == "stops":
         radius = float(radius) if radius else NEAR_MI
-        pts = stop_points(day)
+        pts = stop_points(day, only)
     else:
         radius = float(radius) if radius else (WIDE_MI if wide else NORMAL_MI)
-        pts = route_points(day)
+        ids = []
+        pts = route_points(day, ids)
+        if only:     # just the drives to and from the stops picked
+            legs = {i for i in range(len(pts) - 1) if ids[i] in only or ids[i + 1] in only}
+            tail_ok = bool(ids) and ids[-1] in only
     on_route = {r["customer_id"] for r in q("SELECT customer_id FROM route_stops WHERE day=?", (day,))
                 if r["customer_id"]}
     mapped = q("""SELECT id, name, address, city, lat, lon, status FROM customers WHERE lat IS NOT NULL
@@ -183,7 +212,7 @@ def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None, 
         mapped = [c for c in mapped if c["id"] in mine]
     unmapped = q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''", one=True)["n"]
     base = {"rows": [], "page": 1, "pages": 0, "total": 0, "more": 0, "mapped": len(mapped), "unmapped": unmapped,
-            "sort": sort, "radius": radius, "mode": mode}
+            "sort": sort, "radius": radius, "mode": mode, "stops": stops, "only": sorted(only) if only else []}
     if mode == "stops" and not pts:      # no stop on the map yet
         return dict(base, no_points=True)
     if mode != "stops" and len(pts) < 2:     # need the start point + at least one stop to know the way
@@ -197,7 +226,7 @@ def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None, 
             if d <= radius:
                 near.append((d, name, c))
             continue
-        extra, leg = detour(pts, (c["lat"], c["lon"]))
+        extra, leg = detour(pts, (c["lat"], c["lon"]), legs, tail_ok)
         if extra <= radius:
             near.append((extra, leg, c))
     near.sort(key=lambda t: t[0])

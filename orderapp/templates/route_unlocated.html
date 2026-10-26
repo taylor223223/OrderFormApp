@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Properties not on the map{% endblock %}
 {% block body %}
-<div class="pagehead"><div><div class="small"><a href="{{ url_for('plan.week') }}">← Route planner</a></div><h1>Properties not on the map</h1>
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('plan.overview') }}">← Week plan</a></div><h1>Properties not on the map</h1>
 <div class="muted">These have an address but no map location yet. "Couldn't find" means no map service recognized the address - fix it on the property (typo, missing city or zip), then click Locate all properties again.</div></div>
 <form method="post" action="{{ url_for('plan.geocode_all') }}"><button class="btn primary">Locate all properties</button></form></div>
 <div class="tablewrap"><table><tr><th>Property</th><th>Address</th><th>Status</th><th></th></tr>

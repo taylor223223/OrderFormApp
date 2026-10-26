@@ -174,7 +174,7 @@ def test_map_connection_messages(app, c, monkeypatch):
         assert not all(ch["ok"] for ch in checks) and any("look up" in ch["detail"] for ch in checks)
     html = c.get("/settings/test-maps").data.decode()
     assert "Map connection test" in html and "hotspot" in html
-    assert "Map lookups aren't working" in c.get("/routes").data.decode()
+    assert "Map lookups aren't working" in c.get("/routes", follow_redirects=True).data.decode()
     assert "Network proxy" in c.get("/settings").data.decode()
     with app.app_context():
         from orderapp.db import set_setting

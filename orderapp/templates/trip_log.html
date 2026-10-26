@@ -1,8 +1,9 @@
 {% extends "base.html" %}{% block title %}Trip log{% endblock %}
 {% block body %}
+{% include '_routes_tabs.html' %}
 <div class="pagehead"><div><h1>Trip log</h1>
 <div class="muted">Every finished day from the route planner: stops, visits, miles and drive time. Use it for mileage expenses and reports.</div></div>
-<div class="row"><a class="btn" href="{{ url_for('plan.week') }}">← Route planner</a>
+<div class="row">
 <a class="btn primary" href="{{ url_for('plan.trip_log', month=month, csv=1) }}">Download for Excel</a></div></div>
 <form class="row card" style="gap:8px"><label style="margin:0">Month</label>
 <select name="month" onchange="this.form.submit()" style="width:auto">{% for m in months %}<option {{ 'selected' if m==month }}>{{ m }}</option>{% endfor %}</select>
