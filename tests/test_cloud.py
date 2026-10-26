@@ -14,7 +14,11 @@ def cloud(monkeypatch):
     monkeypatch.setenv("ORDERAPP_DATA", d)
     monkeypatch.setenv("ORDERAPP_CLOUD", "1")
     monkeypatch.setenv("ORDERAPP_SETUP_KEY", "letmein-123")
+    import orderapp
     from orderapp import create_app
+    # no background email watcher in tests: one started per test (with Outlook COM set up on Windows) crashed
+    # the Windows build's test run now and then ("Windows fatal exception: access violation")
+    monkeypatch.setattr(orderapp, "_start_email_watcher", lambda app: None)
     app = create_app(db_path=os.path.join(d, "orderapp.db"))
     c = app.test_client()
     c.app = app

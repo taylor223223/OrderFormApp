@@ -276,6 +276,30 @@ def _fill_any(form_key, data):
     return _fill(form_key, data)
 
 
+SINK_BOWLS = ("single bowl", "double bowl", "vanity bowl")
+
+
+def _no_sink(blk):
+    """A countertop line with no sink cut-out: picked None, or filled in without picking a sink."""
+    sink = str(blk.get("sink") or "").strip().lower()
+    if sink:
+        return sink not in SINK_BOWLS
+    return any(str(v).strip() for v in blk.values() if v is not None)
+
+
+def _hide_sink(page, idx, i):
+    """Countertop drawing (form_builder._countertop_plan) without the sink: paint the top over the bowl, the
+    line to the right wall and the sink measurement boxes, and take those boxes off."""
+    ref = idx.get(f"L{i}.sink_center")
+    if not ref:
+        return
+    cy = ref[0].rect.y0 - 1 + 6.5               # the boxes sit on the sink's center line
+    page.draw_rect(fitz.Rect(128.6, cy - 39.4, 441.4, cy + 47.4), color=None, fill=(0.94, 0.94, 0.94))
+    for key in ("sink_center", "sink_center_r", "sink_front"):
+        for w in idx.get(f"L{i}.{key}", []):
+            page.delete_widget(w)
+
+
 def _fill(form_key, data):
     spec = FORMS[form_key]
     per_page = len(spec["blocks"])
@@ -318,6 +342,8 @@ def _fill(form_key, data):
             line_no = pnum * per_page + i + 1
             bn = []
             _fill_block(page, idx, spec["blocks"][i], blk, bn, line_no)
+            if any(f.get("plan") == "sink_left" for f in spec["blocks"][i]) and _no_sink(blk):
+                _hide_sink(page, idx, i)
             if spec.get("app_made"):
                 _place_photo(page, idx, spec["blocks"][i], blk, f"L{i}.photo")
             for f in spec["blocks"][i]:   # company forms with a photo box per option group

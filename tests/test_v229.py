@@ -117,3 +117,19 @@ def test_blank_cabinet_order_form_and_customer_forms():
     from orderapp import cabinet_layout as C
     t = _text(C.blank_pdf(order=True))
     assert "Cabinet Order Form" in t and "Hardware" in t and "Countertop" not in t
+
+
+def test_countertop_without_sink_drops_the_sink_drawing(app):
+    import pymupdf
+    from orderapp.pdf_fill import fill_form
+    with app.app_context():
+        none, _ = fill_form("countertop", {"header": {"name": "Sample (made up)"},
+                                           "blocks": [{"qty": "1", "sink": "None", "length": "60"}]})
+        bowl, _ = fill_form("countertop", {"header": {"name": "Sample (made up)"},
+                                           "blocks": [{"qty": "1", "sink": "Single Bowl", "length": "60"}]})
+        blank, _ = fill_form("countertop", {"header": {"name": "Sample (made up)"}, "blocks": []})
+
+    def names(pdf):
+        return {w.field_name for w in pymupdf.open(stream=pdf, filetype="pdf")[0].widgets()}
+    assert "L0.sink_center" not in names(none) and "L0.sink_center_r" not in names(none)
+    assert "L0.sink_center" in names(bowl) and "L0.sink_center" in names(blank)   # blank paper form keeps it
