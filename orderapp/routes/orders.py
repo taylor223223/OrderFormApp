@@ -27,11 +27,12 @@ def customer_header(c):
     if not c:
         return {}
     h = {k: (c[k] or "") for k in ("name", "acct", "address", "city", "state", "zip", "mgmt", "phone")}
-    # who to talk to: the property's main contact (Maint. Super first), else the property's own email
-    from ..people import people_at
-    p = next(iter(people_at(c["id"])), None)
-    h.update(contact=(p["name"] if p else "") or "", contact_phone=(p["phone"] if p else "") or "",
-             contact_email=((p["email"] if p else "") or c["email"] or ""))
+    # who to talk to: the Maint. Super, else the Property Manager (people.order_contact); the property's own
+    # phone / email fill in what that person doesn't have
+    from ..people import order_contact
+    p = order_contact(c["id"]) or {}
+    h.update(contact=(p.get("name") or "").strip(), contact_phone=(p.get("phone") or c["phone"] or "").strip(),
+             contact_email=(p.get("email") or c["email"] or "").strip())
     return h
 
 
@@ -127,11 +128,21 @@ def editor():
         flash("This order has no order form (it is a tracking-only entry).", "info")
         return redirect(url_for("orders.view", oid=oid)) if oid else redirect(url_for("orders.new"))
     c = q("SELECT * FROM customers WHERE id=?", (cid,), one=True) if cid else None
+    h = data.setdefault("header", {})
     if not oid:
-        h = data.setdefault("header", {})
-        for k, v in customer_header(c).items():
-            h.setdefault(k, v)
+        ch = customer_header(c)
+        for k, v in ch.items():
+            # the contact is always the property's current Maint. Super / PM (even on a copied order);
+            # other boxes only fill in when blank
+            if not str(h.get(k) or "").strip() or (k.startswith("contact") and ch.get("contact")):
+                h[k] = v
+        if copy_id:
+            h["date"] = today()
         h.setdefault("date", today())
+    elif c and not str(h.get("contact") or "").strip():
+        for k in ("contact", "contact_phone", "contact_email"):
+            h[k] = h.get(k) or customer_header(c)[k]
+    if not oid:
         data.setdefault("sales_rep", setting("sales_rep"))
         if request.args.get("unit") and c:
             _, _, rows = measurements_for_unit(c["id"], request.args["unit"], form_key=form_key)

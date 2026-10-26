@@ -23,6 +23,18 @@ def clean_role(role):
     return aliases.get(low, r)
 
 
+def order_contact(cid):
+    """Who goes on an order as the contact: the Maint. Super; with no super, the Property Manager; with
+    neither on file, the first other person saved at the property (None when nobody is saved)."""
+    people = [dict(r) for r in q("SELECT * FROM contacts WHERE customer_id=? AND coalesce(trim(name),'')<>'' "
+                                 "ORDER BY id", (cid,))] if cid else []
+    for want in ("Maint. Super", "Property Manager"):
+        hits = [p for p in people if clean_role(p.get("role")) == want]
+        if hits:   # several on file: the one with a phone number first, then the most recently added
+            return sorted(hits, key=lambda p: (not (p.get("phone") or "").strip(), -p["id"]))[0]
+    return people[0] if people else None
+
+
 def find_person(cid, name):
     """The saved contact at this property with this name (exact, case-insensitive; or a unique first-name match)."""
     name = (name or "").strip()
