@@ -8,5 +8,6 @@
 <label style="margin:0">CC</label><input name="cc" value="{{ report_cc }}" style="max-width:220px">
 <select name="mode" style="width:auto"><option value="review">Open draft to review</option>{% if provider != 'eml' %}<option value="send">Send now</option>{% endif %}</select>
 <button class="btn primary">Email report (PDF + spreadsheet)</button></form>
+<style>{{ report_css|safe }} .report .grid th{color:#fff}</style>
 <div class="card report">{{ html|safe }}</div>
 {% endblock %}

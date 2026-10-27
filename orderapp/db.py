@@ -201,12 +201,18 @@ MIGRATIONS = {
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
     "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT", "kind": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
-    "activities": {"order_id": "INTEGER", "temp": "TEXT"},
+    "activities": {"order_id": "INTEGER", "temp": "TEXT", "ordered": "TEXT", "order_what": "TEXT"},
 }
 
 # quick picks for "what am I estimating" on a route stop
 ESTIMATE_ITEMS = ["Doors", "Pre-hung", "Bi-pass", "Blinds", "Verticals", "Window screens", "Screen doors",
                   "Baseboards", "Cabinets", "Other"]
+
+# "what did they order" picks next to Visited on a route stop (one per kind of order form)
+ORDER_ITEMS = ["Verticals", "Horizontals", "Roller shades", "Doors", "Pre-hung doors", "Bi-pass doors",
+               "Closet / bi-fold doors", "Screen doors", "Window screens", "Patio door", "Shower doors",
+               "Baseboard & casing", "Door hardware", "Bath hardware", "Cabinets", "Countertops", "Mirror frames",
+               "Other"]
 
 
 def init_db(path=None):

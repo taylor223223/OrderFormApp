@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
 from .. import geo
-from ..db import ESTIMATE_ITEMS, get_db, now, q, setting, x
+from ..db import ESTIMATE_ITEMS, ORDER_ITEMS, get_db, now, q, setting, x
 from ..security import login_required
 
 bp = Blueprint("plan", __name__)
@@ -25,8 +25,10 @@ def _key():
 
 
 def stops_for(day):
-    return q("""SELECT s.*, c.name AS cname, c.phone AS cphone FROM route_stops s
-                LEFT JOIN customers c ON c.id=s.customer_id WHERE s.day=? ORDER BY s.position, s.id""", (day,))
+    return q("""SELECT s.*, c.name AS cname, c.phone AS cphone, a.ordered AS ordered, a.order_what AS order_what,
+                a.contact_name AS visit_contact FROM route_stops s
+                LEFT JOIN customers c ON c.id=s.customer_id LEFT JOIN activities a ON a.id=s.activity_id
+                WHERE s.day=? ORDER BY s.position, s.id""", (day,))
 
 
 def _stop_point(s):
@@ -227,18 +229,55 @@ def smart_insert(day, sid):
         x("UPDATE route_stops SET position=? WHERE id=?", (p_, i))
 
 
-def mark_done(stop, notes="", activity_id=None):
-    """Mark a stop visited (logs a Site visit in the CRM unless one was just logged)."""
+def mark_done(stop, notes="", activity_id=None, ordered=None, order_what=None):
+    """Mark a stop visited and record it in the CRM as ONE site visit for that property and day:
+    - the contact is filled in from the property (Maint. Super, or the PM when there's no super)
+    - if something was already logged in person there today (an order, a visit from the CRM page) that
+      entry is used instead of adding a second one
+    - ordered = "Yes"/"No" and order_what = what they ordered go on the same entry."""
     x("UPDATE route_stops SET status='Done', done_at=? WHERE id=?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), stop["id"]))
-    if activity_id:
-        x("UPDATE route_stops SET activity_id=? WHERE id=?", (activity_id, stop["id"]))
-    elif stop["customer_id"] and not stop["activity_id"]:
-        from .crm import log_activity
-        est = f"Estimating: {stop['products']}" if stop["products"] else ""
-        aid = log_activity(stop["customer_id"], "Site visit", datetime.now().strftime("%Y-%m-%d %H:%M"),
-                           location=stop["address"], subject=stop["purpose"] or "Route stop",
-                           notes="\n".join(v for v in [est, stop["notes"] or "", notes] if v))
+    aid = activity_id or stop["activity_id"]
+    cid = stop["customer_id"]
+    if not aid and cid:
+        from ..contact_log import IN_PERSON
+        same = q(f"""SELECT id FROM activities WHERE customer_id=? AND substr(occurred_at,1,10)=?
+                     AND (kind IN ({','.join('?' * len(IN_PERSON))}) OR owner='auto') ORDER BY id LIMIT 1""",
+                 (cid, stop["day"], *IN_PERSON), one=True)
+        if same:
+            aid = same["id"]
+            x("UPDATE activities SET kind='Site visit', location=coalesce(nullif(location,''), ?), "
+              "subject=coalesce(nullif(subject,''), ?) WHERE id=?",
+              (stop["address"], stop["purpose"] or "Route stop", aid))
+        else:
+            from .crm import log_activity
+            est = f"Estimating: {stop['products']}" if stop["products"] else ""
+            aid = log_activity(cid, "Site visit", f"{stop['day']} {datetime.now():%H:%M}",
+                               location=stop["address"], subject=stop["purpose"] or "Route stop",
+                               notes="\n".join(v for v in [est, stop["notes"] or "", notes] if v))
+    if aid:
         x("UPDATE route_stops SET activity_id=? WHERE id=?", (aid, stop["id"]))
+        if cid:
+            from ..people import order_contact
+            a = q("SELECT contact_name FROM activities WHERE id=?", (aid,), one=True)
+            k = order_contact(cid)
+            if k and a and not (a["contact_name"] or "").strip():
+                x("UPDATE activities SET contact_id=?, contact_name=? WHERE id=?", (k["id"], k["name"], aid))
+        set_ordered(aid, ordered, order_what)
+    return aid
+
+
+def set_ordered(aid, ordered, order_what=None):
+    """Record on the visit whether they ordered and what (None leaves it as it was)."""
+    if not aid or ordered not in ("Yes", "No"):
+        return
+    what = (order_what or "").strip() if ordered == "Yes" else ""
+    x("UPDATE activities SET ordered=?, order_what=? WHERE id=?", (ordered, what or None, aid))
+
+
+def _order_what(form):
+    picks = [v for v in form.getlist("order_items") if v in ORDER_ITEMS]
+    note = form.get("order_note", "").strip()
+    return ", ".join(picks) + (f" - {note}" if picks and note else note)
 
 
 def fmt_dur(s):
@@ -385,7 +424,8 @@ def day(day):
                            miles=round(res["total_m"] / 1609.34, 1), finish=finish, gmaps=gmaps,
                            points=points, start=res["start"], customers=customers, week_days=week_days,
                            has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"),
-                           items=ESTIMATE_ITEMS, check=route_check(day, res), pins=PINS)
+                           items=ESTIMATE_ITEMS, order_items=ORDER_ITEMS,
+                           check=route_check(day, res), pins=PINS)
 
 
 def route_check(day, res):
@@ -548,7 +588,13 @@ def stop_action(sid):
                      source=s["source"], visit_min=s["visit_min"], products=s["products"], notes=s["notes"])
             flash(f"Moved to {nd}.", "ok")
     elif act == "Done":
-        mark_done(s, request.form.get("notes", "").strip())
+        mark_done(s, request.form.get("notes", "").strip(), ordered=request.form.get("ordered") or None,
+                  order_what=_order_what(request.form))
+    elif act == "ordered":        # change "did they order / what" after the stop was marked visited
+        if s["status"] != "Done" or not s["activity_id"]:
+            mark_done(s)
+            s = q("SELECT * FROM route_stops WHERE id=?", (sid,), one=True)
+        set_ordered(s["activity_id"], request.form.get("ordered"), _order_what(request.form))
     elif act == "pin":            # hold this stop first / last / at its number when optimizing
         v = request.form.get("pin", "")
         x("UPDATE route_stops SET pin=? WHERE id=?", (v if v in PINS else None, sid))

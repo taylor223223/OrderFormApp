@@ -43,12 +43,20 @@
 <div class="row" style="margin-top:4px"><input name="purpose" value="{{ s.purpose or '' }}" placeholder="Why" style="max-width:220px"><input type="number" name="visit_min" value="{{ s.visit_min or '' }}" placeholder="{{ visit_default }} min" style="width:90px"><button class="btn sm primary">Save</button></div></form>
 <form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="row" style="margin-top:6px"><input type="hidden" name="act" value="move">
 <select name="to_day" style="width:auto">{% for wd in week_days if wd != day %}<option value="{{ wd }}">{{ wd }}</option>{% endfor %}</select><button class="btn sm">Move to day</button></form>
-</details></div>
+</details>
+{% if s.customer_id %}{% set fid = ('vf' if s.status!='Done' else 'of') ~ s.id %}{% set w = (s.order_what or '') %}{% set picked = w.split(' - ')[0].split(', ') %}{% set onote = w.split(' - ', 1)[1] if ' - ' in w else ('' if w.split(', ')[0] in order_items else w) %}
+<div class="orderpick">{% if s.status=='Done' %}<span class="small">{% if s.visit_contact %}👤 {{ s.visit_contact }} · {% endif %}</span>{% if s.ordered=='Yes' %}<span class="tag ok">🧾 Ordered{% if w %}: {{ w }}{% endif %}</span>{% elif s.ordered=='No' %}<span class="tag">No order</span>{% endif %}
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" id="{{ fid }}" style="display:inline"><input type="hidden" name="act" value="ordered"></form>{% endif %}
+<label class="small" style="margin:0 4px 0 0"><b>Ordered?</b></label><select name="ordered" form="{{ fid }}" class="ordsel" data-sid="{{ s.id }}" style="width:auto" aria-label="Did they order?"><option value="">—</option><option value="No" {{ 'selected' if s.ordered=='No' }}>No</option><option value="Yes" {{ 'selected' if s.ordered=='Yes' }}>Yes</option></select>
+<div class="ordwhat" id="ow{{ s.id }}" {{ 'hidden' if s.ordered!='Yes' }}><div class="chips">{% for it in order_items %}<label class="chip"><input type="checkbox" name="order_items" form="{{ fid }}" value="{{ it }}" {{ 'checked' if it in picked }}> {{ it }}</label>{% endfor %}</div>
+<input name="order_note" form="{{ fid }}" value="{{ onote }}" placeholder="What / how many (e.g. 12 vertical sets, PO 4471)" style="max-width:340px;margin-top:4px"></div>
+{% if s.status=='Done' %}<button class="btn sm primary" form="{{ fid }}">Save</button>{% endif %}</div>{% endif %}
+</div>
 <div class="row stopacts" style="gap:4px">
 {% for act, lbl, ttl in [('up','↑','Earlier'),('down','↓','Later')] %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="{{ act }}"><button class="btn sm" title="{{ ttl }}">{{ lbl }}</button></form>{% endfor %}
 {% if s.status!='Done' and rows|length > 1 %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" title="Pinned stops stay put when you optimize - the rest are re-ordered around them"><input type="hidden" name="act" value="pin">
 <select name="pin" class="pinsel {{ 'on' if s.pin }}" onchange="this.form.submit()" style="width:auto"><option value="">{{ '📌 Unpin' if s.pin else '📌 Pin' }}</option>{% for k, l in pins.items() %}<option value="{{ k }}" {{ 'selected' if s.pin == k }}>{{ l[2:] }}</option>{% endfor %}</select></form>{% endif %}
-{% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Done"><button class="btn sm ok" title="Visited - logs a site visit in the CRM">✓ Visited</button></form>{% endif %}
+{% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" id="vf{{ s.id }}"><input type="hidden" name="act" value="Done"><button class="btn sm ok" title="Visited - logs one site visit in the CRM with the property's contact (and the order, if they ordered)">✓ Visited</button></form>{% endif %}
 {% if s.status=='Planned' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Skipped"><button class="btn sm" title="Skip today">Skip</button></form>
 {% else %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Planned"><button class="btn sm" title="Back to planned">↺</button></form>{% endif %}
 <form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" onsubmit="return confirm('Remove this stop?')"><input type="hidden" name="act" value="delete"><button class="btn sm danger">×</button></form>
@@ -71,7 +79,12 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+<style>.orderpick{margin-top:6px;padding:5px 8px;border:1px dashed var(--line);border-radius:6px;display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.orderpick .ordwhat{flex-basis:100%}</style>
 <script>
+document.querySelectorAll('.ordsel').forEach(sel => sel.addEventListener('change', () => {
+  const w = document.getElementById('ow' + sel.dataset.sid); if (w) w.hidden = sel.value !== 'Yes';
+}));
 (function(){
   const pts = {{ points|tojson }}, start = {{ start|tojson }}, geom = {{ geometry|tojson }};
   const el = document.getElementById('map'); if (!window.L) { el.innerHTML = '<div class="empty">Map unavailable.</div>'; return; }

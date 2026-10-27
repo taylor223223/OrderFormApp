@@ -372,11 +372,95 @@ def set_customer_status(cid):
 
 
 # ---------------------------------------------------------------- weekly report
+_NOISE = ("Added to route for", "Route stop")
+
+
+def _visit_rows(rows, orders):
+    """One line per property per day: the visit, plus any calls / texts / notes / orders that day, folded
+    together. Entries with no property keep their own line."""
+    from ..contact_log import IN_PERSON
+    from ..people import order_contact
+    by_day_cust = {}
+    for o in orders:
+        if o["customer_id"] and o["status"] != "Cancelled":
+            d = (o["created"] or "")[:10]
+            by_day_cust.setdefault((o["customer_id"], d), []).append(o)
+    groups, order = {}, []
+    for r in rows:
+        key = (r["customer_id"], r["occurred_at"][:10]) if r["customer_id"] else ("-", r["id"])
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(r)
+    out, used_orders = [], set()
+    for key in order:
+        acts = groups[key]
+        first = acts[0]
+        visited = any(a["kind"] in IN_PERSON for a in acts)
+        kinds = []
+        for a in acts:
+            k = "Visit" if a["kind"] in IN_PERSON else a["kind"]
+            if k not in kinds:
+                kinds.append(k)
+        contacts = []
+        for a in acts:
+            n = (a["contact_name"] or "").strip()
+            if n and n not in contacts:
+                contacts.append(n)
+        if not contacts and first["customer_id"] and visited:
+            k = order_contact(first["customer_id"])
+            if k:
+                contacts.append(k["name"])
+        notes = []
+        for a in sorted(acts, key=lambda a: a["kind"] not in IN_PERSON):
+            bits = []
+            for v in (a["subject"], a["topics"], a["notes"], a["outcome"]):
+                v = (v or "").strip()
+                if v and not v.startswith(_NOISE) and v != "Order" and not v.startswith("Order #") and v not in bits:
+                    bits.append(v.replace("\n", "; "))
+            if bits:
+                txt = " - ".join(bits)
+                if visited and a["kind"] not in IN_PERSON:
+                    txt = f"{a['kind']}: {txt}"
+                if txt not in notes:
+                    notes.append(txt)
+        ordered = ""
+        what = []
+        for a in acts:
+            if (a["ordered"] or "") == "Yes":
+                ordered = "Yes"
+                if a["order_what"]:
+                    what.append(a["order_what"])
+            elif (a["ordered"] or "") == "No" and not ordered:
+                ordered = "No"
+        day_orders = list(by_day_cust.get(key, [])) if key[0] != "-" else []
+        for a in acts:   # orders linked to an entry this day
+            if a["order_id"]:
+                o = next((o for o in orders if o["id"] == a["order_id"]), None)
+                if o and o not in day_orders and o["status"] != "Cancelled":
+                    day_orders.append(o)
+        for o in day_orders:
+            used_orders.add(o["id"])
+            ordered = "Yes"
+            t = (o["title"] or "Order").strip() + (f" (PO {o['po']})" if o["po"] else "")
+            if t not in what:
+                what.append(t)
+        if visited:
+            kinds.sort(key=lambda k: k != "Visit")
+        lead = next((a for a in acts if a["kind"] in IN_PERSON), first)
+        out.append({"day": first["occurred_at"][:10], "time": lead["occurred_at"][11:16], "cid": first["customer_id"],
+                    "cname": first["cname"] or "", "city": first["city"] or "", "mgmt": first["mgmt"] or "",
+                    "where": next((a["location"] for a in acts if a["location"]), "") or "",
+                    "kinds": kinds, "visited": visited, "contacts": contacts, "ordered": ordered,
+                    "what": "; ".join(what), "notes": notes, "n": len(acts)})
+    return out, used_orders
+
+
 def report_data(mon):
     sun = mon + timedelta(days=6)
     rows = q("""SELECT a.*, c.name AS cname, c.city, c.mgmt FROM activities a
                 LEFT JOIN customers c ON c.id=a.customer_id
-                WHERE substr(a.occurred_at,1,10) BETWEEN ? AND ? ORDER BY a.occurred_at""",
+                WHERE substr(a.occurred_at,1,10) BETWEEN ? AND ? ORDER BY a.occurred_at, a.id""",
              (mon.isoformat(), sun.isoformat()))
     by_kind, people, props = {}, set(), set()
     for r in rows:
@@ -387,6 +471,10 @@ def report_data(mon):
             props.add(r["cname"])
     orders = q("""SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
                   WHERE substr(o.created,1,10) BETWEEN ? AND ? ORDER BY o.created""", (mon.isoformat(), sun.isoformat()))
+    visits, _ = _visit_rows(rows, orders)
+    for v in visits:
+        for n in v["contacts"]:
+            people.add((n, v["cname"]))
     deals_moved = q("""SELECT d.*, c.name AS cname FROM deals d LEFT JOIN customers c ON c.id=d.customer_id
                        WHERE substr(d.updated,1,10) BETWEEN ? AND ? ORDER BY d.updated""",
                     (mon.isoformat(), sun.isoformat()))
@@ -396,49 +484,99 @@ def report_data(mon):
     open_tasks = q("""SELECT t.*, c.name AS cname FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id
                       WHERE t.done=0 AND coalesce(t.due_date,'') <> '' AND t.due_date <= ? ORDER BY t.due_date""",
                    ((sun + timedelta(days=7)).isoformat(),))
-    return {"mon": mon, "sun": sun, "rows": rows, "by_kind": by_kind, "people": sorted(people, key=lambda p: p[0]),
-            "props": sorted(props), "orders": orders, "deals": deals_moved, "stops": stops, "tasks": open_tasks,
-            "rep": setting("sales_rep")}
+    return {"mon": mon, "sun": sun, "rows": rows, "visits": visits, "by_kind": by_kind,
+            "people": sorted(people, key=lambda p: p[0]), "props": sorted(props), "orders": orders,
+            "deals": deals_moved, "stops": stops, "tasks": open_tasks, "rep": setting("sales_rep"),
+            "n_visits": sum(1 for v in visits if v["visited"]),
+            "n_ordered": sum(1 for v in visits if v["ordered"] == "Yes"),
+            "n_remote": sum(n for k, n in by_kind.items() if k in ("Call", "Text", "Email", "Voicemail"))}
+
+
+NAVY, BLUE, GREEN, LINE, SOFT = "#14213d", "#1f4fa3", "#2e7d32", "#d5dbe6", "#f3f6fb"
 
 
 def report_html(dd):
     from markupsafe import escape as e
-    out = [f"<h1>Weekly Activity Report</h1><p><b>{e(dd['rep'])}</b> &middot; "
-           f"{dd['mon']:%a %m/%d/%Y} - {dd['sun']:%a %m/%d/%Y}</p>"]
-    summ = ", ".join(f"{k}: {v}" for k, v in sorted(dd["by_kind"].items(), key=lambda kv: -kv[1])) or "none"
-    out.append(f"<h2>Summary</h2><p>{len(dd['rows'])} interactions ({e(summ)}) with {len(dd['people'])} people "
-               f"at {len(dd['props'])} properties. {len(dd['stops'])} route stops completed. "
-               f"{len(dd['orders'])} orders created. {len(dd['deals'])} deals updated.</p>")
-    out.append("<h2>Interactions</h2><table><tr><th>When</th><th>Type</th><th>Property</th><th>Contact</th>"
-               "<th>Topic / notes</th></tr>")
-    for r in dd["rows"]:
-        note = " - ".join(x for x in [r["subject"] or "", r["topics"] or "", r["notes"] or "", r["outcome"] or ""] if x)
-        out.append(f"<tr><td>{e(r['occurred_at'][5:16])}</td><td>{e(r['kind'])}</td><td>{e(r['cname'] or '')}</td>"
-                   f"<td>{e(r['contact_name'] or '')}</td><td>{e(note)}</td></tr>")
+    out = [f"""<table class="band"><tr><td class="bandl"><div class="t">Weekly Activity Report</div>
+           <div class="s">{e(dd['rep'] or '')}</div></td>
+           <td class="bandr">{dd['mon']:%b %d} &ndash; {dd['sun']:%b %d, %Y}</td></tr></table>"""]
+    tiles = [(dd["n_visits"], "Site visits"), (len(dd["props"]), "Properties"), (dd["n_remote"], "Calls / texts / emails"),
+             (len(dd["orders"]), "Orders"), (len(dd["deals"]), "Deals updated")]
+    out.append('<table class="tiles"><tr>' + "".join(
+        f'<td class="tile" width="20%"><div class="num">{n}</div><div class="lbl">{lbl}</div></td>' for n, lbl in tiles)
+        + "</tr></table>")
+    out.append('<h2>Visits &amp; contacts <span class="hint">one line per property per day</span></h2>')
+    out.append('<table class="grid"><tr><th class="c-day">Day</th><th>Property</th><th>Contact</th>'
+               '<th class="c-ord">Ordered</th><th>Notes</th></tr>')
+    last_day = None
+    for i, v in enumerate(dd["visits"]):
+        try:
+            dname = datetime.strptime(v["day"], "%Y-%m-%d").strftime("%a %m/%d")
+        except ValueError:
+            dname = v["day"]
+        show_day = dname if v["day"] != last_day else ""
+        last_day = v["day"]
+        how = " + ".join(v["kinds"])
+        prop = (f"<b>{e(v['cname'])}</b>" if v["cname"] else "<i>No property</i>") + \
+               (f'<div class="sub">{e(v["city"])}</div>' if v["city"] else "") + f'<div class="kind">{e(how)}</div>'
+        if v["ordered"] == "Yes":
+            ordc = f'<span class="yes">YES</span>' + (f'<div class="sub">{e(v["what"])}</div>' if v["what"] else "")
+        elif v["ordered"] == "No":
+            ordc = '<span class="no">No</span>'
+        else:
+            ordc = '<span class="dash">&ndash;</span>'
+        notes = "<br/>".join(e(n) for n in v["notes"])
+        cls = "alt" if i % 2 else ""
+        out.append(f'<tr class="{cls}"><td class="c-day">{show_day}<div class="sub">{e(v["time"])}</div></td>'
+                   f'<td>{prop}</td><td>{"<br/>".join(e(c) for c in v["contacts"])}</td><td class="c-ord">{ordc}</td>'
+                   f'<td class="notes">{notes}</td></tr>')
+    if not dd["visits"]:
+        out.append('<tr><td colspan="5" class="dash">Nothing logged this week.</td></tr>')
     out.append("</table>")
     if dd["orders"]:
-        out.append("<h2>Orders</h2><ul>" + "".join(
-            f"<li>{e(o['cname'] or '')} - {e(o['title'] or '')} {('PO ' + e(o['po'])) if o['po'] else ''} ({e(o['status'])})</li>"
-            for o in dd["orders"]) + "</ul>")
+        out.append('<h2>Orders</h2><table class="grid"><tr><th>Created</th><th>Property</th><th>Order</th>'
+                   '<th>PO</th><th>Status</th></tr>' + "".join(
+                       f'<tr class="{"alt" if i % 2 else ""}"><td>{e((o["created"] or "")[5:10].replace("-", "/"))}</td>'
+                       f'<td>{e(o["cname"] or "")}</td><td>{e(o["title"] or "")}</td><td>{e(o["po"] or "")}</td>'
+                       f'<td>{e(o["status"] or "")}</td></tr>' for i, o in enumerate(dd["orders"])) + "</table>")
     if dd["deals"]:
-        out.append("<h2>Pipeline</h2><ul>" + "".join(
-            f"<li>{e(d['cname'] or '')} - {e(d['name'])}: {e(d['stage'])}"
-            f"{(' - $' + format(d['value'], ',.0f')) if d['value'] else ''}</li>" for d in dd["deals"]) + "</ul>")
+        out.append('<h2>Pipeline</h2><table class="grid"><tr><th>Property</th><th>Deal</th><th>Stage</th><th>Value</th></tr>'
+                   + "".join(f'<tr class="{"alt" if i % 2 else ""}"><td>{e(d["cname"] or "")}</td><td>{e(d["name"])}</td>'
+                             f'<td>{e(d["stage"])}</td><td>{("$" + format(d["value"], ",.0f")) if d["value"] else ""}</td></tr>'
+                             for i, d in enumerate(dd["deals"])) + "</table>")
     if dd["tasks"]:
-        out.append("<h2>Upcoming follow-ups</h2><ul>" + "".join(
-            f"<li>{e(t['due_date'])} - {e(t['cname'] or '')}: {e(t['title'])}</li>" for t in dd["tasks"]) + "</ul>")
+        out.append('<h2>Upcoming follow-ups</h2><table class="grid"><tr><th>Due</th><th>Property</th><th>Follow-up</th></tr>'
+                   + "".join(f'<tr class="{"alt" if i % 2 else ""}"><td>{e(t["due_date"])}</td><td>{e(t["cname"] or "")}</td>'
+                             f'<td>{e(t["title"])}</td></tr>' for i, t in enumerate(dd["tasks"])) + "</table>")
     return "\n".join(out)
+
+
+REPORT_CSS = f"""body{{font-family:sans-serif;font-size:8.5pt;color:#222}}
+.band{{width:100%;border-collapse:collapse;margin-bottom:8pt}}
+.band td{{background-color:{NAVY};color:#fff;padding:9pt 10pt;border:none}}
+.band .t{{font-size:16pt;font-weight:bold}} .band .s{{font-size:10pt;color:#c9d6f0}}
+.bandr{{text-align:right;font-size:11pt;font-weight:bold;vertical-align:middle}}
+.tiles{{width:100%;border-collapse:separate;border-spacing:4pt 0;margin-bottom:6pt}}
+.tile{{width:20%;background-color:{SOFT};border:0.6pt solid {LINE};text-align:center;padding:5pt 2pt}}
+.num{{font-size:17pt;font-weight:bold;color:{BLUE}}} .lbl{{font-size:7pt;color:#556;text-transform:uppercase}}
+h2{{font-size:11pt;color:{NAVY};margin:10pt 0 4pt;border-bottom:1.2pt solid {BLUE};padding-bottom:2pt}}
+.hint{{font-size:7.5pt;color:#889;font-weight:normal}}
+.grid{{border-collapse:collapse;width:100%}}
+.grid th{{background-color:{BLUE};color:#fff;text-align:left;padding:3pt 4pt;font-size:8pt}}
+.grid td{{border-bottom:0.5pt solid {LINE};padding:3pt 4pt;text-align:left;vertical-align:top}}
+.grid tr.alt td{{background-color:{SOFT}}}
+.c-day{{width:52pt;font-weight:bold;color:{NAVY}}} .c-ord{{width:90pt}}
+.sub{{font-size:7.5pt;color:#667;font-weight:normal}} .kind{{font-size:7pt;color:{BLUE}}}
+.yes{{color:{GREEN};font-weight:bold}} .no{{color:#888}} .dash{{color:#aab}}
+.notes{{font-size:8pt}}"""
 
 
 def report_pdf(dd, path):
     import pymupdf as fitz
-    css = """body{font-family:sans-serif;font-size:9pt;color:#222} h1{font-size:16pt;color:#14213d;margin:0}
-             h2{font-size:11pt;color:#1f4fa3;margin:10pt 0 4pt} table{border-collapse:collapse;width:100%}
-             th,td{border:0.5pt solid #ccd;padding:2pt 3pt;text-align:left;vertical-align:top} th{background:#eef2f8}"""
-    story = fitz.Story(html=report_html(dd), user_css=css)
+    story = fitz.Story(html=report_html(dd), user_css=REPORT_CSS)
     writer = fitz.DocumentWriter(path)
     mediabox = fitz.paper_rect("letter")
-    where = mediabox + (36, 36, -36, -36)
+    where = mediabox + (30, 30, -30, -36)
     more, pages = True, 0
     while more and pages < 200:      # safety cap
         pages += 1
@@ -447,18 +585,28 @@ def report_pdf(dd, path):
         story.draw(dev)
         writer.end_page()
     writer.close()
+    # page footer
+    doc = fitz.open(path)
+    for i, pg in enumerate(doc):
+        pg.insert_text((30, pg.rect.height - 16), f"{dd['rep'] or ''} - week of {dd['mon']:%m/%d/%Y}", fontsize=7,
+                       color=(0.45, 0.48, 0.55))
+        pg.insert_text((pg.rect.width - 78, pg.rect.height - 16), f"Page {i + 1} of {len(doc)}", fontsize=7,
+                       color=(0.45, 0.48, 0.55))
+    doc.save(path + ".tmp")
+    doc.close()
+    os.replace(path + ".tmp", path)
     return path
 
 
 def report_csv(dd):
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Date/time", "Type", "Property", "City", "Mgmt Co", "Contact", "Where", "Subject", "Topics", "Notes",
-                "Outcome"])
-    for r in dd["rows"]:
-        w.writerow([r["occurred_at"], r["kind"], r["cname"] or "", r["city"] or "", r["mgmt"] or "",
-                    r["contact_name"] or "", r["location"] or "", r["subject"] or "", r["topics"] or "",
-                    r["notes"] or "", r["outcome"] or ""])
+    w.writerow(["Date", "Time", "Property", "City", "Mgmt Co", "Contact", "Interactions", "Visited", "Ordered",
+                "What was ordered", "Where", "Notes"])
+    for v in dd["visits"]:
+        w.writerow([v["day"], v["time"], v["cname"], v["city"], v["mgmt"], "; ".join(v["contacts"]),
+                    " + ".join(v["kinds"]), "Yes" if v["visited"] else "No", v["ordered"], v["what"], v["where"],
+                    " | ".join(v["notes"])])
     return out.getvalue().encode("utf-8-sig")
 
 
@@ -473,6 +621,7 @@ def report():
     mon = _report_week()
     dd = report_data(mon)
     return render_template("crm_report.html", dd=dd, html=report_html(dd), mon=mon,
+                           report_css=REPORT_CSS.replace("body{", ".report{"),
                            prev=(mon - timedelta(days=7)).isoformat(), nxt=(mon + timedelta(days=7)).isoformat(),
                            report_to=setting("report_to"), report_cc=setting("report_cc"),
                            provider=setting("email_provider"))
@@ -512,8 +661,8 @@ def report_send():
         fh.write(report_csv(dd))
     subject = f"Weekly activity report - {dd['rep']} - week of {mon:%m/%d/%Y}"
     summ = ", ".join(f"{v} {k.lower()}{'s' if v != 1 else ''}" for k, v in dd["by_kind"].items()) or "no logged activity"
-    body = (f"Hi,\n\nAttached is my activity report for {mon:%m/%d} - {dd['sun']:%m/%d}: {len(dd['rows'])} interactions "
-            f"({summ}) with {len(dd['people'])} people at {len(dd['props'])} properties, "
+    body = (f"Hi,\n\nAttached is my activity report for {mon:%m/%d} - {dd['sun']:%m/%d}: {dd['n_visits']} site visits, "
+            f"{len(dd['rows'])} interactions in all ({summ}) with {len(dd['people'])} people at {len(dd['props'])} properties, "
             f"{len(dd['orders'])} orders.\n\nThanks,\n{dd['rep']}")
     review = request.form.get("mode", setting("send_mode")) != "send"
     prov = provider(setting)
