@@ -511,7 +511,7 @@ def report_data(mon):
 
 # ---- your edits to a week's report (names, notes, orders, extra lines) - kept per week, applied on top of
 # what the CRM has, so new visits logged later still show up
-EDIT_FIELDS = ("day", "time", "cname", "contacts", "ordered", "what", "notes")
+EDIT_FIELDS = ("day", "cname", "contacts", "ordered", "what", "notes")
 
 
 def _edit_key(mon):
@@ -554,7 +554,7 @@ def apply_edits(mon, visits):
 
 def _row_from_form(f, key):
     g = lambda n: (f.get(f"{key}__{n}") or "").strip()
-    return {"day": g("day"), "time": g("time"), "cname": g("cname"),
+    return {"day": g("day"), "cname": g("cname"),
             "contacts": [c.strip() for c in g("contacts").split(",") if c.strip()],
             "ordered": g("ordered") if g("ordered") in ("Yes", "No") else "", "what": g("what"),
             "notes": [ln.strip() for ln in g("notes").splitlines() if ln.strip()]}
@@ -593,7 +593,7 @@ def report_html(dd):
             ordc = '<span class="dash">&ndash;</span>'
         notes = "<br/>".join(e(n) for n in v["notes"])
         cls = "alt" if i % 2 else ""
-        out.append(f'<tr class="{cls}"><td class="c-day">{show_day}<div class="sub">{e(v["time"])}</div></td>'
+        out.append(f'<tr class="{cls}"><td class="c-day">{show_day}</td>'
                    f'<td>{prop}</td><td>{"<br/>".join(e(c) for c in v["contacts"])}</td><td class="c-ord">{ordc}</td>'
                    f'<td class="notes">{notes}</td></tr>')
     if not dd["visits"]:
@@ -605,10 +605,6 @@ def report_html(dd):
                        f'<tr class="{"alt" if i % 2 else ""}"><td>{e((o["created"] or "")[5:10].replace("-", "/"))}</td>'
                        f'<td>{e(o["cname"] or "")}</td><td>{e(o["title"] or "")}</td><td>{e(o["po"] or "")}</td>'
                        f'<td>{e(o["status"] or "")}</td></tr>' for i, o in enumerate(dd["orders"])) + "</table>")
-    if dd["tasks"]:
-        out.append('<h2>Upcoming follow-ups</h2><table class="grid"><tr><th>Due</th><th>Property</th><th>Follow-up</th></tr>'
-                   + "".join(f'<tr class="{"alt" if i % 2 else ""}"><td>{e(t["due_date"])}</td><td>{e(t["cname"] or "")}</td>'
-                             f'<td>{e(t["title"])}</td></tr>' for i, t in enumerate(dd["tasks"])) + "</table>")
     return "\n".join(out)
 
 
@@ -632,29 +628,165 @@ h2{{font-size:11pt;color:{NAVY};margin:10pt 0 4pt;border-bottom:1.2pt solid {BLU
 .notes{{font-size:8pt}}"""
 
 
-def report_pdf(dd, path):
+def _rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def _wrap(text, width, font="helv", size=8.5):
+    """Lines of `text` that fit `width` points (built-in PDF fonts, so it measures the same on every PC)."""
     import pymupdf as fitz
-    story = fitz.Story(html=report_html(dd), user_css=REPORT_CSS)
-    buf = io.BytesIO()
-    writer = fitz.DocumentWriter(buf)
-    mediabox = fitz.paper_rect("letter")
-    where = mediabox + (30, 30, -30, -36)
-    more, pages = True, 0
-    while more and pages < 200:      # safety cap
-        pages += 1
-        dev = writer.begin_page(mediabox)
-        more, _ = story.place(where)
-        story.draw(dev)
-        writer.end_page()
-    writer.close()
-    # page footer (added in memory, then written once - Windows won't let us swap a file that's open)
-    doc = fitz.open(stream=buf.getvalue(), filetype="pdf")
-    for i, pg in enumerate(doc):
-        pg.insert_text((30, pg.rect.height - 16), f"{dd['rep'] or ''} - week of {dd['mon']:%m/%d/%Y}", fontsize=7,
-                       color=(0.45, 0.48, 0.55))
-        pg.insert_text((pg.rect.width - 78, pg.rect.height - 16), f"Page {i + 1} of {len(doc)}", fontsize=7,
-                       color=(0.45, 0.48, 0.55))
-    data = doc.tobytes()
+    out = []
+    for para in (text or "").split("\n"):
+        line = ""
+        for w in para.split(" "):
+            t = (line + " " + w) if line else w
+            if fitz.get_text_length(t, fontname=font, fontsize=size) <= width:
+                line = t
+                continue
+            if line:
+                out.append(line)
+            while fitz.get_text_length(w, fontname=font, fontsize=size) > width:   # one very long word
+                k = len(w)
+                while k > 1 and fitz.get_text_length(w[:k], fontname=font, fontsize=size) > width:
+                    k -= 1
+                out.append(w[:k])
+                w = w[k:]
+            line = w
+        out.append(line)
+    return out
+
+
+def _pdf_safe(t):
+    return (t or "").replace("–", "-").replace("—", "-").replace("’", "'").replace("‘", "'") \
+        .replace("“", '"').replace("”", '"').replace("•", "-")
+
+
+def report_pdf(dd, path):
+    """The weekly report, drawn line by line (every row's text and lines are placed together, so they always
+    line up, on any page)."""
+    import pymupdf as fitz
+    doc = fitz.open()
+    W, H = fitz.paper_rect("letter").br
+    L, R, TOP, BOT = 32, W - 32, 34, H - 40
+    navy, blue, green, line, soft, grey = (_rgb(NAVY), _rgb(BLUE), _rgb(GREEN), _rgb(LINE), _rgb(SOFT),
+                                           (0.4, 0.42, 0.47))
+    FS, LH, PAD = 8.5, 10.6, 4
+    st = {"page": None, "y": 0}
+
+    def new_page():
+        st["page"] = doc.new_page(width=W, height=H)
+        st["y"] = TOP
+
+    def text(x, y, t, size=FS, font="helv", color=(0.13, 0.13, 0.13)):
+        st["page"].insert_text((x, y), _pdf_safe(t), fontsize=size, fontname=font, color=color)
+
+    def table(title, cols, rows, hint=""):
+        """cols: [(header, width fraction)]; rows: [[(text, font, color), ...]]"""
+        widths = [(R - L) * f for _, f in cols]
+        xs = [L + sum(widths[:i]) for i in range(len(cols))]
+
+        def head():
+            pg = st["page"]
+            pg.draw_rect(fitz.Rect(L, st["y"], R, st["y"] + 15), color=None, fill=blue)
+            for (h, _), x in zip(cols, xs):
+                text(x + PAD, st["y"] + 10.5, h, 8, "hebo", (1, 1, 1))
+            st["y"] += 15
+
+        if st["y"] + 60 > BOT:
+            new_page()
+        text(L, st["y"] + 12, title, 11.5, "hebo", navy)
+        if hint:
+            text(L + fitz.get_text_length(title, fontname="hebo", fontsize=11.5) + 6, st["y"] + 12, hint, 7.5,
+                 "helv", grey)
+        st["y"] += 16
+        st["page"].draw_line((L, st["y"]), (R, st["y"]), color=blue, width=1.2)
+        st["y"] += 3
+        head()
+        for i, row in enumerate(rows):
+            full = row[0][3] if isinstance(row[0], tuple) and len(row[0]) == 4 else None   # day, for a new page
+            if full is not None:
+                row = [row[0][:3]] + list(row[1:])
+            cells = []      # each cell: [(line, font, size, color)]
+            for cell, w in zip(row, widths):
+                segs = cell if isinstance(cell, list) else [cell]
+                lines = []
+                for val, font, color in segs:
+                    size = 7.5 if font == "sub" else FS
+                    fnt = "helv" if font == "sub" else font
+                    for part in val if isinstance(val, list) else [val]:
+                        lines += [(ln, fnt, size, color) for ln in _wrap(part, w - 2 * PAD, fnt, size)]
+                cells.append(lines)
+            hgt = max(len(c) for c in cells) * LH + 2 * PAD
+            if st["y"] + hgt > BOT:
+                new_page()
+                head()
+                if full:
+                    cells[0] = [(ln, "hebo", FS, row[0][2]) for ln in _wrap(full, widths[0] - 2 * PAD, "hebo")]
+            pg = st["page"]
+            if i % 2:
+                pg.draw_rect(fitz.Rect(L, st["y"], R, st["y"] + hgt), color=None, fill=soft)
+            for lines, x in zip(cells, xs):
+                for j, (ln, fnt, size, color) in enumerate(lines):
+                    text(x + PAD, st["y"] + PAD + 8 + j * LH, ln, size, fnt, color)
+            st["y"] += hgt
+            pg.draw_line((L, st["y"]), (R, st["y"]), color=line, width=0.5)
+        if not rows:
+            text(L + PAD, st["y"] + 12, "Nothing logged this week.", FS, "helv", grey)
+            st["y"] += 16
+        st["y"] += 12
+
+    new_page()
+    pg = st["page"]
+    # header band
+    pg.draw_rect(fitz.Rect(L, TOP, R, TOP + 46), color=None, fill=navy)
+    text(L + 12, TOP + 22, "Weekly Activity Report", 17, "hebo", (1, 1, 1))
+    text(L + 12, TOP + 37, dd["rep"] or "", 10, "helv", (0.79, 0.84, 0.94))
+    rng = f"{dd['mon']:%b %d} - {dd['sun']:%b %d, %Y}"
+    text(R - 12 - fitz.get_text_length(rng, fontname="hebo", fontsize=11), TOP + 28, rng, 11, "hebo", (1, 1, 1))
+    st["y"] = TOP + 56
+    # summary tiles
+    tiles = [(dd["n_visits"], "SITE VISITS"), (dd["n_props"], "PROPERTIES"), (dd["n_remote"], "CALLS / TEXTS / EMAILS"),
+             (len(dd["orders"]), "ORDERS")]
+    gap = 6
+    tw = (R - L - gap * (len(tiles) - 1)) / len(tiles)
+    for i, (n, lbl) in enumerate(tiles):
+        x = L + i * (tw + gap)
+        pg.draw_rect(fitz.Rect(x, st["y"], x + tw, st["y"] + 40), color=line, fill=soft, width=0.6)
+        ns = str(n)
+        text(x + (tw - fitz.get_text_length(ns, fontname="hebo", fontsize=17)) / 2, st["y"] + 21, ns, 17, "hebo", blue)
+        text(x + (tw - fitz.get_text_length(lbl, fontname="helv", fontsize=6.8)) / 2, st["y"] + 33, lbl, 6.8, "helv", grey)
+    st["y"] += 52
+    # visits
+    rows, last = [], None
+    for v in dd["visits"]:
+        try:
+            dname = datetime.strptime(v["day"], "%Y-%m-%d").strftime("%a %m/%d")
+        except ValueError:
+            dname = v["day"] or ""
+        show = dname if v["day"] != last else ""
+        last = v["day"]
+        dark = (0.13, 0.13, 0.13)
+        if v["ordered"] == "Yes":
+            ordc = [("YES", "hebo", green)] + ([(v["what"], "sub", grey)] if v["what"] else [])
+        else:
+            ordc = ("No" if v["ordered"] == "No" else "-", "helv", grey)
+        rows.append([(show, "hebo", navy, dname), (v["cname"] or "(no property)", "hebo", dark),
+                     (", ".join(v["contacts"]), "helv", dark), ordc, (v["notes"] or [""], "helv", dark)])
+    table("Visits & contacts", [("Day", .10), ("Property", .22), ("Contact", .16), ("Ordered", .17), ("Notes", .35)],
+          rows, "one line per property per day")
+    if dd["orders"]:
+        table("Orders", [("Created", .10), ("Property", .30), ("Order", .32), ("PO", .14), ("Status", .14)],
+              [[((o["created"] or "")[5:10].replace("-", "/"), "helv", (0.13, 0.13, 0.13)),
+                (o["cname"] or "", "helv", (0.13, 0.13, 0.13)), (o["title"] or "", "helv", (0.13, 0.13, 0.13)),
+                (o["po"] or "", "helv", (0.13, 0.13, 0.13)), (o["status"] or "", "helv", (0.13, 0.13, 0.13))]
+               for o in dd["orders"]])
+    n = len(doc)
+    for i, p in enumerate(doc):
+        p.insert_text((L, H - 18), _pdf_safe(f"{dd['rep'] or ''} - week of {dd['mon']:%m/%d/%Y}"), fontsize=7,
+                      color=(0.45, 0.48, 0.55))
+        p.insert_text((R - 46, H - 18), f"Page {i + 1} of {n}", fontsize=7, color=(0.45, 0.48, 0.55))
+    data = doc.tobytes(garbage=3, deflate=True)
     doc.close()
     with open(path, "wb") as fh:
         fh.write(data)
@@ -664,9 +796,9 @@ def report_pdf(dd, path):
 def report_csv(dd):
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Date", "Time", "Property", "Contact", "Visited", "Ordered", "What was ordered", "Notes"])
+    w.writerow(["Date", "Property", "Contact", "Visited", "Ordered", "What was ordered", "Notes"])
     for v in dd["visits"]:
-        w.writerow([v["day"], v["time"], v["cname"], "; ".join(v["contacts"]), "Yes" if v["visited"] else "No",
+        w.writerow([v["day"], v["cname"], "; ".join(v["contacts"]), "Yes" if v["visited"] else "No",
                     v["ordered"], v["what"], " | ".join(v["notes"])])
     return out.getvalue().encode("utf-8-sig")
 

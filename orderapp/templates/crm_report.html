@@ -11,16 +11,15 @@
 <form method="post" action="{{ url_for('crm.report_edit') }}" class="card" id="repedit"><input type="hidden" name="week" value="{{ mon.isoformat() }}">
 <div class="row" style="justify-content:space-between"><h3 style="margin:0">✏️ Edit the report before you save / send it</h3>
 <span class="small muted">{% if dd.edited %}<b>Edited</b> - {% endif %}Changes only affect this report, not the CRM. New visits you log still show up.</span></div>
-<div class="tablewrap"><table class="edtab"><tr><th>Day</th><th>Time</th><th>Property</th><th>Contact(s)</th><th>Ordered</th><th>What was ordered</th><th>Notes (one per line)</th><th title="Leave this line off the report">Remove</th></tr>
+<div class="tablewrap"><table class="edtab"><tr><th>Day</th><th>Property</th><th>Contact(s)</th><th>Ordered</th><th>What was ordered</th><th>Notes (one per line)</th><th title="Leave this line off the report">Remove</th></tr>
 {% for v in dd.visits %}{% set k = v.key %}<tr>
-<td><input type="hidden" name="keys" value="{{ k }}"><input type="date" name="{{ k }}__day" value="{{ v.day }}"></td><td><input name="{{ k }}__time" value="{{ v.time }}" style="width:62px"></td>
-<td><input name="{{ k }}__cname" value="{{ v.cname }}" style="min-width:150px"></td>
+<td><input type="hidden" name="keys" value="{{ k }}"><input type="date" name="{{ k }}__day" value="{{ v.day }}"></td><td><input name="{{ k }}__cname" value="{{ v.cname }}" style="min-width:150px"></td>
 <td><input name="{{ k }}__contacts" value="{{ v.contacts|join(', ') }}" placeholder="Name, name" style="min-width:120px"></td>
 <td><select name="{{ k }}__ordered" style="width:auto"><option value="">—</option>{% for o in ['Yes', 'No'] %}<option {{ 'selected' if v.ordered == o }}>{{ o }}</option>{% endfor %}</select></td>
 <td><input name="{{ k }}__what" value="{{ v.what }}" style="min-width:140px"></td>
 <td><textarea name="{{ k }}__notes" rows="{{ [v.notes|length + 1, 2]|max }}" style="min-width:200px">{{ v.notes|join('\n') }}</textarea></td>
 <td style="text-align:center"><input type="checkbox" name="{{ k }}__del" value="1"></td></tr>{% endfor %}
-<tr id="addtpl" hidden><td><input type="date" data-n="day" value="{{ mon.isoformat() }}"></td><td><input data-n="time" style="width:62px"></td><td><input data-n="cname" placeholder="Property" style="min-width:150px"></td><td><input data-n="contacts" style="min-width:120px"></td>
+<tr id="addtpl" hidden><td><input type="date" data-n="day" value="{{ mon.isoformat() }}"></td><td><input data-n="cname" placeholder="Property" style="min-width:150px"></td><td><input data-n="contacts" style="min-width:120px"></td>
 <td><select data-n="ordered" style="width:auto"><option value="">—</option><option>Yes</option><option>No</option></select></td><td><input data-n="what" style="min-width:140px"></td><td><textarea data-n="notes" rows="1" style="min-width:200px"></textarea></td><td></td></tr>
 </table></div>
 <div class="row" style="margin-top:6px"><button type="button" class="btn sm" id="addline">+ Add a line</button><button class="btn primary">Save changes</button>

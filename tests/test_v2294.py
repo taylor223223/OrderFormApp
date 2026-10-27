@@ -105,8 +105,8 @@ def test_report_one_line_per_property_per_day(app, c):
     assert not any("Added to route" in n for n in tue["notes"])
     assert palms[1]["contacts"] == ["Sam Super"]
     rows = list(csv.reader(io.StringIO(c.get(f"/crm/report/file/csv?week={MON}").data.decode("utf-8-sig"))))
-    assert rows[0][:3] == ["Date", "Time", "Property"] and "Ordered" in rows[0]
-    assert sum(1 for r in rows[1:] if r[2].startswith("Sample Palms")) == 2
+    assert rows[0][:2] == ["Date", "Property"] and "Ordered" in rows[0]
+    assert sum(1 for r in rows[1:] if r[1].startswith("Sample Palms")) == 2
     pdf = c.get(f"/crm/report/file/pdf?week={MON}")
     assert pdf.status_code == 200 and pdf.data[:4] == b"%PDF"
     html = c.get(f"/crm/report?week={MON}").get_data(as_text=True)
@@ -167,7 +167,7 @@ def test_report_name_only_no_auto_reasons(app, c):
     html = c.get(f"/crm/report?week={MON}").get_data(as_text=True)
     assert "last contact 40 days" not in html and "last 12 mo" not in html and "Met the new PM" in html
     rows = list(csv.reader(io.StringIO(c.get(f"/crm/report/file/csv?week={MON}").data.decode("utf-8-sig"))))
-    assert rows[0] == ["Date", "Time", "Property", "Contact", "Visited", "Ordered", "What was ordered", "Notes"]
+    assert rows[0] == ["Date", "Property", "Contact", "Visited", "Ordered", "What was ordered", "Notes"]
 
 
 def test_edit_report_before_saving(app, c):
@@ -194,8 +194,9 @@ def test_edit_report_before_saving(app, c):
     assert dk not in by and any(v["cname"] == "Added Place (made up)" for v in dd["visits"])
     pdf = c.get(f"/crm/report/file/pdf?week={MON}")
     import pymupdf
-    t = pymupdf.open(stream=pdf.data, filetype="pdf")[0].get_text()
+    t = pymupdf.open(stream=pdf.data, filetype="pdf")[0].get_text().replace("\n", " ")
     assert "Pat Manager" in t and "Added Place (made up)" in t and "Measured 12 units" in t
+    assert "Upcoming follow-ups" not in t and "09:" not in t
     # unchanged lines aren't stored as edits (so later CRM changes still flow in)
     with app.app_context():
         from orderapp.routes.crm import load_edits
