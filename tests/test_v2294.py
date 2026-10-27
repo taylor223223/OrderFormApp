@@ -204,3 +204,17 @@ def test_edit_report_before_saving(app, c):
     _post(c, "/crm/report/edit", {"week": MON, "reset": "1"})
     with app.app_context():
         assert not report_data(date.fromisoformat(MON))["edited"]
+
+
+def test_horizontal_blind_width_before_height(app):
+    import pymupdf
+    from orderapp.catalog import FORMS
+    from orderapp.pdf_fill import fill_form
+    keys = [f["key"] for f in FORMS["horizontal_blind"]["blocks"][0]]
+    assert keys.index("width") < keys.index("height")
+    with app.app_context():
+        pdf, _ = fill_form("horizontal_blind", {"header": {"name": "Sample Palms (made up)"},
+                                                "blocks": [{"qty": "1", "width": "35-1/2", "height": "47-3/4"}]})
+    pg = pymupdf.open(stream=pdf, filetype="pdf")[0]
+    x = {w[4]: w[0] for w in pg.get_text("words") if w[4] in ("35-1/2", "47-3/4", "Width", "Height")}
+    assert x["35-1/2"] < x["47-3/4"] and x["Width"] < x["Height"]      # width box + label on the left

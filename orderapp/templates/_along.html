@@ -6,6 +6,7 @@
   <div class="row small" style="gap:4px;flex-basis:100%;align-items:center" title="Pick the stops to look around - e.g. only near your first property">
   <b>Search near:</b><input type="hidden" name="near_set" value="1">
   {% for sid, n, name in res.stops %}<label class="chip" style="cursor:pointer"><input type="checkbox" name="near" value="{{ sid }}" {{ 'checked' if not res.only or sid in res.only }}> {{ n }}. {{ name }}</label>{% endfor %}
+  {% if res.stops|length > 1 %}<button type="button" class="btn sm nearall" data-all="{{ '0' if not res.only else '1' }}">{{ 'Just the first' if not res.only else 'All stops' }}</button>{% endif %}
   {% if res.only %}<span class="muted">· {{ res.only|length }} of {{ res.stops|length }} stops</span>{% endif %}</div>
 {% endif %}
 {% if not res.no_points %}

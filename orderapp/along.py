@@ -190,7 +190,10 @@ def suggest(day, n=None, skip=(), wide=False, sort="best", page=1, radius=None, 
     n = n or int(setting("along_count") or 10)
     mode = mode if mode in MODES else "route"
     stops = day_stops(day)
-    only = {i for i in (only or []) if i in {st[0] for st in stops}} or None     # None = every stop
+    # which stops to search near: the ones you ticked; nothing ticked yet = just the first stop
+    only = {i for i in (only or []) if i in {st[0] for st in stops}} or ({stops[0][0]} if stops else None)
+    if only and len(only) == len(stops):
+        only = None                                     # every stop ticked = the whole route
     legs, tail_ok = None, True
     if mode == "stops":
         radius = float(radius) if radius else NEAR_MI

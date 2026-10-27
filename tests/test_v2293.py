@@ -50,7 +50,10 @@ def c(app):
 def test_pick_stops_to_search_near(app, c):
     with app.app_context():
         from orderapp import along
-        both = {r["c"]["name"] for r in along.suggest(DAY, mode="stops", radius=2)["rows"]}
+        first = {r["c"]["name"] for r in along.suggest(DAY, mode="stops", radius=2)["rows"]}
+        assert first == {"Near North Flats"}                      # nothing picked yet = just the first stop
+        both = {r["c"]["name"] for r in along.suggest(DAY, mode="stops", radius=2,
+                                                       only=list(app.sid.values()))["rows"]}
         assert both == {"Near North Flats", "Near South Villas"}
         north = along.suggest(DAY, mode="stops", radius=2, only=[app.sid["North Stop Apts"]])
         assert {r["c"]["name"] for r in north["rows"]} == {"Near North Flats"} and north["only"]
@@ -61,8 +64,11 @@ def test_pick_stops_to_search_near(app, c):
     assert "Near South Villas" in html and "Near North Flats" not in html and "1 of 2 stops" in html
     html = c.get(f"/routes/day/{DAY}/along?mode=stops").get_data(as_text=True)          # remembered
     assert "Near South Villas" in html and "Near North Flats" not in html
-    html = c.get(f"/routes/day/{DAY}/along?mode=stops&near_set=1").get_data(as_text=True)  # none ticked = all
-    assert "Near South Villas" in html and "Near North Flats" in html
+    html = c.get(f"/routes/day/{DAY}/along?mode=stops&near_set=1").get_data(as_text=True)  # none ticked = first
+    assert "Near North Flats" in html and "Near South Villas" not in html and "All stops" in html
+    html = c.get(f"/routes/day/{DAY}/along?mode=stops&near_set=1&near={app.sid['North Stop Apts']}"
+                 f"&near={app.sid['South Stop Apts']}").get_data(as_text=True)                   # all ticked
+    assert "Near South Villas" in html and "Near North Flats" in html and "Just the first" in html
 
 
 def test_one_routes_tab(c):

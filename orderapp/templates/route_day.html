@@ -121,6 +121,12 @@ document.querySelectorAll('.ordsel').forEach(sel => sel.addEventListener('change
       const go = (page) => { if (!ctl) return; const f = new FormData(ctl); if (page) f.set('page', page); load(ctl.dataset.url + '?' + new URLSearchParams(f)); };
       if (ctl) ctl.querySelectorAll('select').forEach(s => s.addEventListener('change', () => go(1)));
       if (ctl) ctl.querySelectorAll('input[name=near]').forEach(cb => cb.addEventListener('change', () => go(1)));
+      const allb = ctl && ctl.querySelector('.nearall');
+      if (allb) allb.addEventListener('click', () => {
+        const all = allb.dataset.all === '1';
+        ctl.querySelectorAll('input[name=near]').forEach((cb, i) => { cb.checked = all || i === 0; });
+        go(1);
+      });
       if (ctl) ctl.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => {
         const f = new FormData(ctl); f.set('page', 1); f.delete('radius'); f.set('switched', 1);
         load(ctl.dataset.url + '?' + new URLSearchParams(f));

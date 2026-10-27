@@ -430,8 +430,8 @@ def _horiz_block(i):
         _t("bedroom_no", "Bedroom #", f"{p} Bedroom #"),
         _t("room_other", "Location - Other", f"{p} Location Other (describe)"),
         _c("color", "Color", [("Alabaster", f"{p} Color Alabaster"), ("White", f"{p} Color White")]),
-        _t("height", "Actual Window Height (in)", f"{p} Window Height (in)", measure=True),
         _t("width", "Actual Window Width (in)", f"{p} Window Width (in)", measure=True),
+        _t("height", "Actual Window Height (in)", f"{p} Window Height (in)", measure=True),
         {"key": "line_comments", "label": "Comments", "kind": "lines", "pdf": [f"{p} Comments"], "chars": [95]},
     ]
 
