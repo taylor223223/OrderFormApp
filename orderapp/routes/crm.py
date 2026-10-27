@@ -2,6 +2,7 @@
 import csv
 import io
 import os
+import re
 from datetime import date, datetime, timedelta
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for
@@ -372,7 +373,20 @@ def set_customer_status(cid):
 
 
 # ---------------------------------------------------------------- weekly report
-_NOISE = ("Added to route for", "Route stop")
+_NOISE = ("Added to route for", "Route stop", "On the way", "Estimating:")
+# reasons the route planner / Along the way attach to a suggested stop - not for the manager's report
+_AUTO_WHY = re.compile(r"(\$[\d,]+ last 12 mo|no order in \d+ days|last contact \d+ days ago|no contact logged|"
+                       r"never contacted|\bprospect\b|^Near .+\([\d.]+ mi\))", re.I)
+
+
+def _clean_note(v):
+    """Drop auto-generated route reasons ("Near X (1.2 mi): $5,000 last 12 mo, last contact 40 days ago")."""
+    v = (v or "").strip()
+    if not v or v.startswith(_NOISE) or v == "Order" or v.startswith("Order #"):
+        return ""
+    if _AUTO_WHY.search(v):        # a whole auto-written reason line
+        return ""
+    return v
 
 
 def _visit_rows(rows, orders):
@@ -415,9 +429,9 @@ def _visit_rows(rows, orders):
         for a in sorted(acts, key=lambda a: a["kind"] not in IN_PERSON):
             bits = []
             for v in (a["subject"], a["topics"], a["notes"], a["outcome"]):
-                v = (v or "").strip()
-                if v and not v.startswith(_NOISE) and v != "Order" and not v.startswith("Order #") and v not in bits:
-                    bits.append(v.replace("\n", "; "))
+                v = "; ".join(c for c in (_clean_note(ln) for ln in (v or "").split("\n")) if c)
+                if v and v not in bits:
+                    bits.append(v)
             if bits:
                 txt = " - ".join(bits)
                 if visited and a["kind"] not in IN_PERSON:
@@ -448,7 +462,8 @@ def _visit_rows(rows, orders):
         if visited:
             kinds.sort(key=lambda k: k != "Visit")
         lead = next((a for a in acts if a["kind"] in IN_PERSON), first)
-        out.append({"day": first["occurred_at"][:10], "time": lead["occurred_at"][11:16], "cid": first["customer_id"],
+        out.append({"key": f"{key[0]}|{key[1]}" if key[0] != "-" else f"a{key[1]}",
+                    "day": first["occurred_at"][:10], "time": lead["occurred_at"][11:16], "cid": first["customer_id"],
                     "cname": first["cname"] or "", "city": first["city"] or "", "mgmt": first["mgmt"] or "",
                     "where": next((a["location"] for a in acts if a["location"]), "") or "",
                     "kinds": kinds, "visited": visited, "contacts": contacts, "ordered": ordered,
@@ -484,12 +499,65 @@ def report_data(mon):
     open_tasks = q("""SELECT t.*, c.name AS cname FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id
                       WHERE t.done=0 AND coalesce(t.due_date,'') <> '' AND t.due_date <= ? ORDER BY t.due_date""",
                    ((sun + timedelta(days=7)).isoformat(),))
-    return {"mon": mon, "sun": sun, "rows": rows, "visits": visits, "by_kind": by_kind,
+    visits, edited = apply_edits(mon, visits)
+    return {"mon": mon, "sun": sun, "rows": rows, "visits": visits, "by_kind": by_kind, "edited": edited,
             "people": sorted(people, key=lambda p: p[0]), "props": sorted(props), "orders": orders,
             "deals": deals_moved, "stops": stops, "tasks": open_tasks, "rep": setting("sales_rep"),
             "n_visits": sum(1 for v in visits if v["visited"]),
+            "n_props": len({v["cname"] for v in visits if v["cname"]}),
             "n_ordered": sum(1 for v in visits if v["ordered"] == "Yes"),
             "n_remote": sum(n for k, n in by_kind.items() if k in ("Call", "Text", "Email", "Voicemail"))}
+
+
+# ---- your edits to a week's report (names, notes, orders, extra lines) - kept per week, applied on top of
+# what the CRM has, so new visits logged later still show up
+EDIT_FIELDS = ("day", "time", "cname", "contacts", "ordered", "what", "notes")
+
+
+def _edit_key(mon):
+    return f"report_edit:{mon.isoformat()}"
+
+
+def load_edits(mon):
+    from ..db import loads
+    e = loads(setting(_edit_key(mon)) or "", {}) or {}
+    return {"rows": e.get("rows", {}), "deleted": e.get("deleted", []), "added": e.get("added", [])}
+
+
+def _blank(key):
+    return {"key": key, "day": "", "time": "", "cid": None, "cname": "", "city": "", "mgmt": "", "where": "",
+            "kinds": [], "visited": False, "contacts": [], "ordered": "", "what": "", "notes": [], "n": 0}
+
+
+def apply_edits(mon, visits):
+    e = load_edits(mon)
+    if not (e["rows"] or e["deleted"] or e["added"]):
+        return visits, False
+    out = []
+    for v in visits:
+        if v["key"] in e["deleted"]:
+            continue
+        v = dict(v, contacts=list(v["contacts"]), notes=list(v["notes"]))
+        v.update({k: val for k, val in e["rows"].get(v["key"], {}).items() if k in EDIT_FIELDS})
+        v["edited"] = v["key"] in e["rows"]
+        out.append(v)
+    for a in e["added"]:
+        v = _blank(a.get("key", "n"))
+        v.update({k: val for k, val in a.items() if k in EDIT_FIELDS})
+        v["visited"] = True
+        v["kinds"] = ["Visit"]
+        v["edited"] = True
+        out.append(v)
+    out.sort(key=lambda v: (v["day"] or "9999", v["time"] or ""))
+    return out, True
+
+
+def _row_from_form(f, key):
+    g = lambda n: (f.get(f"{key}__{n}") or "").strip()
+    return {"day": g("day"), "time": g("time"), "cname": g("cname"),
+            "contacts": [c.strip() for c in g("contacts").split(",") if c.strip()],
+            "ordered": g("ordered") if g("ordered") in ("Yes", "No") else "", "what": g("what"),
+            "notes": [ln.strip() for ln in g("notes").splitlines() if ln.strip()]}
 
 
 NAVY, BLUE, GREEN, LINE, SOFT = "#14213d", "#1f4fa3", "#2e7d32", "#d5dbe6", "#f3f6fb"
@@ -500,7 +568,7 @@ def report_html(dd):
     out = [f"""<table class="band"><tr><td class="bandl"><div class="t">Weekly Activity Report</div>
            <div class="s">{e(dd['rep'] or '')}</div></td>
            <td class="bandr">{dd['mon']:%b %d} &ndash; {dd['sun']:%b %d, %Y}</td></tr></table>"""]
-    tiles = [(dd["n_visits"], "Site visits"), (len(dd["props"]), "Properties"), (dd["n_remote"], "Calls / texts / emails"),
+    tiles = [(dd["n_visits"], "Site visits"), (dd["n_props"], "Properties"), (dd["n_remote"], "Calls / texts / emails"),
              (len(dd["orders"]), "Orders")]
     out.append('<table class="tiles"><tr>' + "".join(
         f'<td class="tile"><div class="num">{n}</div><div class="lbl">{lbl}</div></td>' for n, lbl in tiles)
@@ -516,9 +584,7 @@ def report_html(dd):
             dname = v["day"]
         show_day = dname if v["day"] != last_day else ""
         last_day = v["day"]
-        how = " + ".join(v["kinds"])
-        prop = (f"<b>{e(v['cname'])}</b>" if v["cname"] else "<i>No property</i>") + \
-               (f'<div class="sub">{e(v["city"])}</div>' if v["city"] else "") + f'<div class="kind">{e(how)}</div>'
+        prop = f"<b>{e(v['cname'])}</b>" if v["cname"] else "<i>No property</i>"
         if v["ordered"] == "Yes":
             ordc = f'<span class="yes">YES</span>' + (f'<div class="sub">{e(v["what"])}</div>' if v["what"] else "")
         elif v["ordered"] == "No":
@@ -598,12 +664,10 @@ def report_pdf(dd, path):
 def report_csv(dd):
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Date", "Time", "Property", "City", "Mgmt Co", "Contact", "Interactions", "Visited", "Ordered",
-                "What was ordered", "Where", "Notes"])
+    w.writerow(["Date", "Time", "Property", "Contact", "Visited", "Ordered", "What was ordered", "Notes"])
     for v in dd["visits"]:
-        w.writerow([v["day"], v["time"], v["cname"], v["city"], v["mgmt"], "; ".join(v["contacts"]),
-                    " + ".join(v["kinds"]), "Yes" if v["visited"] else "No", v["ordered"], v["what"], v["where"],
-                    " | ".join(v["notes"])])
+        w.writerow([v["day"], v["time"], v["cname"], "; ".join(v["contacts"]), "Yes" if v["visited"] else "No",
+                    v["ordered"], v["what"], " | ".join(v["notes"])])
     return out.getvalue().encode("utf-8-sig")
 
 
@@ -622,6 +686,49 @@ def report():
                            prev=(mon - timedelta(days=7)).isoformat(), nxt=(mon + timedelta(days=7)).isoformat(),
                            report_to=setting("report_to"), report_cc=setting("report_cc"),
                            provider=setting("email_provider"))
+
+
+@bp.route("/crm/report/edit", methods=["POST"])
+@login_required
+def report_edit():
+    import json
+    from ..db import set_setting
+    mon = _report_week()
+    f = request.form
+    if f.get("reset"):
+        set_setting(_edit_key(mon), "")
+        flash("Report reset to what's in the CRM.", "ok")
+        return redirect(url_for("crm.report", week=mon.isoformat()))
+    e = load_edits(mon)
+    # what the CRM alone would give, to keep only the lines you actually changed
+    raw = {v["key"]: v for v in _visit_rows(
+        q("""SELECT a.*, c.name AS cname, c.city, c.mgmt FROM activities a LEFT JOIN customers c ON c.id=a.customer_id
+             WHERE substr(a.occurred_at,1,10) BETWEEN ? AND ? ORDER BY a.occurred_at, a.id""",
+          (mon.isoformat(), (mon + timedelta(days=6)).isoformat())),
+        q("SELECT o.* FROM orders o WHERE substr(o.created,1,10) BETWEEN ? AND ?",
+          (mon.isoformat(), (mon + timedelta(days=6)).isoformat())))[0]}
+    rows, deleted, added = dict(e["rows"]), list(e["deleted"]), []
+    for key in f.getlist("keys"):
+        if f.get(f"{key}__del"):
+            if key in raw and key not in deleted:
+                deleted.append(key)
+            rows.pop(key, None)
+            continue
+        new = _row_from_form(f, key)
+        if key in raw:
+            base = raw[key]
+            diff = {k: v for k, v in new.items() if v != base.get(k)}
+            if diff:
+                rows[key] = diff
+            else:
+                rows.pop(key, None)
+        elif any(new[k] for k in ("cname", "contacts", "notes", "what")):
+            added.append(dict(new, key=key if key.startswith("n") else f"n{len(added)}"))
+    for i, a in enumerate(added):
+        a["key"] = f"n{i}"
+    set_setting(_edit_key(mon), json.dumps({"rows": rows, "deleted": deleted, "added": added}))
+    flash("Report changes saved. View PDF / email use them. (The CRM itself isn't changed.)", "ok")
+    return redirect(url_for("crm.report", week=mon.isoformat()))
 
 
 @bp.route("/crm/report/file/<kind>")

@@ -112,3 +112,94 @@ def test_report_one_line_per_property_per_day(app, c):
     html = c.get(f"/crm/report?week={MON}").get_data(as_text=True)
     assert "Site visits" in html and "one line per property per day" in html
     assert "<h2>Pipeline</h2>" not in html and "Deals updated" not in html     # pipeline is for the app only
+
+
+def _form_values(html, form_id):
+    """name -> value for the inputs / selects / textareas inside one form (what the browser would send)."""
+    from html.parser import HTMLParser
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.on, self.vals, self.cur, self.sel = False, {}, None, None
+
+        def handle_starttag(self, tag, at):
+            at = dict(at)
+            if tag == "form":
+                self.on = at.get("id") == form_id
+            if not self.on or not at.get("name") and tag != "option":
+                return
+            if tag == "input" and at.get("type") not in ("checkbox", "hidden"):
+                self.vals[at["name"]] = at.get("value") or ""
+            elif tag == "textarea":
+                self.cur = at["name"]
+                self.vals[self.cur] = ""
+            elif tag == "select":
+                self.sel = at["name"]
+                self.vals[self.sel] = ""
+            elif tag == "option" and self.sel and "selected" in at:
+                self.vals[self.sel] = at.get("value", "__text__")
+
+        def handle_data(self, d):
+            if self.cur:
+                self.vals[self.cur] += d
+            if self.sel and self.vals.get(self.sel) == "__text__":
+                self.vals[self.sel] = d
+
+        def handle_endtag(self, tag):
+            if tag == "textarea":
+                self.cur = None
+            elif tag == "select":
+                self.sel = None
+            elif tag == "form":
+                self.on = False
+    p = P()
+    p.feed(html)
+    return p.vals
+
+
+def test_report_name_only_no_auto_reasons(app, c):
+    with app.app_context():
+        from orderapp.db import x
+        x("""INSERT INTO activities(customer_id, kind, occurred_at, subject, notes) VALUES (?, 'Site visit', ?,
+             'Near Sample Palms (made up) (1.2 mi): $5,000 last 12 mo, last contact 40 days ago', 'Met the new PM')""",
+          (app.cid2, "2030-05-17 09:00"))
+    html = c.get(f"/crm/report?week={MON}").get_data(as_text=True)
+    assert "last contact 40 days" not in html and "last 12 mo" not in html and "Met the new PM" in html
+    rows = list(csv.reader(io.StringIO(c.get(f"/crm/report/file/csv?week={MON}").data.decode("utf-8-sig"))))
+    assert rows[0] == ["Date", "Time", "Property", "Contact", "Visited", "Ordered", "What was ordered", "Notes"]
+
+
+def test_edit_report_before_saving(app, c):
+    from datetime import date
+    html = c.get(f"/crm/report?week={MON}").get_data(as_text=True)
+    keys = re.findall(r'name="keys" value="([^"]+)"', html)
+    k = f"{app.cid}|{TUE}"
+    assert k in keys
+    form = _form_values(html, "repedit")
+    form["keys"] = keys + ["new0"]
+    form["week"] = MON
+    form[f"{k}__contacts"] = "Sam Super, Pat Manager"          # ... change a name and a note
+    form[f"{k}__notes"] = "Measured 12 units\nCall: Verticals quote - Needs 12 sets"
+    dk = f"{app.cid}|{WED}"
+    form[f"{dk}__del"] = "1"                                     # take a line off
+    form.update({"new0__day": "2030-05-18", "new0__cname": "Added Place (made up)", "new0__contacts": "Chris",
+                 "new0__notes": "Dropped off price sheet", "new0__ordered": "No"})
+    _post(c, "/crm/report/edit", form)
+    with app.app_context():
+        from orderapp.routes.crm import report_data
+        dd = report_data(date.fromisoformat(MON))
+    by = {v["key"]: v for v in dd["visits"]}
+    assert dd["edited"] and by[k]["contacts"] == ["Sam Super", "Pat Manager"] and by[k]["notes"][0] == "Measured 12 units"
+    assert dk not in by and any(v["cname"] == "Added Place (made up)" for v in dd["visits"])
+    pdf = c.get(f"/crm/report/file/pdf?week={MON}")
+    import pymupdf
+    t = pymupdf.open(stream=pdf.data, filetype="pdf")[0].get_text()
+    assert "Pat Manager" in t and "Added Place (made up)" in t and "Measured 12 units" in t
+    # unchanged lines aren't stored as edits (so later CRM changes still flow in)
+    with app.app_context():
+        from orderapp.routes.crm import load_edits
+        assert set(load_edits(date.fromisoformat(MON))["rows"]) == {k}
+    _post(c, "/crm/report/edit", {"week": MON, "reset": "1"})
+    with app.app_context():
+        assert not report_data(date.fromisoformat(MON))["edited"]
