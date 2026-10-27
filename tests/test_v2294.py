@@ -111,3 +111,4 @@ def test_report_one_line_per_property_per_day(app, c):
     assert pdf.status_code == 200 and pdf.data[:4] == b"%PDF"
     html = c.get(f"/crm/report?week={MON}").get_data(as_text=True)
     assert "Site visits" in html and "one line per property per day" in html
+    assert "<h2>Pipeline</h2>" not in html and "Deals updated" not in html     # pipeline is for the app only

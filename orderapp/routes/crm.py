@@ -501,9 +501,9 @@ def report_html(dd):
            <div class="s">{e(dd['rep'] or '')}</div></td>
            <td class="bandr">{dd['mon']:%b %d} &ndash; {dd['sun']:%b %d, %Y}</td></tr></table>"""]
     tiles = [(dd["n_visits"], "Site visits"), (len(dd["props"]), "Properties"), (dd["n_remote"], "Calls / texts / emails"),
-             (len(dd["orders"]), "Orders"), (len(dd["deals"]), "Deals updated")]
+             (len(dd["orders"]), "Orders")]
     out.append('<table class="tiles"><tr>' + "".join(
-        f'<td class="tile" width="20%"><div class="num">{n}</div><div class="lbl">{lbl}</div></td>' for n, lbl in tiles)
+        f'<td class="tile"><div class="num">{n}</div><div class="lbl">{lbl}</div></td>' for n, lbl in tiles)
         + "</tr></table>")
     out.append('<h2>Visits &amp; contacts <span class="hint">one line per property per day</span></h2>')
     out.append('<table class="grid"><tr><th class="c-day">Day</th><th>Property</th><th>Contact</th>'
@@ -539,11 +539,6 @@ def report_html(dd):
                        f'<tr class="{"alt" if i % 2 else ""}"><td>{e((o["created"] or "")[5:10].replace("-", "/"))}</td>'
                        f'<td>{e(o["cname"] or "")}</td><td>{e(o["title"] or "")}</td><td>{e(o["po"] or "")}</td>'
                        f'<td>{e(o["status"] or "")}</td></tr>' for i, o in enumerate(dd["orders"])) + "</table>")
-    if dd["deals"]:
-        out.append('<h2>Pipeline</h2><table class="grid"><tr><th>Property</th><th>Deal</th><th>Stage</th><th>Value</th></tr>'
-                   + "".join(f'<tr class="{"alt" if i % 2 else ""}"><td>{e(d["cname"] or "")}</td><td>{e(d["name"])}</td>'
-                             f'<td>{e(d["stage"])}</td><td>{("$" + format(d["value"], ",.0f")) if d["value"] else ""}</td></tr>'
-                             for i, d in enumerate(dd["deals"])) + "</table>")
     if dd["tasks"]:
         out.append('<h2>Upcoming follow-ups</h2><table class="grid"><tr><th>Due</th><th>Property</th><th>Follow-up</th></tr>'
                    + "".join(f'<tr class="{"alt" if i % 2 else ""}"><td>{e(t["due_date"])}</td><td>{e(t["cname"] or "")}</td>'
@@ -557,7 +552,7 @@ REPORT_CSS = f"""body{{font-family:sans-serif;font-size:8.5pt;color:#222}}
 .band .t{{font-size:16pt;font-weight:bold}} .band .s{{font-size:10pt;color:#c9d6f0}}
 .bandr{{text-align:right;font-size:11pt;font-weight:bold;vertical-align:middle}}
 .tiles{{width:100%;border-collapse:separate;border-spacing:4pt 0;margin-bottom:6pt}}
-.tile{{width:20%;background-color:{SOFT};border:0.6pt solid {LINE};text-align:center;padding:5pt 2pt}}
+.tile{{width:25%;background-color:{SOFT};border:0.6pt solid {LINE};text-align:center;padding:5pt 2pt}}
 .num{{font-size:17pt;font-weight:bold;color:{BLUE}}} .lbl{{font-size:7pt;color:#556;text-transform:uppercase}}
 h2{{font-size:11pt;color:{NAVY};margin:10pt 0 4pt;border-bottom:1.2pt solid {BLUE};padding-bottom:2pt}}
 .hint{{font-size:7.5pt;color:#889;font-weight:normal}}
@@ -574,7 +569,8 @@ h2{{font-size:11pt;color:{NAVY};margin:10pt 0 4pt;border-bottom:1.2pt solid {BLU
 def report_pdf(dd, path):
     import pymupdf as fitz
     story = fitz.Story(html=report_html(dd), user_css=REPORT_CSS)
-    writer = fitz.DocumentWriter(path)
+    buf = io.BytesIO()
+    writer = fitz.DocumentWriter(buf)
     mediabox = fitz.paper_rect("letter")
     where = mediabox + (30, 30, -30, -36)
     more, pages = True, 0
@@ -585,16 +581,17 @@ def report_pdf(dd, path):
         story.draw(dev)
         writer.end_page()
     writer.close()
-    # page footer
-    doc = fitz.open(path)
+    # page footer (added in memory, then written once - Windows won't let us swap a file that's open)
+    doc = fitz.open(stream=buf.getvalue(), filetype="pdf")
     for i, pg in enumerate(doc):
         pg.insert_text((30, pg.rect.height - 16), f"{dd['rep'] or ''} - week of {dd['mon']:%m/%d/%Y}", fontsize=7,
                        color=(0.45, 0.48, 0.55))
         pg.insert_text((pg.rect.width - 78, pg.rect.height - 16), f"Page {i + 1} of {len(doc)}", fontsize=7,
                        color=(0.45, 0.48, 0.55))
-    doc.save(path + ".tmp")
+    data = doc.tobytes()
     doc.close()
-    os.replace(path + ".tmp", path)
+    with open(path, "wb") as fh:
+        fh.write(data)
     return path
 
 
@@ -637,7 +634,9 @@ def report_file(kind):
         return send_file(io.BytesIO(report_csv(dd)), mimetype="text/csv", as_attachment=True, download_name=name + ".csv")
     from ..routes.orders import output_dir
     path = report_pdf(dd, os.path.join(ensure_dir(os.path.join(output_dir(), "Weekly reports")), name + ".pdf"))
-    return send_file(path, mimetype="application/pdf", download_name=name + ".pdf")
+    with open(path, "rb") as fh:       # serve a copy so the saved file isn't held open (Windows locks it)
+        data = fh.read()
+    return send_file(io.BytesIO(data), mimetype="application/pdf", download_name=name + ".pdf")
 
 
 @bp.route("/crm/report/send", methods=["POST"])
