@@ -4,6 +4,7 @@
 <div class="card" id="cabOrder">
   <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
     <div><label>Room</label><select id="co_room" style="max-width:150px"><option>Kitchen</option><option>Bath vanity</option></select></div>
+    <div><label>Kitchen shape</label><select id="co_shape" style="max-width:260px" title="Picks the walls you fill in and draws how they go together">{% for sh in C.SHAPES %}<option value="{{ sh }}">{{ sh }} - {{ C.SHAPE_HELP[sh] }}</option>{% endfor %}</select></div>
     <div><label>Unit #</label><input id="co_unit" list="dl_units" placeholder="e.g. 104" style="max-width:110px"></div>
     <div><label>Door style</label><select id="co_style" style="max-width:230px"><option value=""></option>{% for st in C.CAB_STYLES %}<option>{{ st }}</option>{% endfor %}</select></div>
     <div><label>Cabinet material</label><input id="co_material" list="dl_co_mat" placeholder="MDF, plywood, solid wood..." style="max-width:220px"></div>
@@ -18,8 +19,9 @@
     <button type="button" class="btn sm" id="co_load">Load</button><span class="small muted" id="co_msg"></span>
   </div>{% endif %}
   <div class="small muted" style="margin-top:8px">Enter each box left to right, standing facing the wall - uppers on top, lowers underneath. Leave spaces for the dishwasher, stove and fridge. Add as many boxes and walls as the kitchen needs. The drawing is what prints on the order.</div>
+  <div class="cl-svg" id="co_overview" hidden></div>
   <div id="co_walls"></div>
-  <div class="row" style="margin-top:10px"><button type="button" class="btn" id="co_addWall">+ Add a wall</button></div>
+  <div class="row" style="margin-top:10px"><button type="button" class="btn" id="co_addWall">+ Add a wall</button><span class="small muted" id="co_msg2"></span></div>
 </div>
 <style>
 #cabOrder .cl-wall{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:8px}
@@ -88,8 +90,20 @@ window.CAB_ORDER = (function(){
       <h4 style="margin:10px 0 4px">Lowers (base cabinets + appliance spaces)</h4><div class="tablewrap">${rowTable(wi, 'lowers')}</div>
       <div class="cl-svg" id="co_svg_${wi}">${svgs[wi] || ''}</div></div>`).join('');
   }
+  const SHAPE_WALLS = {{ C.WALL_NAMES|tojson }};
+  const ALL_WALL_NAMES = [].concat(...Object.values(SHAPE_WALLS));
+  function applyShape(shape){      // the walls this shape needs (named Back wall, Left wall...) - extra walls are kept
+    L.shape = shape;
+    const names = SHAPE_WALLS[shape] || ['Back wall'];
+    names.forEach((nm, i) => {
+      if (!L.walls[i]) L.walls.push({name: nm, uppers: [], lowers: [newBox('lowers', 'Base cabinet')]});
+      else if (/^Wall \d+$/.test(L.walls[i].name || '') || ALL_WALL_NAMES.includes(L.walls[i].name)) L.walls[i].name = nm;
+    });
+    const extra = L.walls.length - names.length;
+    q('#co_msg2').textContent = extra > 0 ? `${extra} more wall${extra > 1 ? 's' : ''} than a ${shape} kitchen has - remove ${extra > 1 ? 'them' : 'it'} if not needed.` : '';
+  }
   function collect(){
-    L.unit = q('#co_unit').value.trim(); L.room = q('#co_room').value;
+    L.unit = q('#co_unit').value.trim(); L.room = q('#co_room').value; L.shape = q('#co_shape').value;
     L.cab = {style: q('#co_style').value, material: q('#co_material').value.trim(), color: q('#co_color').value.trim(), hw: q('#co_hw').value,
              hw_custom: q('#co_hw').value === 'Custom' ? q('#co_hw_custom').value.trim() : ''};
     return L;
@@ -103,6 +117,7 @@ window.CAB_ORDER = (function(){
                                           body: JSON.stringify({data: L})}).then(r => r.json()).catch(() => null);
       if (!r) return;
       svgs = r.walls || [];
+      const ov = q('#co_overview'); ov.hidden = !r.overview; ov.innerHTML = r.overview || '';
       svgs.forEach((s, i) => { const el = document.getElementById('co_svg_' + i); if (el) el.innerHTML = s; });
     }, 300);
     if (typeof dirty !== 'undefined') dirty = true;
@@ -110,6 +125,7 @@ window.CAB_ORDER = (function(){
   function fillTop(){
     const c = L.cab || {};
     q('#co_unit').value = L.unit || ''; q('#co_room').value = L.room === 'Bath vanity' ? 'Bath vanity' : 'Kitchen';
+    q('#co_shape').value = L.shape || 'Straight';
     q('#co_style').value = c.style || ''; q('#co_material').value = c.material || ''; q('#co_color').value = c.color || ''; q('#co_hw').value = c.hw || '';
     q('#co_hw_custom').value = c.hw_custom || ''; q('#co_hw_custom_wrap').hidden = q('#co_hw').value !== 'Custom';
   }
@@ -121,6 +137,7 @@ window.CAB_ORDER = (function(){
   });
   root.addEventListener('change', e => {
     if (e.target.id === 'co_style') { refresh(); return; }
+    if (e.target.id === 'co_shape') { applyShape(e.target.value); draw(); refresh(); return; }
     if (e.target.id === 'co_room') {     // switch the lowers still at a standard / blank depth to this room's
       L.room = e.target.value;
       const std = Object.values(STD);
@@ -135,7 +152,10 @@ window.CAB_ORDER = (function(){
     if (!tr || !e.target.dataset.k) return;
     const list = L.walls[+tr.dataset.w][tr.dataset.row], i = +tr.dataset.i;
     if (e.target.dataset.k === 'type') {
-      const nb = newBox(tr.dataset.row, e.target.value); nb.w = list[i].w || nb.w; nb.notes = list[i].notes; list[i] = nb;
+      const nb = newBox(tr.dataset.row, e.target.value);
+      // cabinet -> cabinet keeps the width you typed; a dishwasher / stove / fridge space (or pantry, filler) takes its standard width
+      if (['cab', 'sink'].includes(kindOf(tr.dataset.row, nb)) && ['cab', 'sink'].includes(kindOf(tr.dataset.row, list[i]))) nb.w = list[i].w || nb.w;
+      nb.notes = list[i].notes; list[i] = nb;
     } else list[i][e.target.dataset.k] = e.target.value;
     draw(); refresh();
   });

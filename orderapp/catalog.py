@@ -516,7 +516,7 @@ FORMS = {
 # the app prints whichever paper version fits what was ordered.
 FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
               "roller_shade", "trim", "door_hardware", "bath_hardware", "countertop", "cabinet_prefab",
-              "sliding_patio_door", "closet_bifold", "shower_door", "mirror_frame"]
+              "door_front", "drawer_box", "sliding_patio_door", "closet_bifold", "shower_door", "mirror_frame"]
 # still open old orders; no longer offered for new ones (AIS only sells the pre-fab boxes - Taylor, 10/26)
 RETIRED_FORMS = ["cabinet", "closet_shower", "cabinet_custom"]
 
@@ -556,7 +556,9 @@ PRODUCTS = {
     "door_hardware": {"label": "Door Hardware", "forms": ["door_hardware"]},
     "bath_hardware": {"label": "Bath Hardware", "forms": ["bath_hardware"]},
     "cabinet": {"label": "Cabinet (kitchen / vanity)", "forms": ["cabinet_prefab"]},
-    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["cabinet_prefab"]},
+    "cabinet_door": {"label": "Cabinet Door / Drawer Front", "forms": ["door_front", "cabinet_prefab"]},
+    "drawer_front": {"label": "Drawer Front", "forms": ["door_front"]},
+    "drawer_box": {"label": "Drawer Box", "forms": ["drawer_box"]},
     "countertop": {"label": "Countertop", "forms": ["countertop"]},
     "wardrobe_door": {"label": "Mirrored / Wardrobe Door", "forms": ["closet_bifold"]},
     "shower_door": {"label": "Shower Door / Enclosure", "forms": ["shower_door"]},
@@ -837,6 +839,8 @@ GENERATED = {
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
             _g("width", "Window Width (in)", measure=True), _g("length", "Window Length (in)", measure=True),
             _gc("chain_side", "Chain Side", ["Left", "Right"]),
+            # bracket size: typed (no standard list from Taylor yet - add one here to make it a dropdown)
+            _g("bracket_size", "Bracket Size", placeholder='e.g. 2" or 3"'),
             # material / opacity / brand - lists come from the roller shades AIS has sold
             _g("shade_brand", "Brand", suggest=SHADE_BRANDS, placeholder="Vertilux, Mermet..."),
             _g("shade_fabric", "Material / Fabric", suggest=SHADE_FABRICS, placeholder="e.g. VX Solar Screen 3000"),
@@ -923,11 +927,17 @@ GENERATED = {
         "blocks": [[
             _g("qty", "Quantity", w=4), _g("unit", "Unit #"),
             _gc("ct_room", "Room", ["Kitchen", "Bathroom Vanity"]),
+            # kitchen shape: the drawing and the wall-length boxes follow it (kitchen_shape.py)
+            _gc("ct_shape", "Kitchen Shape", ["Straight", "Mirrored", "L-Shape", "U-Shape"]),
             *_ct_fields()[:2],
             # measurement boxes sit on a top-view drawing of the countertop (form_builder._countertop_plan):
             # Taylor measures the back wall length and the side wall length (back wall to the front edge)
             _g("length", "Back Wall Length (in)", measure=True, plan="back"),
             _g("depth", "Side Wall Length (in)", measure=True, plan="depth"),
+            _g("length2", "2nd Wall Length - left wall / facing wall (in)", measure=True,
+               pdf_label="2nd Wall Length", show_if=("ct_shape", ["Mirrored", "L-Shape", "U-Shape"])),
+            _g("length3", "3rd Wall Length - right wall (in)", measure=True, pdf_label="3rd Wall Length",
+               show_if=("ct_shape", ["U-Shape"])),
             _g("overhang", "Front Overhang (in)", measure=True, plan="overhang"),
             # backsplash per side (never the front edge) - checked on the drawing at each wall
             _gc("bs_back", "Backsplash - Back Wall", ["Yes"], plan="bs_back"),
@@ -1058,6 +1068,50 @@ GENERATED = {
             _LINE_COMMENTS]],
         "products": ["shower_door"],
     },
+    # Drawer boxes, and cabinet doors / drawer fronts: the company has no forms for these, so they're drawn in
+    # the company's Door-form style (like the Countertop form) from what drawer box / door makers ask for.
+    "drawer_box": {
+        "title": "Drawer Box Order Form", "style": "door", "section": "Drawer Box Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("db_measure", "Sizes Are", ["Box outside size", "Cabinet opening (size the box for it)"]),
+            _g("width", "Box Width - side to side (in)", measure=True, pdf_label="Width"),
+            _g("depth", "Box Depth - front to back (in)", measure=True, pdf_label="Depth"),
+            _g("height", "Box Height - side height (in)", measure=True, pdf_label="Height"),
+            _gc("db_material", "Box Material", ["Baltic Birch Plywood", "White Melamine", "Particle Board",
+                                               "Metal (steel sides)", "Other"],
+                other_option="Other", other_field="db_material_other"),
+            _g("db_material_other", "Box Material - Other", show_if=("db_material", ["Other"])),
+            _gc("db_side", "Side Thickness", ['1/2"', '5/8"']),
+            _gc("db_joint", "Corners", ["Dovetail", "Dowel / Pinned", "Stapled"]),
+            _gc("db_bottom", "Bottom", ['1/4"', '1/2"']),
+            _gc("db_slide", "Slides", ["Side mount", "Undermount", "Center mount", "No slides"]),
+            _g("db_slide_len", "Slide Length (in)", measure=True, placeholder="e.g. 18",
+               show_if=("db_slide", ["Side mount", "Undermount", "Center mount"])),
+            _gc("db_softclose", "Soft Close", ["Yes", "No"],
+                show_if=("db_slide", ["Side mount", "Undermount", "Center mount"])),
+            _gc("db_notch", "Notch & Bore for Undermount Slides", ["Yes", "No"], show_if=("db_slide", ["Undermount"])),
+            _LINE_COMMENTS]],
+        "products": ["drawer_box"],
+    },
+    "door_front": {
+        "title": "Cabinet Door & Drawer Front Order Form", "style": "door", "section": "Door / Drawer Front Information",
+        "blocks": [[
+            _g("qty", "Quantity", w=4), _g("unit", "Unit #"), _g("room", "Location (room)"),
+            _gc("df_item", "Item", ["Cabinet Door", "Drawer Front"]),
+            _gc("style", "Door Style", CABINET_STYLES + ["Other"], photos="cabinet_style",
+                other_option="Other", other_field="style_other"),
+            _g("style_other", "Style - Other", show_if=("style", ["Other"])),
+            *_cab_material_fields(),
+            _g("width", "Width (in)", measure=True), _g("height", "Height (in)", measure=True),
+            _gc("df_overlay", "Overlay", ["Full overlay", '1/2" overlay', "Inset"]),
+            _gc("hinge_side", "Door Hinge Side", ["Left", "Right"], show_if=("df_item", ["Cabinet Door"])),
+            *_hinge_cut_fields(),
+            _gc("df_holes", "Pull / Knob Holes", ["Drill for hardware", "No holes"]),
+            *_cab_hardware_fields(),
+            _LINE_COMMENTS]],
+        "products": ["cabinet_door", "drawer_front"],
+    },
     "mirror_frame": {   # Mirror Mate frame kits
         "title": "Mirror Frame (Mirror Mate) Order Form", "style": "door", "section": "Mirror Frame Information",
         "blocks": [[
@@ -1076,7 +1130,8 @@ GENERATED_FILES = {"roller_shade": "OF-Roller Shade.pdf", "trim": "OF-Baseboard 
                    "countertop": "OF-Countertop.pdf", "cabinet_prefab": "OF-Pre-Fab Cabinet.pdf",
                    "cabinet_custom": "OF-Custom Cabinet.pdf", "sliding_patio_door": "OF-Sliding Patio Door.pdf",
                    "closet_bifold": "OF-Closet and Bi-Fold Door.pdf", "shower_door": "OF-Shower Door.pdf",
-                   "mirror_frame": "OF-Mirror Frame.pdf"}
+                   "mirror_frame": "OF-Mirror Frame.pdf", "drawer_box": "OF-Drawer Box.pdf",
+                   "door_front": "OF-Cabinet Door and Drawer Front.pdf"}
 
 
 def _bind(fields, n):

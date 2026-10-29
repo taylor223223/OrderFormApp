@@ -18,6 +18,7 @@ Data (kitchen_layouts.data with "v": 2):
 import copy
 
 from .kitchen import fin, num
+from .kitchen_shape import SHAPE_HELP, SHAPES, WALL_NAMES  # noqa: F401  (the editors' kitchen shape picker)
 
 V = 2
 LOWER_TYPES = {   # type: (short label, default w, h, d, kind)  kind: cab / sink / space / tall / filler
@@ -27,9 +28,9 @@ LOWER_TYPES = {   # type: (short label, default w, h, d, kind)  kind: cab / sink
     "Corner base": ("CORNER BASE", 36, 34.5, 24, "cab"),
     "Tall / pantry": ("PANTRY", 18, 84, 24, "tall"),
     "Filler": ("FILLER", 3, 34.5, 24, "filler"),
-    "Dishwasher space": ("DISHWASHER", 24, 34.5, 24, "space-counter"),
-    "Stove / range space": ("STOVE", 30, 36, 25, "space"),
-    "Fridge space": ("FRIDGE", 36, 70, 30, "space"),
+    "Dishwasher space": ("DISHWASHER", 24, 34.5, 24, "space-counter"),   # standard appliance widths (Taylor:
+    "Stove / range space": ("STOVE", 30, 36, 25, "space"),                # dishwasher 24, stove 30, fridge 30-33)
+    "Fridge space": ("FRIDGE", 33, 70, 30, "space"),     # standard openings: 30" or 33" (36" for big ones)
     "Open space": ("OPEN", 24, 34.5, 24, "space"),
 }
 UPPER_TYPES = {
@@ -105,6 +106,8 @@ def order_starter():
 def normalize(d):
     d = copy.deepcopy(d) if is_v2(d) else starter()
     d.setdefault("room", "Kitchen")
+    from .kitchen_shape import norm as _shape
+    d["shape"] = _shape(d.get("shape"))       # Straight / Mirrored (galley) / L-Shape / U-Shape
     d.setdefault("notes", "")
     d["top"] = dict(DEFAULT_TOP, **(d.get("top") or {}))
     d["cab"] = dict(DEFAULT_CAB, **(d.get("cab") or {}))
@@ -142,6 +145,39 @@ def dims(row, b):
 
 def box_id(row, i):
     return ("L" if row == "lowers" else "U") + str(i + 1)
+
+
+PANTRY_FULL = 68.0      # a pantry taller than this also fills the upper cabinet spot above it
+
+
+def tall_spans(w):
+    """(x0, x1) of each pantry over 68" on this wall - it reaches up through the upper row, so no wall cabinet
+    goes over it. A pantry 68" or shorter stays in the lower row and the upper spot over it stays open."""
+    out, x = [], 0.0
+    for b in w.get("lowers") or []:
+        bw, bh, _ = dims("lowers", b)
+        if kind("lowers", b) == "tall" and bh > PANTRY_FULL:
+            out.append((x, x + bw))
+        x += bw
+    return out
+
+
+def upper_xs(w):
+    """Left edge of each upper box: left to right like the lowers, skipping over the tall pantries
+    (an upper that would land on one moves to the pantry's right side)."""
+    spans = tall_spans(w)
+    xs, x = [], 0.0
+    for b in w.get("uppers") or []:
+        bw = dims("uppers", b)[0]
+        moved = True
+        while moved:
+            moved = False
+            for a, z in spans:
+                if x < z - 0.01 and x + bw > a + 0.01:     # overlaps the pantry: start after it
+                    x, moved = z, True
+        xs.append(x)
+        x += bw
+    return xs
 
 
 # ------------------------------------------------------------------ countertop
@@ -201,10 +237,13 @@ def schedule(d):
                     dr = f"{n}" + (f' @ {fin(num(b["drawer_h"]))}' if num(b.get("drawer_h")) else "")
                 elif k in ("cab", "sink", "tall"):
                     dr = "No"
+                note = b.get("notes") or ""
+                if k == "tall" and bh > PANTRY_FULL:
+                    note = "; ".join(x for x in ["full height - takes the upper spot", note] if x)
                 rows.append([box_id(row, i), w["name"], "Upper" if row == "uppers" else "Lower",
                              b["type"] + (f' ({b["label"]})' if b.get("label") else ""), fin(bw), fin(bh),
                              fin(bd) if bd else "", b.get("doors") or ("" if k.startswith("space") else ""),
-                             dr, b.get("hinge") or "", b.get("notes") or ""])
+                             dr, b.get("hinge") or "", note])
     return rows
 
 
@@ -215,7 +254,8 @@ def wall_prims(w, box_w, box_h, style=""):
     ("text", x, y, s, size, color, anchor, bold)"""
     lows, ups = w["lowers"], w["uppers"]
     lw = sum(dims("lowers", b)[0] for b in lows)
-    uw = sum(dims("uppers", b)[0] for b in ups)
+    uxs = upper_xs(w)
+    uw = (uxs[-1] + dims("uppers", ups[-1])[0]) if ups else 0
     total = max(lw, uw, 24)
     low_h = max([dims("lowers", b)[1] for b in lows if kind("lowers", b) not in ("tall",) and
                  dims("lowers", b)[1] < 40] or [34.5])
@@ -285,10 +325,10 @@ def wall_prims(w, box_w, box_h, style=""):
             segs.append([a, b_])
     for a, b_ in segs:
         P.append(("rect", X(a), floor - (low_h + TOP_THICK) * s, X(b_), floor - low_h * s, INK, TOP_FILL, 0.8))
-    # uppers - hang from the same top line
-    x = 0.0
+    # uppers - hang from the same top line (skipping over pantries taller than 68")
     first_uh = None
     for i, b in enumerate(ups):
+        x = uxs[i]
         bw, bh, bd = dims("uppers", b)
         k = kind("uppers", b)
         r = (X(x), top_line, X(x + bw), top_line + bh * s)
@@ -310,7 +350,6 @@ def wall_prims(w, box_w, box_h, style=""):
             first_uh = bh
         elif abs(bh - first_uh) > 0.01:          # e.g. the shorter cabinet over the stove
             vdim(r[0] + 9, r[1], r[3], fin(bh), "right")
-        x += bw
     if ups:
         last = ups[-1]
         vdim(X(uw) + 14, top_line, top_line + dims("uppers", last)[1] * s, fin(dims("uppers", last)[1]), "right")
@@ -588,6 +627,22 @@ def make_pdf(layout, customer=None, out_path=None, with_top=True, order=None):
     rows_all = schedule(d)
     cols = [("Box", 34), ("Row", 40), ("Type", 170), ("Width", 50), ("Height", 50), ("Depth", 46),
             ("Doors", 38), ("Drawers", 70), ("Hinge", 42), ("Notes", PW - 60 - 540)]
+    if d.get("shape", "Straight") != "Straight":       # L / U / galley: how the walls go together, first
+        from . import kitchen_shape as KS
+        title = ("Cabinet Order Form" if order is not None else
+                 "Cabinet & Countertop Layout" if with_top else "Cabinet Order - Kitchen Layout")
+        pg = _header(doc, title, f"{where}  ·  Kitchen shape: {d['shape']} ({KS.SHAPE_HELP[d['shape']]})")
+        _material_line(pg, d, with_top)
+        top_y = _order_strip(pg, order) if order is not None else 66
+        vals, names = KS.layout_runs(d)
+        need = len(KS.WALL_NAMES[d["shape"]])
+        names = (names + KS.WALL_NAMES[d["shape"]][len(names):])[:need]
+        area = fitz.Rect(30, top_y + 4, PW - 30, PH - 60)
+        pg.draw_rect(area, color=GREY, width=0.5)
+        KS.to_pdf(pg, KS.plan_prims(d["shape"], vals, area.width, area.height, labels=names, boxes=False),
+                  area.x0, area.y0)
+        _txt(pg, 34, PH - 46, "Top view. Each wall's boxes are on the next pages, left to right standing facing that "
+             "wall. Wall lengths = the lower boxes added up.", 7.5, False, GREY)
     for w in d["walls"]:
         title = ("Cabinet Order Form" if order is not None else
                  "Cabinet & Countertop Layout" if with_top else "Cabinet Order - Kitchen Layout")

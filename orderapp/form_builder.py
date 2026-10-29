@@ -162,7 +162,7 @@ def _page_frame(page, src, title, n_page, total):
         _text_widget(page, HEADER_NAMES[key], (386, y + 3, R, y + 18))
     # rest of the customer info (the Door form has these too)
     from .form_patches import contact_row
-    contact_row(page, _PENDING, y=128.5, x0=L + 3, x1=380)       # who to talk to at the property
+    contact_row(page, _PENDING, y=129.5, x0=L + 3, x1=380, two=True)   # who to talk to at the property
     page.draw_rect(fitz.Rect(L, 132, R, 142), color=None, fill=NAVY)
     y = 156
     x = L + 3
@@ -279,7 +279,8 @@ def build(spec, out_path, src_path):
     b.script = EMAIL_JS
     _PENDING.append(b)
     # logo + footer copied from the company form last (copying first breaks the page's own fonts)
-    page.show_pdf_page(fitz.Rect(68, 22, 337, 121), src, 0, clip=fitz.Rect(68, 22, 337, 121))
+    # (stops just under the logo art: the contact line sits in the white strip below it)
+    page.show_pdf_page(fitz.Rect(68, 22, 337, 112.5), src, 0, clip=fitz.Rect(68, 22, 337, 112.5))
     page.show_pdf_page(fitz.Rect(0, 760, 500, 792), src, 0, clip=fitz.Rect(0, 760, 500, 792))
     while _PENDING:
         page.add_widget(_PENDING.pop(0))

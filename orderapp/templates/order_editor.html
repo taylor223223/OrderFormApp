@@ -5,10 +5,10 @@
 <a href="{{ url_for('holds.index') }}">Account Holds</a></div>
 <div class="pagehead">
   <div><div class="kindtoggle" role="radiogroup" aria-label="Order or estimate">
-    <button type="button" data-kind="order" class="{{ 'on' if kind != 'quote' }}">🧾 Order</button><button type="button" data-kind="quote" class="{{ 'on' if kind == 'quote' }}">💲 Estimate / quote</button>
+    <button type="button" data-kind="order" class="{{ 'on' if kind != 'quote' }}" title="The form says ORDER">🧾 ORDER</button><button type="button" data-kind="quote" class="{{ 'on' if kind == 'quote' }}" title="The form's title says QUOTE instead of ORDER">💲 QUOTE</button>
   </div>
   <h1><span id="formTitle" data-order="{{ spec.title }}" data-quote="{{ spec.title.replace(' Order Form', ' Quote Request') if ' Order Form' in spec.title else spec.title ~ ' (Quote Request)' }}">{{ spec.title if kind != 'quote' else (spec.title.replace(' Order Form', ' Quote Request') if ' Order Form' in spec.title else spec.title ~ ' (Quote Request)') }}</span>{% if order %} <span class="muted">#{{ order.id }}</span>{% endif %}</h1>
-  <div class="small" id="quoteNote" {% if kind != 'quote' %}hidden{% endif %} style="color:#b91c1c;font-weight:600">Estimate: same form, but the PDF says QUOTE REQUEST - PLEASE PRICE, the email asks for pricing, and it isn't counted as an order.</div>
+  <div class="small" id="quoteNote" {% if kind != 'quote' %}hidden{% endif %} style="color:#b91c1c;font-weight:600">Quote: same form, but its title says QUOTE instead of ORDER, the email asks for pricing, and it isn't counted as an order. It shows in Order Tracking marked QUOTE - one tap turns it into an order.</div>
   <div class="muted small">Yellow = predicted from saved measurements / past orders. Check it, then save. Dropdowns accept any typed value.</div></div>
   <div class="row">
     <select id="switchForm" style="max-width:260px" title="Switch form">{% for k, t in forms %}<option value="{{ k }}" {{ 'selected' if k==form_key }}>{{ t }}</option>{% endfor %}</select>
@@ -94,6 +94,7 @@
   <button class="btn primary" name="action" value="pdf">Save & create PDF</button>
   <button class="btn ok" name="action" value="send">Save & email</button>
   {% if order %}<a class="btn" href="{{ url_for('orders.view', oid=order.id) }}">Cancel</a>{% endif %}
+  <button type="button" class="btn danger" id="discardBtn" title="Throw out this form without saving it">🗑 Discard</button>
 </div>
 </form>
 <datalist id="dl_units">{% for u in units %}<option value="{{ u.unit_number }}">{{ u.fp or '' }}</option>{% endfor %}</datalist>
@@ -244,8 +245,19 @@ function addBlock(values, predictedKeys){
      <button type="button" class="btn sm" data-act="clear">Clear</button>
      <button type="button" class="btn sm danger" data-act="rm">Remove</button></div>
      <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit').map(f => fieldHTML(f, bi)).join('')}</div>`;
+  if (FORM_KEY === 'countertop') {      // the top view for the kitchen shape picked, under the line
+    const d = document.createElement('div'); d.className = 'ctshape'; d.title = 'Top view - what prints on the order';
+    el.appendChild(d);
+    let tm = null;
+    const upd = () => { clearTimeout(tm); tm = setTimeout(async () => {
+      const r = await fetch({{ url_for('orders.api_countertop_shape')|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},
+                                  body: JSON.stringify(getBlock(el))}).then(r => r.json()).catch(() => null);
+      if (r) d.innerHTML = r.svg; }, 250); };
+    el.addEventListener('input', upd); el.addEventListener('change', upd); el._shapeUpd = upd;
+  }
   $('#blocks').appendChild(el);
   setBlock(el, values || {}, predictedKeys);
+  if (el._shapeUpd) el._shapeUpd();
   el.addEventListener('input', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); });
   el.addEventListener('change', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); roomDepth(el, ev.target); });
   el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
@@ -418,6 +430,14 @@ $('#photoInput').addEventListener('change', e => {
   dirty = true;
 });
 window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+// Discard: throw out what's on this form without saving (an order saved before stays as it was saved)
+$('#discardBtn').addEventListener('click', () => {
+  const saved = {{ 'true' if order else 'false' }};
+  if (!confirm(saved ? 'Are you sure? Your changes to this order will be thrown out - it stays as it was last saved.'
+                     : 'Are you sure? This form will be thrown out - nothing on it is saved.')) return;
+  dirty = false;
+  location.href = {{ (url_for('orders.view', oid=order.id) if order else url_for('orders.new'))|tojson }};
+});
 
 // Previous orders + price estimate (updates as lines are filled in)
 (function () {

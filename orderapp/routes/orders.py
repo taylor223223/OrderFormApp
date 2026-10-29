@@ -313,7 +313,7 @@ def _make_pdf(oid):
         pdf, warns = fill_form(o["form_key"], data)
     from ..order_kind import is_quote, kind_title, stamp_quote
     if is_quote(o):
-        pdf = stamp_quote(pdf)
+        pdf = stamp_quote(pdf, RO.TITLE if o["form_key"] == RO.FORM_KEY else FORMS[o["form_key"]]["title"])
     if data.get("layout_id"):   # the attached cabinet layout's drawing + countertop pages
         try:
             pdf = _append_layout(pdf, int(data["layout_id"]), o["customer_id"], o["form_key"])
@@ -680,6 +680,16 @@ def tracking_add():
 
 
 # ---------------- JSON helpers for the editor ----------------
+@bp.route("/api/countertop-shape", methods=["POST"])
+@login_required
+def api_countertop_shape():
+    """The countertop line's top-view drawing for its kitchen shape (shown under the line while it's filled in)."""
+    from .. import kitchen_shape as K
+    v = request.get_json(silent=True) or {}
+    v = {k: str(val) for k, val in v.items() if isinstance(val, (str, int, float))}
+    return jsonify({"svg": K.countertop_svg(v.get("ct_shape") or "Straight", v)})
+
+
 @bp.route("/api/order-help", methods=["POST"])
 @login_required
 def api_order_help():
@@ -783,3 +793,209 @@ def reorder_lines(oid):
         flash(f"Saved - {len(data['lines'])} line(s). PDF updated.", "ok")
         return redirect(url_for("orders.view", oid=oid))
     return render_template("reorder_lines.html", o=o, data=data, lines=data.get("lines") or [])
+
+
+# ---------------- job package: several order / quote forms in one PDF ----------------
+def package_pdf(ids):
+    """One PDF with every picked order form (each exactly as its own PDF prints, layout drawings and photos
+    included), behind a contents page. Returns (pdf bytes, file path, warnings)."""
+    import pymupdf as fitz
+    from ..order_kind import is_quote
+    rows = []
+    for oid in ids:
+        o = q("SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.id=?",
+              (oid,), one=True)
+        if o and (o["form_key"] in FORMS or o["form_key"] == RO.FORM_KEY):
+            rows.append(o)
+    if not rows:
+        raise ValueError("Pick at least one order or quote that has an order form.")
+    warns, parts = [], []
+    for o in rows:
+        path, w = _make_pdf(o["id"])
+        warns += [f"#{o['id']}: {m}" for m in w]
+        parts.append((o, fitz.open(path)))
+    quotes = all(is_quote(o) for o, _ in parts)
+    custs = sorted({(o["cname"] or loads(o["data"]).get("header", {}).get("name") or "") for o, _ in parts} - {""})
+    cust = custs[0] if len(custs) == 1 else ("Several properties" if custs else "Customer")
+    doc = fitz.open()
+    cover = doc.new_page(width=612, height=792)
+    _package_cover(cover, parts, cust, quotes)
+    toc, page_no = [], 2
+    for o, d in parts:
+        toc.append([1, f"{o['title']}" + (f" - PO {o['po']}" if o["po"] else "") + f" (#{o['id']})", page_no])
+        doc.insert_pdf(d)
+        page_no += len(d)
+        d.close()
+    doc.set_toc(toc)
+    doc.set_metadata({"title": f"{cust} - {'Quote' if quotes else 'Job'} package", "creator": "AIS Sales Support"})
+    pdf = doc.tobytes(garbage=3, deflate=True)
+    doc.close()
+    day = date.today().isoformat()
+    name = safe_name(f"{day} - {cust} - {'Quote' if quotes else 'Order'} package ({len(parts)} forms) - "
+                     f"#{'-'.join(str(o['id']) for o, _ in parts)}.pdf")
+    path = os.path.join(ensure_dir(order_folder(cust, day)), name)
+    with open(path, "wb") as fh:
+        fh.write(pdf)
+    return pdf, path, warns
+
+
+def _package_cover(pg, parts, cust, quotes):
+    """Contents page: company logo, the property, and every form in the package with its PO and pages."""
+    import pymupdf as fitz
+    from ..manager_forms import COMPANY
+    try:
+        src = fitz.open(COMPANY)
+        pg.show_pdf_page(fitz.Rect(36, 30, 256, 112), src, 0, clip=fitz.Rect(68, 22, 337, 121))
+    except Exception:  # noqa: BLE001 - the logo is decoration
+        pass
+    title = "QUOTE PACKAGE" if quotes else "ORDER PACKAGE"
+    pg.draw_rect(fitz.Rect(300, 40, 576, 70), color=None, fill=(0, 0, 0))
+    tw = fitz.get_text_length(title, fontname="hebo", fontsize=18)
+    pg.insert_text((438 - tw / 2, 61.5), title, fontsize=18, fontname="hebo", color=(1, 1, 1))
+    pg.insert_text((300, 88), f"{len(parts)} forms in this PDF", fontsize=10, fontname="helv")
+    pg.insert_text((36, 140), cust, fontsize=16, fontname="hebo")
+    h = loads(parts[0][0]["data"]).get("header") or {}
+    sub = "  ·  ".join(v for v in [h.get("address"), " ".join(p for p in [h.get("city"), h.get("state"), h.get("zip")] if p)]
+                       if v)
+    if sub:
+        pg.insert_text((36, 158), sub, fontsize=10, fontname="helv")
+    who = "  ·  ".join(v for v in [h.get("contact"), h.get("contact_phone"), h.get("contact_email")] if v)
+    if who:
+        pg.insert_text((36, 174), "Contact: " + who, fontsize=10, fontname="helv")
+    pg.insert_text((36, 190), f"Date: {date.today():%m/%d/%Y}", fontsize=10, fontname="helv")
+    if quotes:
+        pg.insert_text((36, 210), "Quote request - please price every form in this package (not an order yet).",
+                       fontsize=10, fontname="hebo", color=(0.7, 0.1, 0.1))
+    y = 236
+    cols = [("#", 36), ("Form", 66), ("Order / Quote", 330), ("PO", 420), ("Pages", 520)]
+    pg.draw_rect(fitz.Rect(36, y - 13, 576, y + 4), color=None, fill=(0.88, 0.9, 0.95))
+    for t, x_ in cols:
+        pg.insert_text((x_ + 3, y), t, fontsize=9.5, fontname="hebo")
+    from ..order_kind import is_quote
+    page_no = 2
+    for i, (o, d) in enumerate(parts, 1):
+        y += 20
+        n = len(d)
+        pages = f"{page_no}" + (f"-{page_no + n - 1}" if n > 1 else "")
+        title = o["title"] or ""
+        size = 9.5
+        while size > 6.5 and fitz.get_text_length(title, fontname="helv", fontsize=size) > 255:
+            size -= 0.25
+        for t, (lab, x_), sz, font in ((str(i), cols[0], 9.5, "helv"), (title, cols[1], size, "helv"),
+                                       ("Quote" if is_quote(o) else "Order", cols[2], 9.5, "hebo"),
+                                       (o["po"] or "-", cols[3], 9.5, "helv"), (pages, cols[4], 9.5, "helv")):
+            pg.insert_text((x_ + 3, y), t, fontsize=sz, fontname=font)
+        pg.draw_line((36, y + 6), (576, y + 6), color=(0.8, 0.8, 0.8), width=0.4)
+        page_no += n
+    pg.insert_text((36, 770), "Apartment Interior Supply  ·  5325 S. Kyrene Rd., Suite 103, Tempe, AZ 85283  ·  "
+                   "Phone (480) 964-7600  ·  Fax (480) 964-7610", fontsize=7.5, fontname="helv", color=(0.4, 0.4, 0.4))
+
+
+def _package_ids():
+    raw = request.values.getlist("ids") or (request.values.get("ids") or "").split(",")
+    out = []
+    for v in raw:
+        for p in str(v).split(","):
+            if p.strip().isdigit() and int(p) not in out:
+                out.append(int(p))
+    return out
+
+
+@bp.route("/orders/package", methods=["GET", "POST"])
+@login_required
+def package():
+    """Several forms for one job (cabinets, countertop, doors...) in ONE PDF to send, instead of one email
+    attachment per form. Pick the forms, make the PDF, open it or email it."""
+    from ..order_kind import is_quote
+    ids = _package_ids()
+    cid = request.values.get("customer", type=int)
+    if not cid and ids:
+        r = q("SELECT customer_id FROM orders WHERE id=?", (ids[0],), one=True)
+        cid = r["customer_id"] if r else None
+    made = None
+    if request.method == "POST" and request.form.get("make"):
+        try:
+            _, path, warns = package_pdf(ids)
+            made = {"path": path, "name": os.path.basename(path), "warns": warns}
+        except ValueError as e:
+            flash(str(e), "error")
+    sql = """SELECT o.*, c.name AS cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
+             WHERE o.form_key IS NOT NULL AND o.status NOT IN ('Cancelled')"""
+    args = []
+    if cid:
+        sql += " AND o.customer_id=?"
+        args.append(cid)
+    elif ids:
+        sql += f" AND o.id IN ({','.join('?' * len(ids))})"
+        args += ids
+    else:
+        sql += " AND o.status IN ('Draft','Ready')"
+    sql += " ORDER BY o.updated DESC LIMIT 60"
+    rows = [r for r in q(sql, args)]
+    c = q("SELECT * FROM customers WHERE id=?", (cid,), one=True) if cid else None
+    picked = [q("SELECT * FROM orders WHERE id=?", (i,), one=True) for i in ids]
+    picked = [p for p in picked if p]
+    quotes = bool(picked) and all(is_quote(p) for p in picked)
+    cname = c["name"] if c else ""
+    pos = ", ".join(p["po"] for p in picked if p["po"])
+    subject = f"{'Quote request' if quotes else 'Order'} - {cname or 'job'}" + (f" - PO {pos}" if pos else "")
+    body = (f"Hello,\n\n{'Please price' if quotes else 'Please see'} the attached {len(picked)} forms for "
+            f"{cname or 'this job'} (all in one PDF)" + (f", PO {pos}" if pos else "") + ".\n\n"
+            + "\n".join(f"- {p['title']}" + (f" (PO {p['po']})" if p["po"] else "") for p in picked)
+            + f"\n\nThank you,\n{setting('sales_rep') or ''}")
+    return render_template("order_package.html", rows=rows, ids=ids, c=c, made=made, to=setting("order_to"),
+                           cc=setting("order_cc"), subject=subject, body=body, mode=setting("send_mode"),
+                           provider=setting("email_provider"), quotes=quotes,
+                           customers=q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE"))
+
+
+@bp.route("/orders/package/file")
+@login_required
+def package_file():
+    ids = _package_ids()
+    try:
+        pdf, path, _ = package_pdf(ids)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("orders.package"))
+    return send_file(io.BytesIO(pdf), mimetype="application/pdf", download_name=os.path.basename(path),
+                     as_attachment=bool(request.args.get("dl")))
+
+
+@bp.route("/orders/package/send", methods=["POST"])
+@login_required
+def package_send():
+    """Email the package: one PDF attachment. Sent for real = every form in it is marked sent."""
+    ids = _package_ids()
+    to = request.form.get("to", "").strip()
+    if not to:
+        flash("Who should it go to?", "error")
+        return redirect(url_for("orders.package", ids=",".join(map(str, ids))))
+    try:
+        _, path, _ = package_pdf(ids)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("orders.package"))
+    review = request.form.get("mode", setting("send_mode")) != "send"
+    prov = provider(setting)
+    try:
+        kw = {"out_dir": os.path.dirname(path)} if prov.name == "eml" else {}
+        msg = prov.send(to, request.form.get("cc", "").strip(), request.form.get("subject", ""),
+                        request.form.get("body", ""), [path], review=review, **kw)
+    except MailError as e:
+        flash(str(e), "error")
+        return redirect(url_for("orders.package", ids=",".join(map(str, ids))))
+    except Exception as e:  # noqa: BLE001
+        flash(f"Email failed: {e}", "error")
+        return redirect(url_for("orders.package", ids=",".join(map(str, ids))))
+    for oid in ids:
+        x("UPDATE orders SET sent_subject=?, sent_to=? WHERE id=?",
+          (request.form.get("subject", ""), ", ".join(a for a in (to, request.form.get("cc", "").strip()) if a), oid))
+        if not review:
+            x("UPDATE orders SET status='Sent', sent_at=?, updated=? WHERE id=?", (now(), now(), oid))
+            add_status(oid, "Sent", f"Emailed to {to} (in one PDF with {len(ids) - 1} other forms)")
+        else:
+            o = q("SELECT status FROM orders WHERE id=?", (oid,), one=True)
+            add_status(oid, o["status"], f"Email draft prepared for {to} (package of {len(ids)} forms)")
+    flash(msg + (" Mark the forms as sent once it's gone." if review else ""), "ok")
+    return redirect(url_for("orders.tracking"))

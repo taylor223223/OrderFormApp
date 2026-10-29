@@ -16,15 +16,22 @@
   <form class="row"><input type="hidden" name="status" value="{{ st }}"><input name="q" value="{{ s }}" placeholder="Search customer, PO, notes" style="width:240px"><button class="btn sm">Search</button></form>
 </div>
 <div class="tablewrap"><table>
-<tr><th>#</th><th>Customer</th><th>Order</th><th>PO</th><th title="When the order was made in the app">Ordered</th><th title="When it was sent off (marked Order sent / emailed)">Sent</th><th>Due</th><th>Status</th><th></th></tr>
+<tr><th title="Check forms to put them in one PDF">📎</th><th>#</th><th>Customer</th><th>Order</th><th>PO</th><th title="When the order was made in the app">Ordered</th><th title="When it was sent off (marked Order sent / emailed)">Sent</th><th>Due</th><th>Status</th><th></th></tr>
 {% for o in rows %}
-<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td><td>{% if o.kind == 'quote' %}<span class="tag" style="background:#fee2e2;color:#991b1b">Estimate</span> {% endif %}{{ o.title }}<div class="small muted">{{ (o.notes or '')[:60] }}</div></td><td>{{ o.po or '' }}</td><td class="nowrap">{{ ((o.order_date if o.source == 'manual-tracking' else o.created) or o.order_date or '')|mdy }}</td><td class="nowrap">{% if o.sent_on %}{{ o.sent_on|mdy }}{% else %}<span class="muted small">not sent</span>{% endif %}</td><td class="nowrap">{{ o.due_date or '' }}</td>
+<tr><td>{% if o.form_key %}<input type="checkbox" name="ids" value="{{ o.id }}" form="pkgSel" class="pkgcb" title="Put this form in one PDF with the others you check">{% endif %}</td><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td><td>{% if o.kind == 'quote' %}<span class="tag" style="background:#fee2e2;color:#991b1b">QUOTE</span> {% endif %}{{ o.title }}<div class="small muted">{{ (o.notes or '')[:60] }}</div></td><td>{{ o.po or '' }}</td><td class="nowrap">{{ ((o.order_date if o.source == 'manual-tracking' else o.created) or o.order_date or '')|mdy }}</td><td class="nowrap">{% if o.sent_on %}{{ o.sent_on|mdy }}{% else %}<span class="muted small">not sent</span>{% endif %}</td><td class="nowrap">{{ o.due_date or '' }}</td>
 <td><form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}"><input type="hidden" name="next" value="{{ request.full_path }}">
-<div class="taps sm">{% set cur = tap_for(o.status, o.kind) %}{% for t in tap_labels %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}">{{ t }}</button>{% endfor %}</div>{% if not cur %}<div class="small muted">{{ status_label(o.status, o.kind) }}</div>{% endif %}</form></td>
+<div class="taps sm tapgrid">{% set cur = tap_for(o.status, o.kind) %}{% for row in tap_grid %}{% for t in row %}{% if t %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}">{{ t }}</button>{% else %}<span class="gap"></span>{% endif %}{% endfor %}{% endfor %}</div>{% if not cur %}<div class="small muted">{{ status_label(o.status, o.kind) }}</div>{% endif %}{% if o.kind == 'quote' and o.status not in ('Delivered', 'Cancelled') %}<button name="tap" value="Order ready" class="btn sm" style="margin-top:4px" title="The quote came back / was approved: turn it into an order (same form and lines)" onclick="return confirm('Turn this quote into an order?')">➜ Make it an order</button>{% endif %}</form></td>
 <td><div class="row" style="gap:4px;flex-wrap:nowrap">{% if o.form_key %}<form method="post" action="{{ url_for('orders.reorder', oid=o.id) }}"><button class="btn sm" title="One click: same items, new draft">↻</button></form>{% endif %}
 {% set msg = 'Delete order #' ~ o.id ~ (' - ' ~ o.cname if o.cname else '') ~ '?\n\n' ~ (o.title or '') ~ '\n\nYou can undo this (Recently deleted keeps it for 30 days).' %}<form method="post" action="{{ url_for('orders.delete', oid=o.id) }}" onsubmit='return confirm({{ msg|tojson }})'><input type="hidden" name="next" value="{{ request.full_path }}"><button class="btn sm danger" title="Delete this order (entered by mistake)">🗑</button></form></div></td></tr>
-{% else %}<tr><td colspan="9" class="empty">No orders here.</td></tr>{% endfor %}
+{% else %}<tr><td colspan="10" class="empty">No orders here.</td></tr>{% endfor %}
 </table></div>
+<form method="post" action="{{ url_for('orders.package') }}" id="pkgSel" class="row" style="margin-top:8px;gap:8px"><input type="hidden" name="make" value="1">
+<button class="btn" id="pkgBtn" disabled>📎 Put the checked forms in one PDF</button><span class="small muted" id="pkgNote">Check the forms for a job (cabinets, countertop, doors...) to send them as one attachment.</span>
+<a class="small" href="{{ url_for('orders.package') }}">or pick by property</a></form>
+<script>document.querySelectorAll('.pkgcb').forEach(cb => cb.addEventListener('change', () => {
+  const n = document.querySelectorAll('.pkgcb:checked').length; const b = document.getElementById('pkgBtn');
+  b.disabled = n < 1; b.textContent = n ? `📎 Put the ${n} checked form${n > 1 ? 's' : ''} in one PDF` : '📎 Put the checked forms in one PDF';
+}));</script>
 {% if trash %}<details class="card" style="margin-top:16px" id="recentlyDeleted"><summary>🗑️ Recently deleted ({{ trash|length }}) - put an order back within 30 days</summary>
 <div class="tablewrap" style="margin-top:8px"><table><tr><th>#</th><th>Order</th><th>Deleted</th><th></th></tr>
 {% for t in trash %}<tr><td>#{{ t.order_id }}</td><td>{{ t.label }}</td><td class="nowrap small">{{ t.deleted_at }}</td>
@@ -34,7 +41,7 @@
 <form method="post" action="{{ url_for('orders.tracking_add') }}" class="grid g4" style="margin-top:10px">
   <div style="grid-column:span 2"><label>What</label><input name="title" placeholder="e.g. 12 vertical blinds - phone order"></div>
   <div><label>Customer</label><select name="customer_id"><option value="">(none)</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
-  <div style="grid-column:span 2"><label>Status</label><div class="taps">{% for t in tap_labels %}<label class="chip"><input type="radio" name="tap" value="{{ t }}" {{ 'checked' if t == 'Order sent' }}> {{ t }}</label>{% endfor %}</div></div>
+  <div style="grid-column:span 2"><label>Status</label><div class="taps tapgrid">{% for row in tap_grid %}{% for t in row %}{% if t %}<label class="chip"><input type="radio" name="tap" value="{{ t }}" {{ 'checked' if t == 'Order sent' }}> {{ t }}</label>{% else %}<span class="gap"></span>{% endif %}{% endfor %}{% endfor %}</div></div>
   <div><label>PO</label><input name="po"></div><div><label>Order date</label><input name="order_date" placeholder="today"></div>
   <div><label>Vendor / tracking #</label><input name="vendor_ref"></div><div><label>Due / ETA</label><input type="date" name="due_date"></div>
   <div style="grid-column:1/-1"><label>Notes</label><input name="notes"></div>

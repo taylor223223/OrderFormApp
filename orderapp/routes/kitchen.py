@@ -57,7 +57,14 @@ def _raw(lid):
 
 def _v2_payload(data):
     style = (data.get("cab") or {}).get("style") or ""
-    return {"walls": [C.wall_svg(w, style=style) for w in data["walls"]], "pieces": [
+    from .. import kitchen_shape as KS
+    shape = data.get("shape") or "Straight"
+    overview = ""
+    if shape != "Straight":
+        vals, names = KS.layout_runs(data)
+        names = (names + KS.WALL_NAMES[shape][len(names):])[:len(KS.WALL_NAMES[shape])]
+        overview = KS.svg(KS.plan_prims(shape, vals, 640, 220, labels=names, boxes=False), 640, 220)
+    return {"overview": overview, "walls": [C.wall_svg(w, style=style) for w in data["walls"]], "pieces": [
         dict(p, length_txt=K.fin(p["length"]), depth_txt=K.fin(p["depth"]), sqft_txt=f"{p['sqft']:.1f}")
         for p in C.countertop(data)], "schedule": C.schedule(data)}
 

@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% block title %}Forms in one PDF{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>📎 Forms in one PDF</h1>
+<div class="muted small">Put several order forms for one job (cabinets, countertop, doors...) into a single PDF to send - one attachment instead of one per form. Each form prints exactly like its own PDF (layout drawings and photos included), behind a contents page.</div></div>
+<form class="row" method="get"><select name="customer" onchange="this.form.submit()" style="max-width:280px"><option value="">Pick a property...</option>{% for cu in customers %}<option value="{{ cu.id }}" {{ 'selected' if c and cu.id == c.id }}>{{ cu.name }}</option>{% endfor %}</select></form></div>
+{% if made %}<div class="card" style="border-color:#16a34a"><h3 style="margin-top:0">✅ Made: {{ made.name }}</h3>
+<div class="row"><a class="btn primary" href="{{ url_for('orders.package_file', ids=ids|join(',')) }}" target="_blank">Open the PDF</a>
+<a class="btn" href="{{ url_for('orders.package_file', ids=ids|join(','), dl=1) }}">Download</a>
+<form method="post" action="{{ url_for('orders.open_orders_folder') }}"><button class="btn">Open the orders folder</button></form></div>
+{% for w in made.warns %}<div class="small err">{{ w }}</div>{% endfor %}</div>{% endif %}
+<form method="post" id="pkgForm" class="card">
+<input type="hidden" name="make" value="1">
+<div class="tablewrap"><table><tr><th></th><th>#</th><th>Customer</th><th>Form</th><th>PO</th><th>Status</th><th>Updated</th></tr>
+{% for o in rows %}<tr><td><input type="checkbox" name="ids" value="{{ o.id }}" {{ 'checked' if o.id in ids }}></td><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td>
+<td>{{ o.cname or '' }}</td><td>{% if o.kind == 'quote' %}<span class="tag" style="background:#fee2e2;color:#991b1b">QUOTE</span> {% endif %}{{ o.title }}</td><td>{{ o.po or '' }}</td>
+<td class="small">{{ status_label(o.status, o.kind) }}</td><td class="small nowrap">{{ (o.updated or '')[:10] }}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">{{ 'No forms for this property yet.' if c else 'Pick a property above (or check forms in Order Tracking).' }}</td></tr>{% endfor %}
+</table></div>
+<div class="row" style="margin-top:8px"><button class="btn primary">📎 Put the checked forms in one PDF</button><span class="small muted">In the order they're listed.</span></div>
+</form>
+{% if ids %}<form method="post" action="{{ url_for('orders.package_send') }}" class="card"><h3 style="margin-top:0">✉️ Email it (one attachment)</h3>
+<input type="hidden" name="ids" value="{{ ids|join(',') }}">
+<div class="grid g2"><div><label>To</label><input name="to" value="{{ to or '' }}"></div><div><label>CC</label><input name="cc" value="{{ cc or '' }}"></div></div>
+<div class="field"><label>Subject</label><input name="subject" value="{{ subject }}"></div>
+<div class="field"><label>Message</label><textarea name="body" rows="8">{{ body }}</textarea></div>
+<div class="row"><select name="mode" style="width:auto"><option value="review" {{ 'selected' if mode != 'send' }}>Open a draft to review</option>{% if provider != 'eml' %}<option value="send" {{ 'selected' if mode == 'send' }}>Send now</option>{% endif %}</select>
+<button class="btn ok">Email the package</button></div></form>{% endif %}
+{% endblock %}

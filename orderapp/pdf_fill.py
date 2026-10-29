@@ -344,6 +344,9 @@ def _fill(form_key, data):
             _fill_block(page, idx, spec["blocks"][i], blk, bn, line_no)
             if any(f.get("plan") == "sink_left" for f in spec["blocks"][i]) and _no_sink(blk):
                 _hide_sink(page, idx, i)
+            if any(f.get("plan") for f in spec["blocks"][i]) and blk.get("ct_shape") and \
+                    blk.get("ct_shape") != "Straight":
+                _shape_plan(page, idx, i, blk)
             if spec.get("app_made"):
                 _place_photo(page, idx, spec["blocks"][i], blk, f"L{i}.photo")
             for f in spec["blocks"][i]:   # company forms with a photo box per option group
@@ -392,6 +395,22 @@ def _fill(form_key, data):
     pdf = out.tobytes(garbage=3, deflate=True)
     out.close()
     return pdf, warnings
+
+
+def _shape_plan(page, idx, i, blk):
+    """Countertop line in an L / U / mirrored (galley) kitchen: the straight top-view drawing is replaced by
+    this shape's, with the measurements written where they're taken."""
+    from . import kitchen_shape as K
+    from .form_builder import D_L, D_R, PLAN_H
+    back = idx.get(f"L{i}.length")
+    if not back:
+        return
+    top = back[0].rect.y0 - 1 + 26.5 - 52          # see form_builder._countertop_plan
+    area = fitz.Rect(D_L + 1.5, top + 1.5, D_R - 1.5, top + PLAN_H - 2)
+    for w in list(page.widgets()):
+        if w.rect.intersects(area):      # hidden, not deleted: the values still read back from the PDF
+            page.parent.xref_set_key(w.xref, "F", "2")
+    K.redraw_countertop(page, area, blk.get("ct_shape"), blk)
 
 
 def read_filled_form(pdf_bytes):

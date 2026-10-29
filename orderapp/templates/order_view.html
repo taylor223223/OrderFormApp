@@ -13,6 +13,7 @@
     <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, regen=1) }}" target="_blank">View PDF</a>
     <a class="btn" href="{{ url_for('orders.pdf', oid=o.id, dl=1) }}">Download</a>
     <a class="btn primary" href="{{ url_for('orders.send_page', oid=o.id) }}">Email it</a>
+    <a class="btn" href="{{ url_for('orders.package', ids=o.id, customer=o.customer_id) }}" title="Send this with the job's other forms (countertop, doors...) as ONE PDF">📎 With other forms in one PDF</a>
     {% endif %}
   </div>
 </div>
@@ -65,7 +66,7 @@
 <div>
   <div class="card"><h3 style="margin-top:0">Status</h3>
     <form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}" class="taps">
-      {% set cur = tap_for(o.status, o.kind) %}{% for t in tap_labels %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}">{{ t }}</button>{% endfor %}
+      {% set cur = tap_for(o.status, o.kind) %}<div class="tapgrid">{% for row in tap_grid %}{% for t in row %}{% if t %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}">{{ t }}</button>{% else %}<span class="gap"></span>{% endif %}{% endfor %}{% endfor %}</div>
     </form>
     {% if not cur %}<div class="small muted" style="margin-top:6px">Now: <b>{{ status_label(o.status, o.kind) }}</b></div>{% endif %}
   </div>

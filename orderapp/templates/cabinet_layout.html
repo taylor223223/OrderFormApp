@@ -10,6 +10,7 @@
   <div><label>Name</label><input id="f_name" value="{{ lay.name or '' }}" placeholder="Kitchen - B2 floorplan"></div>
   <div><label>Unit</label><input id="f_unit" value="{{ lay.unit or '' }}" placeholder="e.g. 104"></div>
   <div><label>Floorplan</label><select id="f_fp"><option value="">(none)</option>{% for f in fps %}<option value="{{ f.id }}" {{ 'selected' if lay.floorplan_id == f.id }}>{{ f.name }}</option>{% endfor %}</select></div>
+  <div><label>Kitchen shape</label><select id="f_shape" title="Picks the walls you fill in and draws how they go together">{% for sh in C.SHAPES %}<option value="{{ sh }}" {{ 'selected' if (data.shape or 'Straight') == sh }}>{{ sh }} - {{ C.SHAPE_HELP[sh] }}</option>{% endfor %}</select></div>
   <div><label>Room</label><select id="f_room">{% for r in ['Kitchen','Bath vanity','Laundry','Bar / other'] %}<option {{ 'selected' if data.room == r }}>{{ r }}</option>{% endfor %}</select></div>
   <div><label>Door style</label><select id="c_style"><option value=""></option>{% for st in C.CAB_STYLES %}<option {{ 'selected' if data.cab.style == st }}>{{ st }}</option>{% endfor %}</select></div>
   <div><label>Cabinet material</label><input id="c_material" list="dl_cabmat" value="{{ data.cab.material }}" placeholder="MDF, plywood, solid wood..."><datalist id="dl_cabmat">{% for m in C.CAB_MATERIALS %}<option value="{{ m }}">{% endfor %}</datalist></div>
@@ -22,8 +23,9 @@
   <div style="grid-column:span 2"><label>Notes</label><input id="f_notes" value="{{ data.notes }}"></div>
 </div>
 
+<div class="cl-svg" id="overview" {% if not payload.overview %}hidden{% endif %}>{{ (payload.overview or '')|safe }}</div>
 <div id="walls"></div>
-<div class="row" style="margin:10px 0"><button type="button" class="btn" id="addWall">+ Add a wall (L / U kitchen)</button></div>
+<div class="row" style="margin:10px 0"><button type="button" class="btn" id="addWall">+ Add a wall</button><span class="small muted" id="shapeMsg"></span></div>
 
 <div class="card"><h3 style="margin-top:0">Countertop <span class="small muted" id="sqft"></span></h3>
 <div class="small muted">Worked out from the lowers: one piece per stretch of counter - a stove, fridge, pantry or open space splits it. Depth = the boxes' depth + the front overhang.</div>
@@ -103,8 +105,20 @@ function drawPieces(){
   const tot = p.reduce((a, x) => a + parseFloat(x.sqft_txt || 0), 0);
   $('#sqft').textContent = p.length ? `${p.length} piece(s) · ${tot.toFixed(1)} sq ft` : '';
 }
+const SHAPE_WALLS = {{ C.WALL_NAMES|tojson }};
+const ALL_WALL_NAMES = [].concat(...Object.values(SHAPE_WALLS));
+function applyShape(shape){      // the walls this shape needs (named Back wall, Left wall...) - extra walls are kept
+  DATA.shape = shape;
+  const names = SHAPE_WALLS[shape] || ['Back wall'];
+  names.forEach((nm, i) => {
+    if (!DATA.walls[i]) DATA.walls.push({name: nm, uppers: [], lowers: [newBox('lowers', 'Base cabinet')]});
+    else if (/^Wall \d+$/.test(DATA.walls[i].name || '') || ALL_WALL_NAMES.includes(DATA.walls[i].name)) DATA.walls[i].name = nm;
+  });
+  const extra = DATA.walls.length - names.length;
+  $('#shapeMsg').textContent = extra > 0 ? `${extra} more wall${extra > 1 ? 's' : ''} than a ${shape} kitchen has - remove ${extra > 1 ? 'them' : 'it'} if not needed.` : '';
+}
 function collectTop(){
-  DATA.room = $('#f_room').value; DATA.notes = $('#f_notes').value;
+  DATA.room = $('#f_room').value; DATA.notes = $('#f_notes').value; DATA.shape = $('#f_shape').value;
   DATA.cab = Object.assign({}, DATA.cab || {}, {style: $('#c_style').value, material: $('#c_material').value, color: $('#c_color').value});
   DATA.top = {material: $('#t_material').value, color: $('#t_color').value, overhang: $('#t_overhang').value,
               splash: $('#t_splash').value, edge: $('#t_edge').value};
@@ -118,6 +132,7 @@ function refresh(){
     if (!r) return;
     PAYLOAD = r;
     (r.walls || []).forEach((s, i) => { const el = document.getElementById('svg_' + i); if (el) el.innerHTML = s; });
+    $('#overview').hidden = !r.overview; $('#overview').innerHTML = r.overview || '';
     drawPieces(); $('#saved').textContent = 'Unsaved changes';
   }, 350);
 }
@@ -129,10 +144,13 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   const tr = e.target.closest('tr[data-row]');
+  if (e.target.id === 'f_shape') { applyShape(e.target.value); draw(); refresh(); return; }
   if (!tr || !e.target.dataset.k) { if (e.target.id && /^[ftc]_/.test(e.target.id)) refresh(); return; }
   const box = DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i];
-  if (e.target.dataset.k === 'type') {            // new type -> its usual sizes, keep the width the user typed
-    const nb = newBox(tr.dataset.row, e.target.value); nb.w = box.w || nb.w; nb.notes = box.notes; nb.label = box.label;
+  if (e.target.dataset.k === 'type') {            // new type -> its usual sizes (cabinet -> cabinet keeps the typed width)
+    const nb = newBox(tr.dataset.row, e.target.value);
+    if (['cab', 'sink'].includes(kindOf(tr.dataset.row, nb)) && ['cab', 'sink'].includes(kindOf(tr.dataset.row, box))) nb.w = box.w || nb.w;
+    nb.notes = box.notes; nb.label = box.label;
     DATA.walls[+tr.dataset.w][tr.dataset.row][+tr.dataset.i] = nb;
   } else box[e.target.dataset.k] = e.target.value;
   draw(); refresh();

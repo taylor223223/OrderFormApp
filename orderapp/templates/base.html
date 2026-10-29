@@ -25,11 +25,11 @@
     <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}" style="--c:#f59e0b"><span class="ic">🏠</span>Dashboard</a>
     <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor') }}" style="--c:#ea580c"><span class="ic">📝</span>New Order</a>
     <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}" style="--c:#0d9488"><span class="ic">📦</span>Order Tracking</a>
+    <a href="{{ url_for('quotes.index') }}" class="{{ 'on' if ep.startswith('quotes.') and ep not in ('quotes.prices','quotes.deliveries') }}" style="--c:#0891b2"><span class="ic">🧾</span>Quotes</a>
     <a href="{{ url_for('library.index') }}" class="{{ 'on' if ep.startswith('library.') }}" style="--c:#7c3aed"><span class="ic">📄</span>Order Forms</a>
     <a href="{{ url_for('photos.field_order') }}" class="{{ 'on' if ep=='photos.field_order' }}" style="--c:#e11d48"><span class="ic">📷</span>Photo Order</a>
     <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') }}" style="--c:#d97706"><span class="ic">🏢</span>Customers</a>
     <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
-    <a href="{{ url_for('quotes.index') }}" class="{{ 'on' if ep.startswith('quotes.') and ep not in ('quotes.prices','quotes.deliveries') }}" style="--c:#0891b2"><span class="ic">🧾</span>Quotes</a>
     <a href="{{ url_for('sales.home') }}" class="{{ 'on' if ep.startswith('sales.') and ep != 'sales.items' }}" style="--c:#2a78d6"><span class="ic">💲</span>Sales</a>
     <a href="{{ url_for('company.home') }}" class="{{ 'on' if ep.startswith('company.') }}" style="--c:#0f766e"><span class="ic">🗄️</span>Company Data</a>
     <a href="{{ url_for('sales.items') }}" class="{{ 'on' if ep == 'sales.items' }}" style="--c:#4f46e5"><span class="ic">🏷️</span>Items &amp; Stock</a>

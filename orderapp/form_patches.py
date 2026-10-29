@@ -146,33 +146,94 @@ def _keep_clear_buttons(doc, new_names):
 CONTACT_FIELDS = {"contact": "Contact Name", "contact_phone": "Contact Phone", "contact_email": "Contact Email"}
 
 
-def contact_row(page, widgets, y=199.0, x0=38.4, x1=322.0, size=7.5):
-    """Who to talk to at the property - "Contact: ____ Phone: ____ Email: ____" in the free space under the
-    AIS phone / fax lines (left of the customer box) on the forms that share the Door form's header.
-    Appends the new text boxes to `widgets` (added to the page by the caller)."""
+def _company_phone_lines(page, y, x0, x1):
+    """The company's own "Fax: (480) ..." / "Phone: (480) ..." lines sitting just above the contact row:
+    [(rect of the line, its text)] top to bottom, or [] when there aren't any."""
+    words = page.get_text("words")
+    lines = {}
+    for w in words:
+        if not (x0 - 20 <= w[0] <= x1 + 20 and y - 60 < w[3] < y - 6):
+            continue
+        lines.setdefault((w[5], w[6]), []).append(w)
+    out = []
+    for ws in lines.values():
+        txt = " ".join(w[4] for w in sorted(ws, key=lambda w: w[0]))
+        if re.match(r"^(Fax|Phone):\s*\(\d{3}\)", txt):
+            r = fitz.Rect(min(w[0] for w in ws), min(w[1] for w in ws), max(w[2] for w in ws), max(w[3] for w in ws))
+            out.append((r, txt))
+    return sorted(out, key=lambda t: t[0].y0)
+
+
+def _make_room(page, y, x0, x1, size):
+    """Room for a second contact line: the company's Fax and Phone lines (two lines, the Fax one big) become one
+    line, "Phone (480) 964-7600 · Fax (480) 964-7610". Returns True when the contact boxes can use two lines."""
+    found = _company_phone_lines(page, y, x0, x1)
+    if len(found) < 2:
+        return False
+    union = fitz.Rect(found[0][0])
+    for r, _ in found[1:]:
+        union |= r
+    phone = next((t for _, t in found if t.startswith("Phone")), "").replace("Phone:", "Phone").strip()
+    fax = next((t for _, t in found if t.startswith("Fax")), "").replace("Fax:", "Fax").strip()
+    line = "   ·   ".join(t for t in (phone, fax) if t)
     font = fitz.Font(fontfile=ARIAL_B)
-    parts = [("Contact:", "contact", 0.28), ("Phone:", "contact_phone", 0.28), ("Email:", "contact_email", 0.44)]
-    labels = sum(font.text_length(lab, size) + 3 for lab, _, _ in parts) + 5 * len(parts)
-    room = x1 - x0 - labels
-    x = x0
-    for lab, key, share in parts:
-        page.insert_text((x, y), lab, fontsize=size, fontname="AISB", fontfile=ARIAL_B)
+    fs = 10.0
+    while fs > 7 and font.text_length(line, fs) > max(union.width + 60, 200):
+        fs -= 0.25
+    base = found[0][0].y0 + fs + 1          # the combined line takes the top line's place
+    if base + 3 > y - 12 - size:            # not enough room left for two contact lines
+        return False
+    for r, _ in found:
+        page.add_redact_annot(r + (-0.5, -0.5, 0.5, 0.5))
+    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
+    cx = (union.x0 + union.x1) / 2
+    page.insert_text((cx - font.text_length(line, fs) / 2, base), line, fontsize=fs, fontname="AISB",
+                     fontfile=ARIAL_B)
+    return True
+
+
+def contact_row(page, widgets, y=199.0, x0=38.4, x1=322.0, size=7.5, two=None):
+    """Who to talk to at the property, in the free space under the AIS phone / fax lines (left of the customer
+    box). Where the company's Fax / Phone lines can share one line, the contact gets two lines:
+        Contact: ________   Phone: ________
+        Email: _____________________________   (the whole width, so a long address stays readable)
+    otherwise one line with the email given most of it. Appends the new text boxes to `widgets`."""
+    font = fitz.Font(fontfile=ARIAL_B)
+    two = two or _make_room(page, y, x0, x1, size)      # two=True: the form has room above the row already
+
+    def put(lab, key, x, yy, w_):
+        page.insert_text((x, yy), lab, fontsize=size, fontname="AISB", fontfile=ARIAL_B)
         x += font.text_length(lab, size) + 3
-        w_ = room * share
-        page.draw_line((x, y + 1.5), (x + w_, y + 1.5), color=(0, 0, 0), width=0.5)
+        page.draw_line((x, yy + 1.5), (x + w_, yy + 1.5), color=(0, 0, 0), width=0.5)
         t = fitz.Widget()
         t.field_type = fitz.PDF_WIDGET_TYPE_TEXT
         t.field_name = CONTACT_FIELDS[key]
-        t.rect = fitz.Rect(x, y - 9, x + w_, y + 1.2)
+        t.rect = fitz.Rect(x, yy - 9, x + w_, yy + 1.2)
         t.text_font, t.text_fontsize = "Helv", 8
         widgets.append(t)
-        x += w_ + 5
+        return x + w_ + 6
+
+    lw = {k: font.text_length(k, size) + 3 for k in ("Contact:", "Phone:", "Email:")}
+    if two:
+        y1 = y - 10.8
+        room = min(x1 - x0, 300) - lw["Contact:"] - lw["Phone:"] - 6
+        name_w = min(room * 0.56, 100)       # (keeps "Phone:" clear of the logo's lightning bolt on the blind forms)
+        x = put("Contact:", "contact", x0, y1, name_w)
+        put("Phone:", "contact_phone", x, y1, room - name_w - 1)
+        put("Email:", "contact_email", x0, y, x1 - x0 - lw["Email:"])
+        return widgets
+    # one line: a name and a phone number are short - the email gets the rest
+    room = x1 - x0 - sum(lw.values()) - 12
+    name_w, phone_w = min(room * 0.27, 78), min(room * 0.24, 62)
+    x = put("Contact:", "contact", x0, y, name_w)
+    x = put("Phone:", "contact_phone", x, y, phone_w)
+    put("Email:", "contact_email", x, y, x1 - x - lw["Email:"])
     return widgets
 
 
-def add_contact(page, y, x0, x1, size=7.5):
+def add_contact(page, y, x0, x1, size=7.5, two=None):
     """contact_row on a form whose widgets are added right away (no Patcher)."""
-    for w in contact_row(page, [], y=y, x0=x0, x1=x1, size=size):
+    for w in contact_row(page, [], y=y, x0=x0, x1=x1, size=size, two=two):
         page.add_widget(w)
 
 
@@ -214,6 +275,22 @@ def prehung_boxes(doc):
         cb.border_color, cb.border_width, cb.fill_color = (0, 0, 0), 1.0, (1, 1, 1)
         cb.field_value = False
         page.add_widget(cb)
+
+
+def patch_new_door(doc):
+    """New Door form: the red "(Fill in highlighted boxes and use check boxes)" note gets a little smaller so the
+    contact gets two lines (the email on its own line)."""
+    page = doc[0]
+    ws = [w for w in page.get_text("words") if 120 < w[1] < 150 and w[0] < 262]
+    note = [w for w in ws if w[4].startswith("(Fill") or w[4] in ("in", "highlighted", "boxes", "and", "use", "check",
+                                                                   "boxes)")]
+    if note:
+        r = fitz.Rect(min(w[0] for w in note), min(w[1] for w in note), max(w[2] for w in note), max(w[3] for w in note))
+        page.add_redact_annot(r + (-0.5, -0.5, 0.5, 2.5))
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
+        txt = "(Fill in highlighted boxes and use check boxes)"
+        page.insert_text((r.x0, r.y0 + 8.5), txt, fontsize=8.5, fontname="AISBI", fontfile=CARLITO_B, color=(0.8, 0, 0))
+    add_contact(page, 165.5, 20, 262, two=True)
 
 
 def contact_only(fn):
@@ -577,7 +654,7 @@ def patch_blind(doc):
     p.new_names = [x for x in p.new_names if (" Style " in x and any(t in x for t in NEW_BLIND_STYLES))
                    or " Slat " in x]
     y, x0, x1 = CONTACT_SPOTS["OF-Horizontal Blind Order Form.pdf"]
-    contact_row(page, p.widgets, y=y, x0=x0, x1=x1)
+    contact_row(page, p.widgets, y=y, x0=x0, x1=x1, two=True)      # name / phone just under the logo
     p.finish(doc)
 
 
@@ -607,7 +684,7 @@ def remove_leftovers(doc):
 PATCHES = {
     "OF-Vertical Blind.pdf": contact_only("OF-Vertical Blind.pdf"),
     "OrderFormVert.pdf": contact_only("OrderFormVert.pdf"),
-    "OF-New Door Order Form.pdf": contact_only("OF-New Door Order Form.pdf"),
+    "OF-New Door Order Form.pdf": patch_new_door,
     "OF-Door.pdf": patch_door,
     "OF-Pre-Hung.pdf": lambda d: (patch_door(d, prehung=True), prehung_boxes(d)),
     "OF-Bypass Door.pdf": patch_bypass,

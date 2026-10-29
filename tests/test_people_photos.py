@@ -246,7 +246,8 @@ def test_estimate_toggle_and_status_taps(app, c):
     assert o["kind"] == "quote" and o["title"] == "Door Quote Request" and o["status"] == "Ready"
     assert "Door Quote Request" in os.path.basename(o["pdf_path"])
     import pymupdf as fitz
-    assert "QUOTE REQUEST" in fitz.open(o["pdf_path"])[0].get_text()
+    t = fitz.open(o["pdf_path"])[0].get_text()
+    assert "Door Quote Form" in t and "Door Order Form" not in t        # the title bar says QUOTE
     page = c.get(f"/orders/{oid}").get_data(as_text=True)
     assert 'value="Quote ready" class="on"' in page and "<select name=\"status\">" not in page
     assert "Turn into an order" in page

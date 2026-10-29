@@ -26,7 +26,7 @@ def _key():
 
 def stops_for(day):
     return q("""SELECT s.*, c.name AS cname, c.phone AS cphone, a.ordered AS ordered, a.order_what AS order_what,
-                a.contact_name AS visit_contact FROM route_stops s
+                a.contact_name AS visit_contact, a.kind AS visit_kind, a.notes AS visit_notes FROM route_stops s
                 LEFT JOIN customers c ON c.id=s.customer_id LEFT JOIN activities a ON a.id=s.activity_id
                 WHERE s.day=? ORDER BY s.position, s.id""", (day,))
 
@@ -229,34 +229,70 @@ def smart_insert(day, sid):
         x("UPDATE route_stops SET position=? WHERE id=?", (p_, i))
 
 
-def mark_done(stop, notes="", activity_id=None, ordered=None, order_what=None):
-    """Mark a stop visited and record it in the CRM as ONE site visit for that property and day:
-    - the contact is filled in from the property (Maint. Super, or the PM when there's no super)
+# the CRM entry under each stop: how you were in touch -> the CRM entry type
+CRM_HOW = {"In person": "Site visit", "Call": "Call", "Text": "Text", "Email": "Email"}
+
+
+def _note_into(aid, text):
+    """Add text to a CRM entry's notes (once)."""
+    text = (text or "").strip()
+    if not aid or not text:
+        return
+    a = q("SELECT notes FROM activities WHERE id=?", (aid,), one=True)
+    have = (a["notes"] or "") if a else ""
+    if text not in have:
+        x("UPDATE activities SET notes=? WHERE id=?", ("\n".join(v for v in [have.strip(), text] if v), aid))
+
+
+def _set_who(aid, cid, who):
+    """Who you talked to: a saved contact at the property when the name matches one."""
+    who = (who or "").strip()
+    if not aid or not who:
+        return
+    from ..people import find_person
+    k = find_person(cid, who) if cid else None
+    x("UPDATE activities SET contact_id=?, contact_name=? WHERE id=?", (k["id"] if k else None, who, aid))
+
+
+def mark_done(stop, notes="", activity_id=None, ordered=None, order_what=None, how=None, who=None):
+    """Mark a stop visited and record it in the CRM as ONE entry for that property and day:
+    - how = In person / Call / Text / Email (in person = a site visit), who = the person you talked to
+      (blank: the property's contact - the Maint. Super, or the PM when there's no super)
     - if something was already logged in person there today (an order, a visit from the CRM page) that
       entry is used instead of adding a second one
-    - ordered = "Yes"/"No" and order_what = what they ordered go on the same entry."""
+    - the stop's notes go on the entry; ordered = "Yes"/"No" and order_what = what they ordered too."""
     x("UPDATE route_stops SET status='Done', done_at=? WHERE id=?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), stop["id"]))
     aid = activity_id or stop["activity_id"]
     cid = stop["customer_id"]
+    kind = CRM_HOW.get(how or "In person", "Site visit")
+    est = f"Estimating: {stop['products']}" if stop["products"] else ""
     if not aid and cid:
         from ..contact_log import IN_PERSON
-        same = q(f"""SELECT id FROM activities WHERE customer_id=? AND substr(occurred_at,1,10)=?
-                     AND (kind IN ({','.join('?' * len(IN_PERSON))}) OR owner='auto') ORDER BY id LIMIT 1""",
-                 (cid, stop["day"], *IN_PERSON), one=True)
+        same = None
+        if kind == "Site visit":
+            same = q(f"""SELECT id FROM activities WHERE customer_id=? AND substr(occurred_at,1,10)=?
+                         AND (kind IN ({','.join('?' * len(IN_PERSON))}) OR owner='auto') ORDER BY id LIMIT 1""",
+                     (cid, stop["day"], *IN_PERSON), one=True)
         if same:
             aid = same["id"]
             x("UPDATE activities SET kind='Site visit', location=coalesce(nullif(location,''), ?), "
               "subject=coalesce(nullif(subject,''), ?) WHERE id=?",
               (stop["address"], stop["purpose"] or "Route stop", aid))
+            _note_into(aid, "\n".join(v for v in [est, stop["notes"] or "", notes] if v))
         else:
             from .crm import log_activity
-            est = f"Estimating: {stop['products']}" if stop["products"] else ""
-            aid = log_activity(cid, "Site visit", f"{stop['day']} {datetime.now():%H:%M}",
-                               location=stop["address"], subject=stop["purpose"] or "Route stop",
+            aid = log_activity(cid, kind, f"{stop['day']} {datetime.now():%H:%M}",
+                               location=stop["address"] if kind == "Site visit" else "",
+                               subject=stop["purpose"] or "Route stop",
                                notes="\n".join(v for v in [est, stop["notes"] or "", notes] if v))
+    elif aid:
+        if how:
+            x("UPDATE activities SET kind=? WHERE id=?", (kind, aid))
+        _note_into(aid, "\n".join(v for v in [stop["notes"] or "", notes] if v))
     if aid:
         x("UPDATE route_stops SET activity_id=? WHERE id=?", (aid, stop["id"]))
         if cid:
+            _set_who(aid, cid, who)
             from ..people import order_contact
             a = q("SELECT contact_name FROM activities WHERE id=?", (aid,), one=True)
             k = order_contact(cid)
@@ -264,6 +300,43 @@ def mark_done(stop, notes="", activity_id=None, ordered=None, order_what=None):
                 x("UPDATE activities SET contact_id=?, contact_name=? WHERE id=?", (k["id"], k["name"], aid))
         set_ordered(aid, ordered, order_what)
     return aid
+
+
+def edit_entry(stop, how=None, who=None, notes=None):
+    """Change a visited stop's CRM entry from the route (how, who, notes)."""
+    aid = stop["activity_id"]
+    if not aid:
+        return
+    if how in CRM_HOW:
+        x("UPDATE activities SET kind=? WHERE id=?", (CRM_HOW[how], aid))
+    _set_who(aid, stop["customer_id"], who)
+    if notes is not None:
+        x("UPDATE activities SET notes=? WHERE id=?", (notes.strip() or None, aid))
+        x("UPDATE route_stops SET notes=? WHERE id=?", (notes.strip() or None, stop["id"]))
+
+
+def _stop_people(stops):
+    """{customer id: {"names": [(name, role)], "default": the property's contact}} for the CRM box's Who."""
+    from ..people import order_contact
+    out = {}
+    for st in stops:
+        cid = st["customer_id"]
+        if not cid or cid in out:
+            continue
+        k = order_contact(cid)
+        out[cid] = {"names": [(r["name"], r["role"] or "") for r in
+                              q("SELECT name, role FROM contacts WHERE customer_id=? AND coalesce(trim(name),'')<>'' "
+                                "ORDER BY name", (cid,))],
+                    "default": k["name"] if k else ""}
+    return out
+
+
+def carry_notes(day):
+    """Route stops visited before the CRM box replaced the notes box: their notes go into the stop's CRM entry
+    (nothing is lost)."""
+    for s_ in q("""SELECT id, notes, activity_id FROM route_stops WHERE day=? AND status='Done'
+                   AND coalesce(notes,'')<>'' AND activity_id IS NOT NULL""", (day,)):
+        _note_into(s_["activity_id"], s_["notes"])
 
 
 def set_ordered(aid, ordered, order_what=None):
@@ -397,6 +470,7 @@ def add():
 @login_required
 def day(day):
     d = _day(day) or abort(404)
+    carry_notes(day)
     res = plan_day(day, optimize=False)
     stops = stops_for(day)
     legs = {l["stop_id"]: l for l in res["legs"]}
@@ -424,7 +498,8 @@ def day(day):
                            miles=round(res["total_m"] / 1609.34, 1), finish=finish, gmaps=gmaps,
                            points=points, start=res["start"], customers=customers, week_days=week_days,
                            has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"),
-                           items=ESTIMATE_ITEMS, order_items=ORDER_ITEMS,
+                           items=ESTIMATE_ITEMS, order_items=ORDER_ITEMS, people=_stop_people(stops),
+                           crm_how=list(CRM_HOW), how_of={v: k for k, v in CRM_HOW.items()},
                            check=route_check(day, res), pins=PINS)
 
 
@@ -557,7 +632,7 @@ def day_settings(day):
 @login_required
 def stop_action(sid):
     s = q("SELECT * FROM route_stops WHERE id=?", (sid,), one=True) or abort(404)
-    act = request.form.get("act")
+    act = request.form.get("act2") or request.form.get("act")     # act2: a 2nd button on the same form
     day = s["day"]
     if act in ("up", "down"):
         st = list(stops_for(day))
@@ -588,8 +663,22 @@ def stop_action(sid):
                      source=s["source"], visit_min=s["visit_min"], products=s["products"], notes=s["notes"])
             flash(f"Moved to {nd}.", "ok")
     elif act == "Done":
-        mark_done(s, request.form.get("notes", "").strip(), ordered=request.form.get("ordered") or None,
-                  order_what=_order_what(request.form))
+        f = request.form
+        if "notes" in f:                  # the CRM box's notes are the stop's notes
+            x("UPDATE route_stops SET notes=? WHERE id=?", (f.get("notes", "").strip() or None, sid))
+            s = q("SELECT * FROM route_stops WHERE id=?", (sid,), one=True)
+        mark_done(s, ordered=f.get("ordered") or None, order_what=_order_what(f),
+                  how=f.get("crm_how") or None, who=f.get("crm_who") or None)
+    elif act == "crm":            # change a visited stop's CRM entry (how / who / notes)
+        f = request.form
+        if s["status"] != "Done" or not s["activity_id"]:
+            mark_done(s)
+            s = q("SELECT * FROM route_stops WHERE id=?", (sid,), one=True)
+        edit_entry(s, f.get("crm_how"), f.get("crm_who"), f.get("notes"))
+        set_ordered(s["activity_id"], f.get("ordered"), _order_what(f))
+        flash("CRM entry saved.", "ok")
+    elif act == "crmnote":        # save the note without marking the stop visited yet
+        x("UPDATE route_stops SET notes=? WHERE id=?", (request.form.get("notes", "").strip() or None, sid))
     elif act == "ordered":        # change "did they order / what" after the stop was marked visited
         if s["status"] != "Done" or not s["activity_id"]:
             mark_done(s)
@@ -602,9 +691,10 @@ def stop_action(sid):
         x("UPDATE route_stops SET status=?, done_at=NULL WHERE id=?", (act, sid))
     elif act == "notes":
         f = request.form
-        x("UPDATE route_stops SET purpose=coalesce(?, purpose), visit_min=coalesce(?, visit_min), notes=?, products=? "
-          "WHERE id=?", (f.get("purpose"), f.get("visit_min", type=int), f.get("notes", "").strip(),
-                         ", ".join(f.getlist("products")), sid))
+        x("UPDATE route_stops SET purpose=coalesce(?, purpose), visit_min=coalesce(?, visit_min), products=? "
+          "WHERE id=?", (f.get("purpose"), f.get("visit_min", type=int), ", ".join(f.getlist("products")), sid))
+        if "notes" in f:          # (stops without a property keep their notes box here)
+            x("UPDATE route_stops SET notes=? WHERE id=?", (f.get("notes", "").strip(), sid))
     elif act == "delete":
         x("DELETE FROM route_stops WHERE id=?", (sid,))
     if act in ("Done", "Skipped", "Planned", "move", "delete", "up", "down", "pos"):
