@@ -1105,8 +1105,10 @@ def door_card(pg, k, n, y, item, exterior):
         for lab in ("1", "2", "3", "4", "5", "6", "Flat"):
             x += pg.check(f"{k} Panels {lab}", x, yp + 3, lab, 8) + 22
         x += 6
-        pg.text(x, yp + 3, "STYLE NAME (if known):", 8.5, bold=True)
-        pg.field(f"{k} Style Name", (x + 118, yp - 7, R - 6, yp + 7), size=8.5)
+        x += pg.text(x, yp + 3, "STYLE NAME:", 8.5, bold=True) + 6
+        x += pg.check(f"{k} Style Avalon", x, yp + 3, "Avalon", 8) + 34     # any panel count
+        x += pg.text(x, yp + 3, "Other:", 8, bold=True) + 4
+        pg.field(f"{k} Style Name", (x, yp - 7, R - 6, yp + 7), size=8.5)
         ye = yp + 8
     return notes_row(pg, k, ye + 8, x1=R - 6) + 2
 

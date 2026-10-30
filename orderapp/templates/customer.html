@@ -178,7 +178,14 @@
 <div class="card row" id="roBar" style="position:sticky;bottom:0;z-index:5;margin-top:8px;flex-wrap:wrap;gap:8px;box-shadow:0 -4px 12px rgba(0,0,0,.08)">
 <b><span id="roN">0</span> selected</b>
 <input name="po" placeholder="PO # (optional)" style="max-width:140px">
-<input name="contact" placeholder="Requested by (e.g. Mike - Maint. Super)" style="max-width:260px" list="dl_ro_people"><datalist id="dl_ro_people">{% for k in contacts %}<option value="{{ k.name }}{% if k.role %} - {{ k.role }}{% endif %}">{% endfor %}</datalist>
+<input name="contact" id="roContact" value="{{ ro_contact.contact }}" placeholder="Contact name" title="Contact (who to talk to) - the Maint. Super, else the PM; change it if needed" style="max-width:180px" list="dl_ro_people" autocomplete="off"><datalist id="dl_ro_people">{% for k in contacts %}<option value="{{ k.name }}">{{ k.role or '' }}</option>{% endfor %}</datalist>
+<input name="contact_phone" id="roPhone" value="{{ ro_contact.contact_phone }}" placeholder="Contact phone" inputmode="tel" style="max-width:140px">
+<input name="contact_email" id="roEmail" value="{{ ro_contact.contact_email }}" placeholder="Contact email" inputmode="email" style="max-width:240px">
+<script>(function(){ const P = {{ contacts|map(attribute='name')|list|tojson }}, PH = {{ contacts|map(attribute='phone')|list|tojson }}, EM = {{ contacts|map(attribute='email')|list|tojson }};
+  const n = document.getElementById('roContact'); if (!n) return;
+  n.addEventListener('change', () => { const i = P.indexOf(n.value.trim()); if (i < 0) return;    // picked a saved person: their phone / email
+    if (PH[i]) document.getElementById('roPhone').value = PH[i]; if (EM[i]) document.getElementById('roEmail').value = EM[i]; });
+})();</script>
 <input name="comments" placeholder="Comments for the office" style="max-width:280px">
 <button class="btn primary" id="roGo" disabled>↻ Make reorder form</button>
 </div>

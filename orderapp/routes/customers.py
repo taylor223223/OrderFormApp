@@ -168,7 +168,9 @@ def view(cid):
                                (cid,)))
     from .. import territory as _T
     rep, rep_why = _T.rep_for(c)
-    return render_template("customer.html", rep=rep, rep_why=rep_why, rep_me=rep and rep == _T.me(), c=c, contacts=contacts, fps=fps, units=units, orders=orders, acct=acct,
+    from ..reorder import default_contact
+    ro_contact = default_contact(c)
+    return render_template("customer.html", ro_contact=ro_contact, rep=rep, rep_why=rep_why, rep_me=rep and rep == _T.me(), c=c, contacts=contacts, fps=fps, units=units, orders=orders, acct=acct,
                            today_stop=today_stop, stop_no=stop_no,
                            general=_meas_rows(general), missing=missing_customer_info(c, contacts),
                            tab=tab, meas_summary=meas_summary, sales=_sales_summary(cid),
@@ -586,7 +588,8 @@ def reorder_pick(cid):
         flash("Tick at least one item (with a quantity) to reorder.", "error")
         return redirect(url_for("customers.view", cid=cid, tab="products"))
     f = request.form
-    oid = RO.create(cid, lines, f.get("po", "").strip(), f.get("comments", "").strip(), f.get("contact", "").strip())
+    oid = RO.create(cid, lines, f.get("po", "").strip(), f.get("comments", "").strip(), f.get("contact", "").strip(),
+                    f.get("contact_phone"), f.get("contact_email"))
     from .orders import _make_pdf
     _make_pdf(oid)
     from ..holds import hold_for, hold_message

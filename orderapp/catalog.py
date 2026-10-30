@@ -67,7 +67,7 @@ NEW_DOOR_TYPES = ["5 Panel", "2 Panel", "2 Panel Arch", "2 Panel Arch Plank", "5
                   "3 Panel Shaker Equal", "3 Panel Shaker Craftsman", "2 Panel Shaker", "1 Panel Shaker",
                   "HC Primecoat"]
 # v2.12: door style (the design) and panel count are separate, so any combination can be ordered
-DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plank", "Plank", "Smooth", "Camden",
+DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plank", "Plank", "Smooth", "Avalon", "Camden",
                 "Carrara", "Cheyenne", "Colonial", "Coventry", "Cremona", "Lincoln Park", "Riverside", "Rockport",
                 "Roman"]
 DOOR_PANELS = ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]
@@ -1025,7 +1025,7 @@ GENERATED = {
             _gc("frame_finish", "Mirror Frame Finish", WARDROBE_FINISHES, other_option="Other",
                 other_field="frame_finish_other", show_if=("closet_type", WARDROBE_TYPES[:2])),
             _g("frame_finish_other", "Mirror Frame Finish - Other", show_if=("frame_finish", ["Other"])),
-            _gc("style", "Door Style", ["Smooth", "Shaker", "Colonist", "Camden", "Carrara", "Riverside", "Mirrored",
+            _gc("style", "Door Style", ["Smooth", "Shaker", "Colonist", "Avalon", "Camden", "Carrara", "Riverside", "Mirrored",
                                         "Other"], other_option="Other", other_field="style_other",
                 photos="door_style"),
             _g("style_other", "Style - Other", show_if=("style", ["Other"])),

@@ -306,7 +306,7 @@ def _heading_box(p, y_head, y_top, y_bot, title):
 DOOR_SPLIT = 275.9      # just under the company's door style rows
 DOOR_ROW = 11.5
 DOOR_STYLE_COLS = [(53.1, ["", "", "", ""])]   # 4 rows: panels + top, then 3 rows of styles
-DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plank", "Plank", "Smooth", "Camden",
+DOOR_DESIGNS = ["Shaker", "Shaker Craftsman", "Shaker Equal", "Arch", "Arch Plank", "Plank", "Smooth", "Avalon", "Camden",
                 "Carrara", "Cheyenne", "Colonial", "Coventry", "Cremona", "Lincoln Park", "Riverside", "Rockport",
                 "Roman"]
 DOOR_PANELS = ["1 Panel", "2 Panel", "3 Panel", "4 Panel", "5 Panel", "6 Panel", "Flush"]

@@ -63,7 +63,12 @@
 {% if s.status!='Done' and rows|length > 1 %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" title="Pinned stops stay put when you optimize - the rest are re-ordered around them"><input type="hidden" name="act" value="pin">
 <select name="pin" class="pinsel {{ 'on' if s.pin }}" onchange="this.form.submit()" style="width:auto"><option value="">{{ '📌 Unpin' if s.pin else '📌 Pin' }}</option>{% for k, l in pins.items() %}<option value="{{ k }}" {{ 'selected' if s.pin == k }}>{{ l[2:] }}</option>{% endfor %}</select></form>{% endif %}
 {% if s.status!='Done' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" id="vf{{ s.id }}"><input type="hidden" name="act" value="Done">{% if not s.customer_id %}<button class="btn sm ok" title="Visited">✓ Visited</button>{% endif %}</form>{% endif %}
-{% if s.status=='Planned' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Skipped"><button class="btn sm" title="Skip today">Skip</button></form>
+{% if s.status!='Done' %}<details class="skipmenu"><summary class="btn sm" title="Skip this stop - or move it to another day instead of dropping it">{{ 'Skip ▾' if s.status=='Planned' else 'Move ▾' }}</summary><div class="skippop">
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="move"><input type="hidden" name="to_day" value="{{ day_shift(day, 1) }}"><button class="btn sm primary" title="Puts this stop on {{ day_shift(day, 1) }}'s route">→ Tomorrow</button></form>
+<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" class="row" style="gap:4px;flex-wrap:nowrap"><input type="hidden" name="act" value="move"><input type="date" name="to_day" min="{{ today_iso() }}" value="{{ day_shift(day, 2) }}" style="width:auto" required aria-label="Move to day"><button class="btn sm">Move</button></form>
+{% if s.status=='Planned' %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Skipped"><button class="btn sm" title="Skip it - it stays on this day, marked skipped">Just skip</button></form>{% endif %}
+</div></details>{% endif %}
+{% if s.status=='Planned' %}
 {% else %}<form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}"><input type="hidden" name="act" value="Planned"><button class="btn sm" title="Back to planned">↺</button></form>{% endif %}
 <form method="post" action="{{ url_for('plan.stop_action', sid=s.id) }}" onsubmit="return confirm('Remove this stop?')"><input type="hidden" name="act" value="delete"><button class="btn sm danger">×</button></form>
 </div></div>
@@ -88,7 +93,12 @@
 <style>.crmentry{margin-top:6px;padding:6px 8px;border:1px dashed var(--line);border-radius:6px;background:#fffdf8}
 .crmentry.done{background:#f3faf3;border-style:solid;border-color:#cfe8cf}
 .crmentry textarea{margin-top:4px;min-height:0}
-.crmentry .ordwhat{margin-top:4px}</style>
+.crmentry .ordwhat{margin-top:4px}
+.skipmenu{position:relative}
+.skipmenu>summary{list-style:none;cursor:pointer}
+.skipmenu>summary::-webkit-details-marker{display:none}
+.skippop{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;
+  box-shadow:0 6px 18px rgba(0,0,0,.15);padding:8px;display:flex;flex-direction:column;gap:6px;min-width:190px}</style>
 <script>
 document.querySelectorAll('.ordsel').forEach(sel => sel.addEventListener('change', () => {
   const w = document.getElementById('ow' + sel.dataset.sid); if (w) w.hidden = sel.value !== 'Yes';

@@ -661,7 +661,9 @@ def stop_action(sid):
             x("DELETE FROM route_stops WHERE id=?", (sid,))
             add_stop(nd, customer_id=s["customer_id"], label=s["label"], address=s["address"], purpose=s["purpose"],
                      source=s["source"], visit_min=s["visit_min"], products=s["products"], notes=s["notes"])
-            flash(f"Moved to {nd}.", "ok")
+            dd = _day(nd)
+            flash(f"Moved to {'tomorrow' if dd == date.today() + timedelta(days=1) else dd.strftime('%A %m/%d')} "
+                  f"- it's on that day's route.", "ok")
     elif act == "Done":
         f = request.form
         if "notes" in f:                  # the CRM box's notes are the stop's notes

@@ -519,6 +519,13 @@ def reorder(oid):
     h = data.setdefault("header", {})
     h["po"] = ""
     h["date"] = today()
+    if o["customer_id"]:      # who to talk to: the same person a new order starts with (Maint. Super, else PM)
+        c = q("SELECT * FROM customers WHERE id=?", (o["customer_id"],), one=True)
+        if c:
+            ch = customer_header(c)
+            for k in ("contact", "contact_phone", "contact_email"):
+                if ch.get(k):
+                    h[k] = ch[k]
     nid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, notes, created,
                updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?,?)""",
             (o["customer_id"], o["form_key"], kind_title(o["title"], "order"), "", date.today().isoformat(), dumps(data),
@@ -788,6 +795,8 @@ def reorder_lines(oid):
         data["contact"] = f.get("contact", "").strip()
         po = f.get("po", "").strip()
         data.setdefault("header", {})["po"] = po
+        data["header"].update(contact=data["contact"], contact_phone=f.get("contact_phone", "").strip(),
+                              contact_email=f.get("contact_email", "").strip())
         x("UPDATE orders SET data=?, po=?, updated=? WHERE id=?", (dumps(data), po, now(), oid))
         _make_pdf(oid)
         flash(f"Saved - {len(data['lines'])} line(s). PDF updated.", "ok")

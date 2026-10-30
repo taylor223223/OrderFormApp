@@ -53,11 +53,27 @@ def header_for(cust, po="", day=""):
             "date": day or date.today().isoformat(), "sales_rep": setting("sales_rep") or ""}
 
 
-def create(cid, lines, po="", comments="", contact=""):
+def default_contact(cust):
+    """Same as a new order: the Maint. Super (else the PM), with the property's phone / email filling in
+    what that person doesn't have."""
+    from .people import order_contact
+    p = order_contact(cust["id"]) or {}
+    keys = cust.keys() if hasattr(cust, "keys") else []
+    return {"contact": (p.get("name") or "").strip(),
+            "contact_phone": (p.get("phone") or cust["phone"] or "").strip(),
+            "contact_email": (p.get("email") or (cust["email"] if "email" in keys else "") or "").strip()}
+
+
+def create(cid, lines, po="", comments="", contact="", contact_phone=None, contact_email=None):
     from .db import add_status
     cust = q("SELECT * FROM customers WHERE id=?", (cid,), one=True)
-    data = {"header": header_for(cust, po), "lines": clean_lines(lines), "comments": comments,
-            "contact": contact, "reorder": True}
+    h = header_for(cust, po)
+    d = default_contact(cust)
+    h.update(contact=contact.strip() if contact else d["contact"],
+             contact_phone=d["contact_phone"] if contact_phone is None else contact_phone.strip(),
+             contact_email=d["contact_email"] if contact_email is None else contact_email.strip())
+    data = {"header": h, "lines": clean_lines(lines), "comments": comments,
+            "contact": h["contact"], "reorder": True}
     oid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, notes, created,
                updated, kind) VALUES (?,?,?,?,?,'Draft',?,?,?,?,?,'order')""",
             (cid, FORM_KEY, TITLE, po, data["header"]["date"], dumps(data), "reorder",
@@ -116,9 +132,17 @@ def render(o, data, cust_name=None):
             _put(page, x0, y + 10, x0 + w, y + 30, val, size=9)
             x0 += w
         y += 30
-        if data.get("contact"):
-            page.insert_text((L, y + 12), f"Requested by: {data['contact']}", fontsize=8.5, fontname="helv")
-            y += 14
+        cname_ = h.get("contact") or data.get("contact") or ""
+        if cname_ or h.get("contact_phone") or h.get("contact_email"):
+            box = [("Contact (who to talk to)", cname_, 170), ("Contact phone", h.get("contact_phone"), 110),
+                   ("Contact email", h.get("contact_email"), 260)]
+            x0 = L
+            for lab, val, w in box:
+                page.draw_rect(fitz.Rect(x0, y, x0 + w, y + 30), color=(0.6, 0.6, 0.6), width=0.6)
+                page.insert_text((x0 + 4, y + 9), lab.upper(), fontsize=6.5, fontname="hebo", color=DARK)
+                _put(page, x0, y + 10, x0 + w, y + 30, val, size=9)
+                x0 += w
+            y += 30
         y += 8
         page.insert_text((L, y + 8), "Same items as before - item #, description, size and invoice # are from this property's "
                          "past invoices. Last $ is the last invoiced price; please confirm current pricing.",

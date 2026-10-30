@@ -3,10 +3,13 @@
 <div class="pagehead"><div><h1>Edit reorder #{{ o.id }}</h1><div class="muted">{{ o.cname or '' }} · set quantities, add a line, or blank the quantity to drop a line.</div></div>
 <div class="row"><a class="btn" href="{{ url_for('orders.view', oid=o.id) }}">Cancel</a></div></div>
 <form method="post" class="card">
+{% set h = data.header or {} %}
 <div class="grid g3" style="margin-bottom:10px">
 <div><label>PO #</label><input name="po" value="{{ o.po or '' }}"></div>
-<div><label>Requested by</label><input name="contact" value="{{ data.contact or '' }}" placeholder="Name - position"></div>
-<div><label>Comments for the office</label><input name="comments" value="{{ data.comments or '' }}" placeholder="Deliver to maintenance shop..."></div>
+<div style="grid-column:span 2"><label>Comments for the office</label><input name="comments" value="{{ data.comments or '' }}" placeholder="Deliver to maintenance shop..."></div>
+<div><label>Contact (who to talk to)</label><input name="contact" value="{{ h.contact or data.contact or '' }}"></div>
+<div><label>Contact phone</label><input name="contact_phone" value="{{ h.contact_phone or '' }}" inputmode="tel"></div>
+<div><label>Contact email</label><input name="contact_email" value="{{ h.contact_email or '' }}" inputmode="email"></div>
 </div>
 <input type="hidden" name="n" value="{{ lines|length }}">
 <div class="tablewrap"><table><tr><th style="width:70px">Qty</th><th>Item #</th><th>Description</th><th>Size</th><th>For (unit / room)</th><th>Invoice #</th><th>Last bought</th><th>Last $</th></tr>
