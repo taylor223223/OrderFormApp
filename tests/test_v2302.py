@@ -148,3 +148,9 @@ def test_cabinet_editors_have_layout_choice(c):
     for f in ("cabinet_layout.html", "_cabinet_order_editor.html"):
         t = (root / f).read_text(encoding="utf-8")
         assert 'data-k="drawer_layout"' in t and "Side by side" in t and "drawer_layout: 'Stacked'" in t
+
+
+def test_coolaroo_not_suggested_anymore():
+    """Coolaroo is only re-ordered for past buyers: not in the roller shade suggestions, still found in history."""
+    from orderapp import catalog as CAT
+    assert not any("coolaroo" in x.lower() for x in CAT.SHADE_BRANDS + CAT.SHADE_FABRICS)

@@ -820,13 +820,15 @@ def _hinge_cut_fields():
             _g("hinge_center", "Center Hinge: Top of Door to Center (in)", measure=True, show_if=yes,
                placeholder="only if there's a 3rd hinge", pdf_label="Ctr Hinge from Top")]
 
-# Roller shade / sun screen fabrics - what AIS has invoiced (company sales history 2023-2026)
-SHADE_BRANDS = ["Vertilux (VX)", "Mermet", "Phifer (Sheerweave / Suntex)", "Coolaroo", "Other"]
+# Roller shade / sun screen fabrics - what AIS has invoiced (company sales history 2023-2026).
+# Coolaroo is no longer offered (only re-ordered for customers who bought it before - their purchase history and
+# Items & Stock still show it), so it's left out of the suggestions; it can still be typed in.
+SHADE_BRANDS = ["Vertilux (VX)", "Mermet", "Phifer (Sheerweave / Suntex)", "Other"]
 SHADE_FABRICS = ["VX Solar Screen 3000", "VX Solar 3101 (1%)", "VX Solar 3103 (3%)", "VX Solar 3105 (5%)",
                  "VX Screen 3000 Blackout", "VX Nightfall Blackout", "VX Colorama (Solar 3000)", "VX Shantung",
                  "Manchester LF (York Shadow / Burlap)", "Avilla Twilight Blackout", "Zora Twilight Blackout",
                  "Mermet E-Screen", "Sheerweave 2410", "Sheerweave 7100 Blackout", "Capri Zebra",
-                 "Coolaroo exterior (Montecito / Outback)", "Phifer Suntex 97 exterior"]
+                 "Phifer Suntex 97 exterior"]
 SHADE_OPENNESS = ["1% (most privacy)", "3%", "5%", "10% (most view-through)", "Blackout (0%)",
                   "Light filtering"]
 SHADE_COLORS = ["White Pearl", "White/Linen", "Linen", "Ebony", "Grey", "Charcoal/Grey", "Taupe", "Ivory",

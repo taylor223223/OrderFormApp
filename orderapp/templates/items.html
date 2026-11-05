@@ -4,7 +4,7 @@
 <div class="muted">{% if counts.n %}{{ '{:,}'.format(counts.n) }} item(s){% if counts.pu %} · price list from {{ counts.pu[:10] }}{% endif %}{% if counts.su %} · stock as of {{ counts.su[:10] }}{% endif %}{% if counts.inv %} · {{ '{:,}'.format(counts.inv) }} more product(s) from invoices{% endif %}{% else %}Import the company Item Price List, Inventory Stock Status, Item Turnover and Sales by Item Summary reports to fill this in.{% endif %}</div></div>
 <a class="btn" href="{{ url_for('sales.import_page') }}">Import reports</a></div>
 <form class="row card" style="gap:8px">
-<input name="q" value="{{ q }}" placeholder="Item #, description, vendor or size (e.g. Coolaroo, 34 x 80)" style="flex:2">
+<input name="q" value="{{ q }}" placeholder="Item #, description, vendor or size (e.g. Solar Screen, 34 x 80)" style="flex:2">
 <select name="category" style="flex:1"><option value="">All products</option>{% for c in categories %}<option {{ 'selected' if c == cat }}>{{ c }}</option>{% endfor %}</select>
 <select name="stock" style="flex:1"><option value="">Any stock</option><option value="in" {{ 'selected' if stock=='in' }}>Available now</option><option value="short" {{ 'selected' if stock=='short' }}>Short / at reorder point</option><option value="po" {{ 'selected' if stock=='po' }}>On order (PO)</option></select>
 <select name="source" style="flex:1" title="Some products are billed under a general item (e.g. Roller Shades) and only show up on invoices"><option value="">Stock items + invoices</option><option value="stock" {{ 'selected' if source=='stock' }}>Stock items only</option><option value="invoices" {{ 'selected' if source=='invoices' }}>From invoices only</option></select>
