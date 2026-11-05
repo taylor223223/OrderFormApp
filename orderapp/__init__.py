@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.30.1"
+__version__ = "2.30.2"
 
 
 def _secret_key():
@@ -85,6 +85,8 @@ def create_app(db_path=None, testing=False, demo=None):
             return f"{s[5:7]}/{s[8:10]}/{s[:4]}"
         return s
     app.jinja_env.filters["mdy"] = mdy
+    from .inches import inches_text
+    app.jinja_env.filters["inches"] = inches_text
 
     def today_iso():
         from datetime import date as _d

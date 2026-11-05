@@ -16,8 +16,8 @@
 {% for l in lines + [{}, {}, {}, {}, {}] %}{% set i = loop.index0 %}<tr>
 <td><input name="qty_{{ i }}" value="{{ l.qty or '' }}" inputmode="decimal" style="width:60px"></td>
 <td><input name="item_no_{{ i }}" value="{{ l.item_no or '' }}"></td>
-<td><input name="desc_{{ i }}" value="{{ l.desc or '' }}" style="min-width:240px"></td>
-<td><input name="size_{{ i }}" value="{{ l.size or '' }}" style="width:110px"></td>
+<td><input name="desc_{{ i }}" value="{{ (l.desc or '')|inches }}" style="min-width:240px"></td>
+<td><input name="size_{{ i }}" value="{{ (l.size or '')|inches }}" style="width:110px"></td>
 <td><input name="for_{{ i }}" value="{{ l['for'] or '' }}"></td>
 <td><input name="invoice_{{ i }}" value="{{ l.invoice or '' }}" style="width:90px"></td>
 <td><input name="last_date_{{ i }}" value="{{ l.last_date or '' }}" style="width:100px"></td>

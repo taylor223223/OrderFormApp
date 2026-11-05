@@ -3,6 +3,7 @@ one-page-per-~24-lines "Reorder Request" PDF for the office. Saved as a normal o
 so it shows in Order Tracking, gets the status taps and can be emailed from the Send page."""
 import fitz
 
+from .inches import inches_text
 from .db import dumps, now, q, setting, x
 
 FORM_KEY = "reorder"
@@ -40,8 +41,10 @@ def clean_lines(lines):
         q_ = str(ln.get("qty") or "").strip()
         if q_ in ("", "0"):
             continue
-        out.append({k: str(ln.get(k) or "").strip() for k in
-                    ("qty", "item_no", "desc", "size", "for", "invoice", "last_date", "last_price", "notes")})
+        row = {k: str(ln.get(k) or "").strip() for k in
+               ("qty", "item_no", "desc", "size", "for", "invoice", "last_date", "last_price", "notes")}
+        row["desc"], row["size"] = inches_text(row["desc"]), inches_text(row["size"])
+        out.append(row)
     return out
 
 
@@ -159,8 +162,8 @@ def render(o, data, cust_name=None):
         for i, ln in enumerate(chunk):
             if i % 2:
                 page.draw_rect(fitz.Rect(L, y, R, y + row_h), color=None, fill=GREY)
-            vals = ["", _qty(ln.get("qty")), ln.get("item_no"), ln.get("desc") + (f"  ({ln['notes']})" if ln.get("notes") else ""),
-                    ln.get("size"), ln.get("for"),
+            vals = ["", _qty(ln.get("qty")), ln.get("item_no"), inches_text(ln.get("desc") or "") + (f"  ({ln['notes']})" if ln.get("notes") else ""),
+                    inches_text(ln.get("size") or ""), ln.get("for"),
                     " ".join(p for p in [("#" + ln["invoice"]) if ln.get("invoice") else "", ln.get("last_date")] if p),
                     _money(ln.get("last_price"))]
             x0 = L

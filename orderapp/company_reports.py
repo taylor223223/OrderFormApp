@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS items (
     qty_sold REAL, turnover_days REAL, last_sold TEXT, avg_price REAL, avg_cost REAL, margin_pct REAL,
     price_updated TEXT, stock_updated TEXT, updated TEXT
 );
+CREATE TABLE IF NOT EXISTS invoice_products (
+    id INTEGER PRIMARY KEY, item_no TEXT, description TEXT, category TEXT, billed_under TEXT,
+    qty REAL, avg_price REAL, n_lines INTEGER, first_sold TEXT, last_sold TEXT, find TEXT
+);
 """
 
 KINDS = {
@@ -509,25 +513,155 @@ def stock_text(it):
     return " · ".join(parts)
 
 
-def search(term="", category="", stock="", limit=300):
-    w, a = ["1=1"], []
-    if term:
-        w.append("(item_no LIKE ? OR description LIKE ? OR vendor LIKE ?)")
-        a += [f"%{term}%"] * 3
-    if category:
-        w.append("category=?")
-        a.append(category)
-    if stock == "in":
-        w.append("available > 0")
-    elif stock == "short":
-        w.append("(available < 0 OR (reorder_pt IS NOT NULL AND available <= reorder_pt AND sales_week > 0))")
-    elif stock == "po":
-        w.append("on_po > 0")
-    return q(f"""SELECT * FROM items WHERE {' AND '.join(w)}
-                 ORDER BY (last_sold IS NULL), last_sold DESC, item_no LIMIT ?""", a + [limit])
+# ------------------------------------------------------------------ products that only show up on invoices
+# Some products are billed under a general item ("Roller Shades", "Doors", "Cabinets") with the real product in
+# the line memo, e.g. item Roller Shades / memo "6' x 15' Coolaroo Slate 90% Shade". Those never appear in the
+# price list or stock reports, so Items & Stock also lists every distinct product from the invoice lines.
+_SKIP_LINE = re.compile(r"^(?:fuel surcharge|freight|delivery|discount|credit card|tariff|labor|retention)", re.I)
+
+
+def base_item_no(item_no):
+    """'402957H (29" x 57" ...' -> '402957H' (some exports put the description after the item #)."""
+    return re.split(r"\s+\(", str(item_no or "").strip(), maxsplit=1)[0].strip()
+
+
+def _product_desc(desc):
+    """Line memo without the '*unit / location' note, sizes in inches, spaces tidied."""
+    from .inches import inches_text
+    d = re.split(r"\s\*", desc or "", maxsplit=1)[0]
+    return re.sub(r"\s+", " ", inches_text(d)).strip(" -;,")
+
+
+def _invoice_stamp():
+    r1 = q("SELECT COUNT(*) n, MAX(id) m FROM co_lines", one=True)
+    r2 = q("SELECT COUNT(*) n, MAX(id) m FROM sales_lines", one=True)
+    return f"{r1['n']}:{r1['m']}|{r2['n']}:{r2['m']}"
+
+
+def refresh_invoice_products(force=False):
+    """Rebuild invoice_products when invoice lines changed since the last build (cheap check, ~seconds to build)."""
+    from .db import set_setting, setting
+    try:
+        stamp = _invoice_stamp()
+    except Exception:   # noqa: BLE001 - company tables missing on a very old database
+        return 0
+    if not force and setting("invoice_products_stamp") == stamp:
+        return None
+    stock = {r["item_no"]: (r["description"] or "") for r in q("SELECT item_no, description FROM items")}
+    stock_norm = {k: _product_desc(v).lower() for k, v in stock.items() if v}
+    groups, seen = {}, set()
+    rows = list(q("""SELECT d.num inv, d.doc_date dt, l.item_no, COALESCE(NULLIF(TRIM(l.memo), ''), l.item_desc) descr,
+                     l.category, l.qty, l.amount FROM co_lines l JOIN co_docs d ON d.id=l.doc_id"""))
+    rows += list(q("""SELECT s.invoice_no inv, s.invoice_date dt, l.item_no, l.description descr, l.category, l.qty,
+                      l.amount FROM sales_lines l JOIN sales s ON s.id=l.sale_id"""))
+    for r in rows:
+        raw = (r["descr"] or "").strip()
+        if not raw or _SKIP_LINE.search(raw):
+            continue
+        k = (r["inv"], raw, r["qty"], round(r["amount"] or 0, 2))
+        if k in seen:          # the same line from my sales and Company Data
+            continue
+        seen.add(k)
+        no = base_item_no(r["item_no"])
+        desc = _product_desc(raw)
+        if not desc:
+            continue
+        if no in stock_norm and stock_norm[no] == desc.lower():
+            continue           # it's the stock item itself - already listed from the items table
+        g = groups.setdefault((no, desc.lower()), {"item_no": no, "description": desc, "category": r["category"],
+                                                   "qty": 0.0, "amt": 0.0, "pq": 0.0, "n": 0,
+                                                   "first": r["dt"], "last": r["dt"]})
+        qty, amt = r["qty"] or 0, r["amount"] or 0
+        g["qty"] += qty
+        g["n"] += 1
+        if qty > 0 and amt > 0:
+            g["amt"] += amt
+            g["pq"] += qty
+        if r["dt"] and r["dt"] < (g["first"] or "9"):
+            g["first"] = r["dt"]
+        if r["dt"] and r["dt"] > (g["last"] or ""):
+            g["last"], g["category"] = r["dt"], r["category"] or g["category"]
+    con = get_db()
+    con.execute("DELETE FROM invoice_products")
+    con.executemany("""INSERT INTO invoice_products(item_no, description, category, billed_under, qty, avg_price, n_lines,
+                       first_sold, last_sold, find) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    [(g["item_no"], g["description"], g["category"],
+                      (stock.get(g["item_no"]) or g["item_no"]) if g["item_no"] else "",
+                      g["qty"], round(g["amt"] / g["pq"], 2) if g["pq"] else None, g["n"],
+                      (g["first"] or "")[:10] or None, (g["last"] or "")[:10] or None,
+                      f"{g['item_no']} {g['description']}".lower()) for g in groups.values()])
+    con.execute("INSERT INTO settings(key, value) VALUES('invoice_products_stamp', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (stamp,))
+    con.commit()
+    return len(groups)
+
+
+def _find_terms(term):
+    """Search words, plus the inches spelling of any size typed in feet (2'10 / 2/10 x 6/8 -> 34" / 80")."""
+    from .inches import inches_text
+    words = term.split()
+    conv = inches_text(term)
+    if conv != term:
+        words = conv.split()
+    return [w for w in words if w]
+
+
+def search(term="", category="", stock="", limit=300, source=""):
+    """Items & Stock: the items table (price list / stock reports) + products that only appear on invoices.
+    Sizes are matched in inches, so 34" finds a 2'-10" door. source: '' both, 'stock' items only, 'invoices'."""
+    from .inches import inches_text
+    words = [w.lower() for w in _find_terms(term)] if term else []
+    out = []
+    if source != "invoices":
+        w, a = ["NOT (COALESCE(description, '')='' AND on_hand IS NULL)"], []   # skip blank billing buckets
+        if category:
+            w.append("category=?")
+            a.append(category)
+        if stock == "in":
+            w.append("available > 0")
+        elif stock == "short":
+            w.append("(available < 0 OR (reorder_pt IS NOT NULL AND available <= reorder_pt AND sales_week > 0))")
+        elif stock == "po":
+            w.append("on_po > 0")
+        rows = q(f"""SELECT * FROM items WHERE {' AND '.join(w)}
+                     ORDER BY (last_sold IS NULL), last_sold DESC, item_no""", a)
+        for r in rows:
+            if words:
+                hay = f"{r['item_no']} {inches_text(r['description'] or '')} {r['vendor'] or ''}".lower()
+                raw = f"{r['item_no']} {r['description'] or ''} {r['vendor'] or ''}".lower()
+                if not (term.lower() in raw or all(x_ in hay for x_ in words)):
+                    continue
+            out.append(dict(r))
+            if len(out) >= limit:
+                break
+    if source != "stock" and not stock:
+        refresh_invoice_products()
+        # browsing (no search): just the products billed under a general item; a search covers every variant
+        w, a = (["1=1"] if words else ["billed_under=item_no"]), []
+        for x_ in words:
+            w.append("find LIKE ?")
+            a.append(f"%{x_}%")
+        if category:
+            w.append("category=?")
+            a.append(category)
+        try:
+            inv = q(f"""SELECT item_no, description, category, billed_under, qty qty_sold, avg_price, last_sold,
+                        first_sold, n_lines FROM invoice_products WHERE {' AND '.join(w)}
+                        ORDER BY (last_sold IS NULL), last_sold DESC LIMIT ?""", a + [limit])
+        except Exception:   # noqa: BLE001 - very old database without the table
+            inv = []
+        out += [dict(r, from_invoices=True) for r in inv]
+    out.sort(key=lambda r: r.get("last_sold") or "", reverse=True)
+    out.sort(key=lambda r: not r.get("last_sold"))
+    return out[:limit]
 
 
 def counts():
     r = q("""SELECT COUNT(*) n, SUM(list_price IS NOT NULL) priced, SUM(on_hand IS NOT NULL) stocked,
              MAX(price_updated) pu, MAX(stock_updated) su FROM items""", one=True)
-    return dict(r) if r else {}
+    out = dict(r) if r else {}
+    try:
+        out["inv"] = q("SELECT COUNT(*) n FROM invoice_products", one=True)["n"]
+    except Exception:   # noqa: BLE001
+        out["inv"] = 0
+    return out

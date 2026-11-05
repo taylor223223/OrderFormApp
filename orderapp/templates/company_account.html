@@ -33,7 +33,7 @@
 </div>
 <div class="card"><h3 style="margin-top:0">Items they buy <span class="small muted">(last price paid is what to quote)</span></h3>
 <div class="tablewrap" style="max-height:520px;overflow:auto"><table><tr><th>Item #</th><th>Description</th><th class="right">Units</th><th class="right">Total</th><th class="right">Last price</th><th>Last bought</th></tr>
-{% for i in ac['items'] %}<tr><td class="small">{{ i.item_no }}</td><td>{{ (i.descr or '')[:80] }}</td><td class="right">{{ '{:,.0f}'.format(i.qty or 0) }}</td><td class="right">{{ money(i.t) }}</td><td class="right">{{ money2(i.last_price) }}</td><td class="small">{{ i.last }}</td></tr>{% endfor %}</table></div></div>
+{% for i in ac['items'] %}<tr><td class="small">{{ i.item_no }}</td><td>{{ ((i.descr or '')|inches)[:80] }}</td><td class="right">{{ '{:,.0f}'.format(i.qty or 0) }}</td><td class="right">{{ money(i.t) }}</td><td class="right">{{ money2(i.last_price) }}</td><td class="small">{{ i.last }}</td></tr>{% endfor %}</table></div></div>
 <div class="card"><h3 style="margin-top:0">Purchase history</h3>
 <div class="tablewrap" style="max-height:520px;overflow:auto"><table><tr><th>Date</th><th>Type</th><th>Num</th><th>Rep</th><th class="right">Total</th></tr>
 {% for d in ac.docs %}<tr><td>{{ d.doc_date }}</td><td class="small">{{ d.doc_type }}</td><td><a href="{{ url_for('company.doc', did=d.id) }}">{{ d.num }}</a></td><td class="small">{{ d.rep or '' }}</td><td class="right">{{ money2(d.total) }}</td></tr>{% endfor %}</table></div>

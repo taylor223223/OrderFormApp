@@ -49,7 +49,7 @@ window.CAB_ORDER = (function(){
   const stdDepth = () => STD[(L && L.room) || 'Kitchen'] || STD.Kitchen;
   function newBox(row, type){
     const [_, w, h, d, kind] = (row === 'lowers' ? LOWER : UPPER)[type];
-    const b = {type, w: String(w), h: String(h), d: String(d), doors: '', drawers: 'No', drawer_n: '', drawer_h: '', hinge: '', label: '', notes: ''};
+    const b = {type, w: String(w), h: String(h), d: String(d), doors: '', drawers: 'No', drawer_n: '', drawer_h: '', drawer_layout: 'Stacked', hinge: '', label: '', notes: ''};
     if (row === 'lowers' && ['cab', 'sink'].includes(kind)) b.d = stdDepth();
     if (['cab','sink','tall'].includes(kind)) b.doors = w >= 24 ? '2' : '1';
     if (type === 'Drawer base') Object.assign(b, {drawers: 'Yes', drawer_n: '3', doors: '0'});
@@ -58,7 +58,7 @@ window.CAB_ORDER = (function(){
   const kindOf = (row, b) => ((row === 'lowers' ? LOWER : UPPER)[b.type] || [0,0,0,0,'cab'])[4];
   function rowTable(wi, row){
     const types = row === 'lowers' ? LOWER : UPPER, boxes = L.walls[wi][row], P = row === 'lowers' ? 'L' : 'U';
-    let h = `<table><tr><th></th><th>Box</th><th>Width</th><th>Height</th><th>Depth</th><th>Doors</th><th>Drawers</th><th>How many</th><th>Drawer ht</th><th>Hinge</th><th>Notes</th><th></th></tr>`;
+    let h = `<table><tr><th></th><th>Box</th><th>Width</th><th>Height</th><th>Depth</th><th>Doors</th><th>Drawers</th><th>How many</th><th>Drawer ht</th><th title="Drawers stacked on top of each other, or next to each other in one row">Stacked / side by side</th><th>Hinge</th><th>Notes</th><th></th></tr>`;
     boxes.forEach((b, i) => {
       const k = kindOf(row, b), cab = ['cab','sink','tall'].includes(k);
       h += `<tr class="${k.startsWith('space') ? 'space' : k}" data-w="${wi}" data-row="${row}" data-i="${i}">
@@ -71,8 +71,9 @@ window.CAB_ORDER = (function(){
         <td><select data-k="drawers"><option ${b.drawers === 'Yes' ? 'selected' : ''}>Yes</option><option ${b.drawers !== 'Yes' ? 'selected' : ''}>No</option></select></td>
         <td><input class="s" data-k="drawer_n" value="${esc(b.drawer_n)}" inputmode="numeric" ${b.drawers === 'Yes' ? '' : 'disabled'}></td>
         <td><input class="s" data-k="drawer_h" value="${esc(b.drawer_h)}" inputmode="decimal" placeholder="6" ${b.drawers === 'Yes' ? '' : 'disabled'}></td>
+        <td><select data-k="drawer_layout" ${b.drawers === 'Yes' ? '' : 'disabled'}>${['Stacked', 'Side by side'].map(x => `<option ${x === (b.drawer_layout || 'Stacked') ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
         <td><select data-k="hinge">${['', 'Left', 'Right', 'Pair'].map(x => `<option ${x === b.hinge ? 'selected' : ''}>${x}</option>`).join('')}</select></td>`
-        : `<td colspan="5" class="small muted">${k.startsWith('space') ? 'space - no cabinet' : 'filler'}</td>`}
+        : `<td colspan="6" class="small muted">${k.startsWith('space') ? 'space - no cabinet' : 'filler'}</td>`}
         <td><input data-k="notes" value="${esc(b.notes)}" style="width:150px"></td>
         <td style="white-space:nowrap"><button type="button" class="btn sm" data-act="up" title="Move left">←</button><button type="button" class="btn sm" data-act="down" title="Move right">→</button><button type="button" class="btn sm" data-act="dup" title="Copy">⧉</button><button type="button" class="btn sm danger" data-act="rm" title="Remove">×</button></td></tr>`;
     });

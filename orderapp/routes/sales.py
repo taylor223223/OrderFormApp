@@ -356,6 +356,10 @@ def company_import():
             msgs.append(f"{CR.KINDS[kind]}: {CR.import_items(text, kind):,} item(s)")
     if addrs:
         msgs.append(f"Ship-to addresses: filled in for {CR.fill_addresses(addrs)} customer(s)")
+    try:
+        CR.refresh_invoice_products(force=True)    # Items & Stock: products that only show up on invoices
+    except Exception:   # noqa: BLE001 - never fail an import over the Items page
+        pass
     for _, _, path, _ in files:
         try:
             os.remove(path)
@@ -372,5 +376,7 @@ def items():
     term = request.args.get("q", "").strip()
     cat = request.args.get("category", "")
     stock = request.args.get("stock", "")
-    return render_template("items.html", rows=CR.search(term, cat, stock), q=term, cat=cat, stock=stock,
+    source = request.args.get("source", "")
+    rows = CR.search(term, cat, stock, source=source)
+    return render_template("items.html", rows=rows, q=term, cat=cat, stock=stock, source=source,
                            categories=S.CATEGORIES, counts=CR.counts())

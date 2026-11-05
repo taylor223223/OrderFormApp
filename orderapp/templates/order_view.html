@@ -23,7 +23,7 @@
   {% if is_reorder %}
   <div class="card"><h3 style="margin-top:0">Reorder lines · {{ (data.lines or [])|length }}</h3>
     <div class="tablewrap"><table><tr><th class="right">Qty</th><th>Item #</th><th>Description</th><th>Size</th><th>For</th><th>Invoice #</th><th>Last bought</th><th class="right">Last $</th></tr>
-    {% for l in data.lines or [] %}<tr><td class="right"><b>{{ l.qty }}</b></td><td class="small">{{ l.item_no }}</td><td>{{ l.desc }}</td><td class="nowrap">{{ l.size }}</td><td class="small">{{ l['for'] }}</td><td class="small">{{ l.invoice or '' }}</td><td class="small nowrap">{{ l.last_date }}</td><td class="right">{{ l.last_price }}</td></tr>
+    {% for l in data.lines or [] %}<tr><td class="right"><b>{{ l.qty }}</b></td><td class="small">{{ l.item_no }}</td><td>{{ l.desc|inches }}</td><td class="nowrap">{{ l.size|inches }}</td><td class="small">{{ l['for'] }}</td><td class="small">{{ l.invoice or '' }}</td><td class="small nowrap">{{ l.last_date }}</td><td class="right">{{ l.last_price }}</td></tr>
     {% else %}<tr><td colspan="8" class="empty">No lines.</td></tr>{% endfor %}</table></div>
     {% if data.contact %}<p><span class="muted">Requested by:</span> {{ data.contact }}</p>{% endif %}
     {% if data.comments %}<p><span class="muted">Comments:</span> {{ data.comments }}</p>{% endif %}

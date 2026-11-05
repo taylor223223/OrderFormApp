@@ -14,8 +14,8 @@
 {% if show_customer %}<td>{% if r.customer_id %}<a href="{{ url_for('customers.view', cid=r.customer_id, tab='history') }}">{{ r.cname }}</a>{% endif %}</td>{% endif %}
 <td class="nowrap"><a href="{{ url_for('orders.view', oid=r.order_id) }}">{{ r.po or ('#' ~ r.order_id) }}</a></td>
 <td class="nowrap">{{ r.unit }}{% if r.room %}<div class="small muted">{{ r.room }}</div>{% endif %}</td>
-<td><b>{{ r.product_label }}</b>{% if r.description %}<div class="small muted">{{ r.description }}</div>{% endif %}</td>
-<td class="nowrap">{{ r.size }}</td>
+<td><b>{{ r.product_label }}</b>{% if r.description %}<div class="small muted">{{ r.description|inches }}</div>{% endif %}</td>
+<td class="nowrap">{{ r.size|inches }}</td>
 <td>{% if r.color %}<span class="tag">{{ r.color }}</span>{% endif %}</td>
 <td class="small">{{ r.details }}{% if r.notes %}<div class="muted">{{ r.notes }}</div>{% endif %}</td>
 <td class="right">{{ r.qty }}</td>

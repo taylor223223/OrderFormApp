@@ -13,7 +13,8 @@ splits it), depth = the boxes' depth + the front overhang, with the backsplash r
 Data (kitchen_layouts.data with "v": 2):
   {"v": 2, "room", "notes", "top": {material, color, overhang, splash, edge}, "cab": {material, color},
    "walls": [{"name", "lowers": [box...], "uppers": [box...]}]}
-  box = {"type", "w", "h", "d", "doors", "drawers": "Yes"/"No", "drawer_n", "drawer_h", "hinge", "label", "notes"}
+  box = {"type", "w", "h", "d", "doors", "drawers": "Yes"/"No", "drawer_n", "drawer_h",
+         "drawer_layout": "Stacked"/"Side by side", "hinge", "label", "notes"}
 """
 import copy
 
@@ -71,7 +72,7 @@ def new_box(row, typ):
         t = (LOWER_TYPES if row == "lowers" else UPPER_TYPES)[typ]
     _, w, h, dp, kind = t
     b = {"type": typ, "w": str(w), "h": f"{h:g}", "d": str(dp), "doors": "", "drawers": "No", "drawer_n": "",
-         "drawer_h": "", "hinge": "", "label": "", "notes": ""}
+         "drawer_h": "", "drawer_layout": "Stacked", "hinge": "", "label": "", "notes": ""}
     if kind in ("cab", "sink", "tall"):
         b["doors"] = "2" if w >= 24 else "1"
     if typ == "Drawer base":
@@ -234,7 +235,8 @@ def schedule(d):
                 dr = ""
                 if k in ("cab", "sink", "tall") and b.get("drawers") == "Yes":
                     n = b.get("drawer_n") or "1"
-                    dr = f"{n}" + (f' @ {fin(num(b["drawer_h"]))}' if num(b.get("drawer_h")) else "")
+                    dr = f"{n}" + (" side by side" if side_by_side(b) else "") + \
+                        (f' @ {fin(num(b["drawer_h"]))}' if num(b.get("drawer_h")) else "")
                 elif k in ("cab", "sink", "tall"):
                     dr = "No"
                 note = b.get("notes") or ""
@@ -378,12 +380,20 @@ def _label(P, r, name, bid, color, fs, band, reserve=None):
     P.append(("text", (x0 + x1) / 2, cy + size + 1, bid, size * 0.9, GREY, "middle", False))
 
 
+def side_by_side(b):
+    """Drawers next to each other in one row (2 drawers over the doors) instead of stacked."""
+    return b.get("drawers") == "Yes" and (b.get("drawer_layout") or "").lower().startswith("side") \
+        and int(num(b.get("drawer_n")) or 1) > 1
+
+
 def _drawer_band(b, s):
     if b.get("drawers") != "Yes":
         return 0
     n = int(num(b.get("drawer_n")) or 1)
     dh = num(b.get("drawer_h")) or 6
-    return min(n * dh * s, 999) if b["type"] != "Drawer base" else 0
+    if b["type"] == "Drawer base":
+        return 0
+    return min((dh if side_by_side(b) else n * dh) * s, 999)
 
 
 CAB_STYLES = ["Shaker", "Shaker Slim", "Italia", "Bradford", "Elegante", "Elegante Gauntlet Supermatte"]
@@ -421,11 +431,27 @@ def _style_face(P, a, b_, c, d_, style, s):
 
 
 def _fronts(P, r, b, s, fs, style=""):
-    """Drawer fronts across the top (or the whole box for a drawer base), doors under them."""
+    """Drawer fronts across the top (or the whole box for a drawer base), doors under them.
+    Side by side: the drawers sit next to each other in one row across the top (a drawer base: full height)."""
     x0, y0, x1, y1 = r
     inset = 2.0
     y = y0
-    if b.get("drawers") == "Yes":
+    if side_by_side(b):
+        n = max(1, int(num(b.get("drawer_n")) or 1))
+        dh = (y1 - y0) if b["type"] == "Drawer base" else (num(b.get("drawer_h")) or 6) * s
+        bot = min(y + dh, y1)
+        dw = (x1 - x0) / n
+        for k in range(n):
+            a = x0 + k * dw
+            P.append(("rect", a + inset, y + inset, a + dw - inset, bot - inset * 0.5, GREY, None, 0.6))
+            _style_face(P, a + inset, y + inset, a + dw - inset, bot - inset * 0.5, style, s)
+            cx, cy = a + dw / 2, (y + min(bot, y + 12 * s)) / 2 if b["type"] == "Drawer base" else (y + bot) / 2
+            half = min(5, dw / 4)
+            P.append(("line", cx - half, cy, cx + half, cy, GREY, 1.2, None))
+        y = bot
+        if y >= y1 - 1:
+            return
+    elif b.get("drawers") == "Yes":
         n = max(1, int(num(b.get("drawer_n")) or 1))
         if b["type"] == "Drawer base":
             dh = (y1 - y0) / n
@@ -782,6 +808,7 @@ def order_lines(d, form_key):
                         "style": d["cab"].get("style") or "",
                         "unit": d.get("unit") or "",
                         "line_comments": f"{w['name']} {box_id(row, i)} {b['type']}" +
+                                         (f" - {b.get('drawer_n')} drawers side by side" if side_by_side(b) else "") +
                                          (f" - {b['notes']}" if b.get("notes") else "")}
                 if b.get("hinge") in ("Left", "Right", "Pair"):
                     line["hinge_side"] = b["hinge"]

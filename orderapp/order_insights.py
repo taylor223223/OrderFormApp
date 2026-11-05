@@ -11,6 +11,7 @@ from datetime import date, timedelta
 
 from .catalog import FORMS, PRODUCTS, products_for_form
 from .db import loads, q
+from .inches import inches_text
 
 # ------------------------------------------------------------------ sizes
 _FRAC = r"\d+(?:\s*[- ]\s*\d+/\d+|/\d+)?"
@@ -103,8 +104,8 @@ def purchases(customer_id, since=None):
                 continue
             seen.add(k)
             out.append({"date": r["doc_date"], "invoice": r["num"], "type": r["doc_type"], "rep": r["rep"] or "",
-                        "item_no": r["item_no"] or "", "desc": r["memo"] or r["item_desc"] or "",
-                        "stock_desc": r["item_desc"] or "", "qty": r["qty"], "price": r["price"],
+                        "item_no": r["item_no"] or "", "desc": inches_text(r["memo"] or r["item_desc"] or ""),
+                        "stock_desc": inches_text(r["item_desc"] or ""), "qty": r["qty"], "price": r["price"],
                         "amount": r["amount"] or 0, "category": r["category"] or "Other", "source": "company"})
     for r in q("""SELECT s.invoice_date, s.invoice_no, s.rep, l.item_no, l.description, l.qty, l.unit_price, l.amount,
                   l.category FROM sales_lines l JOIN sales s ON s.id=l.sale_id
@@ -114,7 +115,7 @@ def purchases(customer_id, since=None):
             continue
         seen.add(k)
         out.append({"date": r["invoice_date"], "invoice": r["invoice_no"], "type": "Invoice", "rep": r["rep"] or "",
-                    "item_no": r["item_no"] or "", "desc": r["description"] or "", "stock_desc": "",
+                    "item_no": r["item_no"] or "", "desc": inches_text(r["description"] or ""), "stock_desc": "",
                     "qty": r["qty"], "price": r["unit_price"], "amount": r["amount"] or 0,
                     "category": r["category"] or "Other", "source": "sales"})
     out.sort(key=lambda r: (r["date"] or "", r["invoice"] or ""), reverse=True)
