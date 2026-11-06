@@ -445,7 +445,7 @@ def _measure_rows(sp, prehung):
     """Redraw the company Measurements rows (same wording, Arial 10) a little tighter, on the source page that is
     then copied onto the form. Returns {box name: rect} in source coordinates.
     Door:     hinges 1-4 | width / height | one-sided deadbolt | deadbolt | entry lock | peephole | bore size
-    Pre-Hung: rough opening + jamb thickness | width / height | one-sided deadbolt + deadbolt +
+    Pre-Hung: width / height + jamb thickness | one-sided deadbolt + deadbolt +
               entry lock + bore size
               | threshold type, color, size, thickness | hinge color, self closing, NRP | glass, peep hole + location"""
     font = fitz.Font(fontfile=ARIAL)
@@ -455,11 +455,10 @@ def _measure_rows(sp, prehung):
     size = [("label", "Actual door width in inches:"), ("box", "DoorWidth.0", 58), ("gap", 30),
             ("label", "Actual door height in inches:"), ("box", "DoorHeight.0", 58)]
     if prehung:
-        rows = [
-            [("label", "Rough Opening Width:"), ("box", "RoughWidth.0", 58), ("gap", 6),
-             ("label", "Rough Opening Height:"), ("box", "RoughHeight.0", 58), ("gap", 6),
+        rows = [   # no rough opening (11/06) and no hinge locations (11/05): the door comes cut + hung in its frame
+            [("label", "Actual door width:"), ("box", "DoorWidth.0", 52), ("gap", 10),
+             ("label", "Actual door height:"), ("box", "DoorHeight.0", 52), ("gap", 10),
              ("label", "Jamb Thickness:"), ("box", "JambThick.0", 0)],
-            size,     # no hinge locations: pre-hung doors come already cut and hung in the frame (11/05)
             [("label", "Top of door to center of:"), ("label", "One-sided deadbolt"), ("box", "OneSided_Deadbolt.0", 44),
              ("label", "Deadbolt"), ("box", "Deadbolt.0", 44), ("label", "Entry lock"), ("box", "EntryLock.0", 44),
              ("label", "Bore size:"), ("box", "BoreSize.0", 0)],

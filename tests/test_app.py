@@ -313,7 +313,8 @@ def test_merged_forms_pick_paper_version():
                           hw_collection="Soma", hw_function="Privacy", hw_finish="Matte Black")
     fk, back = read_filled_form(fill_form("door", d)[0])
     b = back["blocks"][0]
-    assert fk == "door" and b["prehung"] == "Yes" and b["threshold"] == "36" and b["hw_collection"] == "Soma"
+    # pre-hung = Yes prints on the Pre-Hung form (one Door form in the app since 11/06)
+    assert fk == "prehung" and b["hw_collection"] == "Soma"
     assert b["hw_function"] == "Privacy" and b["hw_finish"] == "Matte Black"
     d["blocks"][0]["hardware"] = "No"   # hidden follow-up answers are not printed
     fk, back = read_filled_form(fill_form("door", d)[0])
@@ -397,7 +398,7 @@ def test_new_products_and_app_made_forms():
     spec = public_spec("door")
     style = next(f for f in spec["fields"] if f["key"] == "style")
     assert style["photos"] == "door_style" and "2-panel-arch" in spec["door_photo_slugs"]
-    thr = next(f for f in spec["fields"] if f["key"] == "threshold")
+    thr = next(f for f in spec["fields"] if f["key"] == "threshold_type")    # pre-hung: its threshold questions
     assert thr["show_if"] == {"key": "prehung", "in": ["Yes"]}
     prof = next(f for f in public_spec("trim")["fields"] if f["key"] == "profile")
     assert len(prof["options"]) == 11 and prof["photo_map"]

@@ -74,8 +74,9 @@ def test_prehung_pdf_has_new_boxes(app):
     with app.app_context():
         pdf, warns = fill_form("prehung", data)
     txt = _widgets(pdf)
-    for v in ("82-1/2", '5-5/8" x 36"', "58", "42"):
+    for v in ('5-5/8" x 36"', "58", "42"):
         assert v in txt, v
+    assert "82-1/2" not in txt                                   # no rough opening any more (11/06)
     assert "35-5/8" not in txt and "64-1/4" not in txt          # no hinge locations on the Pre-Hung form
     assert not any("fire-rated" in w for w in warns)
 

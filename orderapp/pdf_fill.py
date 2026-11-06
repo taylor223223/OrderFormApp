@@ -267,7 +267,21 @@ def fill_form(form_key, data):
 
 
 def _fill_any(form_key, data):
-    from .catalog import MERGED, choose_variant, translate_for_variant
+    from .catalog import MERGED, choose_variant, is_prehung, translate_for_variant
+    blocks = [b for b in (data.get("blocks") or []) if isinstance(b, dict) and any(v for v in b.values())]
+    if form_key == "door" and any(is_prehung(b) for b in blocks) and not all(is_prehung(b) for b in blocks):
+        # some doors pre-hung, some not: the plain doors on the Door Order Form, then the pre-hung ones on the
+        # Pre-Hung form - one PDF
+        out, warns = fitz.open(), []
+        for variant, part in (("door", [b for b in blocks if not is_prehung(b)]),
+                              ("prehung", [b for b in blocks if is_prehung(b)])):
+            pdf, w = _fill(variant, translate_for_variant("door", variant, dict(data, blocks=part)))
+            out.insert_pdf(fitz.open("pdf", pdf))
+            warns += list(w)
+        warns.insert(0, "Pre-hung doors are on the Pre-Hung form pages, the rest on the Door Order Form.")
+        pdf = out.tobytes(garbage=3, deflate=True)
+        out.close()
+        return pdf, warns
     if form_key in MERGED:
         variant = choose_variant(form_key, data)
         data = translate_for_variant(form_key, variant, data)

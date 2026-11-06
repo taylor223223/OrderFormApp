@@ -97,11 +97,16 @@ def stamp_quote(pdf_bytes, title="Order Form"):
     for page in doc:
         spots = _title_spots(page)
         if spots:
+            here = " ".join(w[4] for w in page.get_text("words") if any(fitz.Rect(w[:4]).intersects(sp[0])
+                                                                            for sp in spots))
             for r, _, _, _ in spots:
                 page.add_redact_annot(r + (-0.5, -0.5, 0.5, 0.5), fill=False)
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
             for r, bar, color, upper in spots:
-                new = quote_word(title.upper() if upper else title)
+                # a page that isn't this form (a Door order's pre-hung pages): keep its own title
+                t = here[here.upper().index("PRE-HUNG"):] if "PRE-HUNG" in here.upper() and \
+                    "pre-hung" not in title.lower() else title
+                new = quote_word(t.upper() if upper else t)
                 room = (bar.width - 10) if bar else max(r.width + 40, 200)
                 size = min(18.0, r.height * 0.85)
                 while size > 7 and fitz.get_text_length(new, fontname="hebo", fontsize=size) > room:

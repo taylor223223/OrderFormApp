@@ -129,7 +129,8 @@ $('#comments').value = DATA.comments || '';
 
 const PHOTO_URL = {{ url_for('settings.option_photo', group='G', name='N')|tojson }};
 function wrapAttrs(f){
-  return ` data-f="${f.key}"` + (f.show_if ? ` data-show-k="${esc(f.show_if.key)}" data-show-in="${esc(JSON.stringify(f.show_if.in))}"` : '');
+  return ` data-f="${f.key}"` + (f.show_if ? ` data-show-k="${esc(f.show_if.key)}" data-show-in="${esc(JSON.stringify(f.show_if.in))}"` : '') +
+    (f.show_any ? ` data-show-any="${esc(JSON.stringify(f.show_any))}"` : '');
 }
 function fieldHTML(f, bi){
   const id = `b${bi}_${f.key}`;
@@ -159,6 +160,13 @@ function refreshBlock(el){
     // a line that follows the order settings: its blank style means the order's style
     const sv = (src && src.value) || (el.id !== 'orderDefaults' && typeof SHARED !== 'undefined' && SHARED.has(w.dataset.showK) ? (DEF[w.dataset.showK] || '') : '');
     const ok = srcShown && src && JSON.parse(w.dataset.showIn).includes(sv);
+    w.classList.toggle('hidden-if', !ok);
+  });
+  el.querySelectorAll('[data-show-any]').forEach(w => {      // shown when any one of the answers applies
+    const ok = JSON.parse(w.dataset.showAny).some(c => {
+      const src = el.querySelector(`[data-k="${c.key}"]`);
+      return src && !(src.closest('[data-f]') || {classList: {contains: () => false}}).classList.contains('hidden-if') && c.in.includes(src.value);
+    });
     w.classList.toggle('hidden-if', !ok);
   });
   el.querySelectorAll('.opt-photo').forEach(box => {
@@ -479,6 +487,16 @@ $('#custSel').onchange = async e => {
   dirty = true;
 };
 
+// Door form: Pre-Hung Yes on every line = it prints on the Pre-Hung form; say so in the title
+function prehungTitle(){
+  if (FORM_KEY !== 'door') return;
+  const vals = [...document.querySelectorAll('#blocks .blk')].filter(b => Object.keys(getBlock(b)).length)
+    .map(b => (b.querySelector('[data-k="prehung"]') || {}).value || '');
+  const t = $('#formTitle'), all = vals.length && vals.every(v => v === 'Yes'), some = vals.some(v => v === 'Yes');
+  t.textContent = (all ? 'Pre-Hung Door Form' : t.dataset[$('#kind').value === 'quote' ? 'quote' : 'order']) +
+                  (some && !all ? ' + Pre-Hung' : '');
+}
+if (FORM_KEY === 'door') { $('#blocks').addEventListener('change', prehungTitle); setTimeout(prehungTitle, 0); }
 // initial blocks
 drawDefaults();
 const initial = (DATA.blocks && DATA.blocks.length) ? DATA.blocks : [];

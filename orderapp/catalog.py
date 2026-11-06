@@ -198,8 +198,7 @@ def _door_common(prehung=False):
         f += [
             _c("swing_dir", "Swing In / Out", [("Swing In", "SwingIn.0"), ("Swing Out", "SwingOut.0")]),
             _c("jamb", "Jamb Type", [("Flat", "JambFlat.0"), ("Kerfed", "JambKerfed.0")]),
-            _t("rough_width", "Rough Opening Width (in)", "RoughWidth.0", measure=True),
-            _t("rough_height", "Rough Opening Height (in)", "RoughHeight.0", measure=True),
+            # no rough opening width / height on pre-hung doors (Taylor, 11/06)
             _t("jamb_thick", "Jamb Thickness / Width (in)", "JambThick.0", measure=True, placeholder='e.g. 2-1/4"'),
         ]
     # hinge locations: Door form only - a pre-hung door comes already cut and hung in its frame (Taylor, 11/05;
@@ -525,7 +524,7 @@ FORMS = {
 # "new_door" and "vertical_blind_2" are the company's alternate versions of the same paper forms.
 # In the app they're merged into one Door form and one Vertical Blind form (see MERGED below);
 # the app prints whichever paper version fits what was ordered.
-FORM_ORDER = ["door", "prehung", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
+FORM_ORDER = ["door", "bypass", "screen_door", "window_screen", "horizontal_blind", "vertical_blind",
               "roller_shade", "trim", "door_hardware", "bath_hardware", "countertop", "cabinet_prefab",
               "door_front", "drawer_box", "sliding_patio_door", "closet_bifold", "shower_door", "mirror_frame"]
 # still open old orders; no longer offered for new ones (AIS only sells the pre-fab boxes - Taylor, 10/26)
@@ -550,8 +549,8 @@ GENERIC_FIELDS = [
 
 PRODUCTS = {
     "interior_door": {"label": "Interior Door", "forms": ["door", "new_door"]},
-    "entry_door": {"label": "Entry / Exterior Door", "forms": ["door", "new_door", "prehung"]},
-    "prehung_door": {"label": "Pre-Hung Door", "forms": ["prehung"]},
+    "entry_door": {"label": "Entry / Exterior Door", "forms": ["door", "new_door"]},
+    "prehung_door": {"label": "Pre-Hung Door", "forms": ["door"]},
     "bypass_door": {"label": "Bi-Pass Closet Door", "forms": ["bypass", "closet_bifold"]},
     "sliding_patio_door": {"label": "Sliding Patio Door", "forms": ["sliding_patio_door"]},
     "closet_door": {"label": "Closet / Bi-Fold Door", "forms": ["closet_bifold", "bypass"]},
@@ -1222,6 +1221,8 @@ DOOR_FINISHES = [
 ]
 MERGED = {
     "vertical_blind": {"variants": ["vertical_blind", "vertical_blind_2"], "default": "vertical_blind"},
+    # Pre-Hung is a Yes/No on the Door form (Taylor, 11/06): pre-hung lines print on the Pre-Hung paper form
+    "door": {"variants": ["door", "prehung"], "default": "door"},
 }
 VARIANT_PARENT = {v: k for k, m in MERGED.items() for v in m["variants"] if v != k}
 
@@ -1233,22 +1234,57 @@ def _choice(key, label, table, other_field=None, **kw):
     return d
 
 
+PREHUNG_YES = ("prehung", ["Yes"])
+PREHUNG_NO = ("prehung", ["No", ""])       # door only (blank = not pre-hung)
+NOT_PREHUNG = ("hinge1", "hinge2", "hinge3", "hinge4", "door_edge")   # a pre-hung door comes cut + hung
+PREHUNG_ONLY = ["swing_dir", "jamb", "jamb_thick", "threshold_type", "threshold_color", "threshold_size",
+                "threshold_thick", "hinge_color", "nrp_hinges", "glass_insert"]
+
+
+def _door_editor_fields():
+    """The Door form in the app: Pre-Hung Yes/No up top; Yes turns it into the Pre-Hung form (frame, jamb,
+    threshold, hinge color...; no hinge locations), No is the plain door slab."""
+    out = list(FORMS["door"]["blocks"][0])
+    picked = [next(x for x in out if x["key"] == k) for k in ("style", "style_other", "finish")]
+    picked[0] = dict(picked[0], label="Door Type")
+    picked[1] = dict(picked[1], label="Other type", show_if=("style", ["Other"]))
+    rest = [x for x in out if x["key"] not in ("style", "style_other", "finish")]
+    i = next(i for i, x in enumerate(rest) if x["key"] not in ("qty", "item_no"))
+    out = rest[:i] + picked + rest[i:]
+    ph = next(x for x in out if x["key"] == "prehung")
+    out = [x for x in out if x["key"] != "prehung"]
+    out.insert(next(i for i, x in enumerate(out) if x["key"] not in ("qty", "item_no")),
+               dict(ph, label="Pre-Hung (door + frame)"))
+    out = [dict(x, show_if=PREHUNG_NO) if x["key"] in NOT_PREHUNG else x for x in out]
+    # self-closing hinges: asked on every pre-hung door, and on any fire-rated door
+    out = [dict(x, show_if=None, show_any=[{"key": "fire_rated", "in": ["Yes"]}, {"key": "prehung", "in": ["Yes"]}])
+           if x["key"] == "self_closing" else x for x in out]
+    out = [x for x in out if x["key"] != "threshold"]      # pre-hung: the threshold questions below cover it
+    pre = {x["key"]: x for x in FORMS["prehung"]["blocks"][0]}
+    def put(keys, after):
+        nonlocal out
+        i = next(n for n, x in enumerate(out) if x["key"] == after) + 1
+        out = out[:i] + [dict(pre[k], show_if=PREHUNG_YES) for k in keys if k in pre] + out[i:]
+    put(["swing_dir", "jamb", "jamb_thick"], "swing")
+    put(["threshold_type", "threshold_color", "threshold_size", "threshold_thick", "hinge_color", "nrp_hinges",
+         "glass_insert"], "peephole")
+    return out
+
+
 def editor_fields(form_key):
     """Fields shown in the app for a form. Merged forms show everything both paper versions can take."""
-    if form_key == "door":   # door type first, then finish
-        out = list(FORMS["door"]["blocks"][0])
-        picked = [next(x for x in out if x["key"] == k) for k in ("style", "style_other", "finish")]
-        picked[0] = dict(picked[0], label="Door Type")
-        picked[1] = dict(picked[1], label="Other type", show_if=("style", ["Other"]))
-        rest = [x for x in out if x["key"] not in ("style", "style_other", "finish")]
-        i = next(i for i, x in enumerate(rest) if x["key"] not in ("qty", "item_no"))
-        return rest[:i] + picked + rest[i:]
+    if form_key == "door":   # door type first, then finish; pre-hung Yes/No changes the rest
+        return _door_editor_fields()
     if form_key == "vertical_blind":
         base = list(FORMS["vertical_blind"]["blocks"][0])
         mount = next(x for x in FORMS["vertical_blind_2"]["blocks"][0] if x["key"] == "mount")
         i = [x["key"] for x in base].index("room") + 1
         return base[:i] + [mount] + base[i:]
     return FORMS[form_key]["blocks"][0]
+
+
+def is_prehung(blk):
+    return str((blk or {}).get("prehung") or "").strip().lower() in ("yes", "y")
 
 
 def choose_variant(form_key, data):
@@ -1258,7 +1294,8 @@ def choose_variant(form_key, data):
         return form_key
     blocks = [b for b in (data.get("blocks") or []) if any(v for v in b.values())]
     if form_key == "door":
-        return "door"   # one Door Order Form; types without a box are written in its "Other" box
+        # pre-hung lines print on the Pre-Hung form, the rest on the Door Order Form (pdf_fill splits a mix)
+        return "prehung" if blocks and all(is_prehung(b) for b in blocks) else "door"
     if form_key == "vertical_blind":
         if any(b.get(k) for b in blocks for k in ("valance", "val_only", "item_no")):
             return "vertical_blind"
@@ -1273,6 +1310,15 @@ def translate_for_variant(form_key, variant, data):
     d = copy.deepcopy(data)
     notes = []
     keys = {f["key"] for f in FORMS[variant]["blocks"][0]}
+    if form_key == "door":
+        # Door / Pre-Hung share their boxes (same names), so nothing is re-labeled; a pre-hung line just needs its
+        # Y/N boxes filled the Pre-Hung form's way
+        for b in d.get("blocks") or []:
+            if variant == "prehung" and b.get("peephole") and not b.get("peephole_yn"):
+                b["peephole_yn"] = "Y"      # the Pre-Hung form only prints the peephole spot under Peep Hole: Y
+            if variant == "prehung" and b.get("self_closing"):
+                b["self_closing"] = "Y" if str(b["self_closing"]).lower().startswith("y") else "N"
+        return d
     for i, b in enumerate(d.get("blocks") or [], 1):
         if form_key == "door":
             for table, key, other in ((DOOR_STYLES, "style", "style_other"), (DOOR_FINISHES, "finish", "finish_other")):
@@ -1449,6 +1495,8 @@ def public_spec(form_key):
             d["room_default"] = {"key": fd["room_default"][0], "values": fd["room_default"][1]}
         if fd.get("show_if"):
             d["show_if"] = {"key": fd["show_if"][0], "in": list(fd["show_if"][1])}
+        if fd.get("show_any"):          # shown when any one of these applies
+            d["show_any"] = fd["show_any"]
         if fd.get("photos") and fd["kind"] == "choice":
             from . import option_photos as photos
             d["photos"] = fd["photos"]
