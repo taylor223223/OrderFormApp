@@ -43,7 +43,7 @@
       {% if spec.has_sales_rep %}<div><label>Sales Rep</label><input id="sales_rep"></div>{% endif %}
     </div>
   </details>
-  <div class="field" style="margin-top:10px"><label>Comments {% if not spec.has_comments %}<span class="muted">(this form has no comments box - printed in the last line's comments)</span>{% endif %}</label><textarea id="comments" rows="2" placeholder="Notes for the order. Units and anything that doesn't fit a box get added here automatically."></textarea></div>
+  <div class="field" style="margin-top:10px"><label>Comments {% if not spec.has_comments %}<span class="muted">(this form has no comments box - printed in the last line's comments)</span>{% endif %}</label><textarea id="comments" rows="2" placeholder="Notes for the order. Anything that doesn't fit a box gets added here automatically."></textarea></div>
 </div>
 
 {% if layout_mode %}{% include "_cabinet_order_editor.html" %}{% endif %}
@@ -66,6 +66,7 @@
   <span class="small muted" id="layoutMsg">The attached layout's drawing prints at the end of the order PDF.</span>
 </div>
 {% endif %}
+<div class="card orderdefs" id="orderDefaults" hidden></div>
 <div id="blocks" {% if layout_mode %}hidden{% endif %}></div>
 <div class="row" style="margin-bottom:16px" {% if layout_mode %}hidden{% endif %}><button type="button" class="btn" id="addBlock">+ Add line</button><span class="muted small" id="pageNote"></span></div>
 
@@ -155,7 +156,9 @@ function refreshBlock(el){
     const src = el.querySelector(`[data-k="${w.dataset.showK}"]`);
     const srcWrap = src && src.closest('[data-f]');
     const srcShown = !srcWrap || !srcWrap.classList.contains('hidden-if');
-    const ok = srcShown && src && JSON.parse(w.dataset.showIn).includes(src.value);
+    // a line that follows the order settings: its blank style means the order's style
+    const sv = (src && src.value) || (el.id !== 'orderDefaults' && typeof SHARED !== 'undefined' && SHARED.has(w.dataset.showK) ? (DEF[w.dataset.showK] || '') : '');
+    const ok = srcShown && src && JSON.parse(w.dataset.showIn).includes(sv);
     w.classList.toggle('hidden-if', !ok);
   });
   el.querySelectorAll('.opt-photo').forEach(box => {
@@ -233,6 +236,77 @@ function hingeMirror(el, target){
   if (target === top && (!bot.value || bot.dataset.auto === '1')) { bot.value = top.value; bot.dataset.auto = '1'; }
 }
 
+// Faster blind entry: style / options set ONCE for the order (same across a property); each window is width,
+// height and location. A window can still differ: open "Different for this window" on that line.
+const SHARED = new Set(SPEC.shared || []);
+const DEF = {};
+(function initDefaults(){
+  if (!SHARED.size) return;
+  if (DATA.defaults && typeof DATA.defaults === 'object') { Object.assign(DEF, DATA.defaults); return; }
+  // an order saved before this: the most common value on its lines becomes the order setting
+  SHARED.forEach(k => {
+    const cnt = {};
+    (DATA.blocks || []).forEach(b => { if (b[k]) cnt[b[k]] = (cnt[b[k]] || 0) + 1; });
+    const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+    if (best) DEF[k] = best[0];
+  });
+})();
+function absorb(values){
+  // a line's shared values: the first one fills an empty order setting; one equal to the setting just follows it
+  if (!SHARED.size || !values) return values;
+  const v = Object.assign({}, values);
+  SHARED.forEach(k => {
+    if (v[k] === undefined || v[k] === '') return;
+    if (!DEF[k]) { DEF[k] = v[k]; drawDefaults(); }
+    if (DEF[k] === v[k]) delete v[k];
+  });
+  return v;
+}
+function fullBlock(el){
+  const own = getBlock(el);
+  if (!SHARED.size || !Object.keys(own).length) return own;
+  const out = {};
+  SHARED.forEach(k => { if (DEF[k]) out[k] = DEF[k]; });
+  Object.assign(out, own);
+  // a setting that only applies to some styles (faux wood slats...) drops off when the line's style doesn't use it
+  SPEC.fields.forEach(f => {
+    if (f.show_if && out[f.key] !== undefined && !f.show_if.in.includes(out[f.show_if.key] || '')) delete out[f.key];
+  });
+  return out;
+}
+function overrideNote(el){
+  const sum = el.querySelector('.ovr summary .ovrnote'); if (!sum) return;
+  const own = getBlock(el), diff = [...SHARED].filter(k => own[k] !== undefined);
+  sum.textContent = diff.length ? 'differs: ' + diff.map(k => `${(FIELD[k] || {}).label || k} ${own[k]}`).join(', ')
+                                : 'same as the order settings';
+  el.querySelector('.ovr').classList.toggle('on', diff.length > 0);
+}
+function drawDefaults(){
+  const card = $('#orderDefaults'); if (!card || !SHARED.size) return;
+  if (!card.dataset.built) {
+    card.hidden = false; card.dataset.built = '1';
+    card.innerHTML = `<div class="row" style="justify-content:space-between"><b>Same for every window</b>
+      <span class="small muted">Set the style once - then each line below is just width, height and location. A line can still differ: open "Different for this window" on it.</span></div>
+      <div class="blk-b">${SPEC.fields.filter(f => SHARED.has(f.key)).map(f => fieldHTML(f, 'o')).join('')}</div>`;
+    const upd = ev => {
+      const t = ev.target; if (!t.dataset || !t.dataset.k) return;
+      DEF[t.dataset.k] = t.type === 'checkbox' ? (t.checked ? 'Yes' : '') : t.value.trim();
+      refreshBlock(card); dirty = true; updatePageNote();
+      document.querySelectorAll('#blocks .blk').forEach(overrideNote);
+      $('#blocks').dispatchEvent(new Event('change'));        // price estimate follows the settings
+    };
+    card.addEventListener('input', upd); card.addEventListener('change', upd);
+  }
+  card.querySelectorAll('[data-k]').forEach(i => {
+    const val = DEF[i.dataset.k] || '';
+    if (i.tagName === 'SELECT' && val && ![...i.options].some(o => o.value === val)) {
+      const o = document.createElement('option'); o.value = val; o.textContent = val + ' (custom)'; i.appendChild(o);
+    }
+    if (i.type === 'checkbox') i.checked = /^(yes|y|true|1)$/i.test(val); else if (document.activeElement !== i) i.value = val;
+  });
+  refreshBlock(card);
+}
+
 let blockCount = 0;
 function addBlock(values, predictedKeys){
   const bi = blockCount++;
@@ -244,7 +318,9 @@ function addBlock(values, predictedKeys){
      <button type="button" class="btn sm" data-act="dup">Duplicate</button>
      <button type="button" class="btn sm" data-act="clear">Clear</button>
      <button type="button" class="btn sm danger" data-act="rm">Remove</button></div>
-     <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit').map(f => fieldHTML(f, bi)).join('')}</div>`;
+     <div class="blk-b">${SPEC.fields.filter(f => f.key !== 'unit' && !SHARED.has(f.key)).map(f => fieldHTML(f, bi)).join('')}</div>` +
+     (SHARED.size ? `<details class="ovr"><summary class="small">Different for this window · <span class="ovrnote muted"></span></summary>
+       <div class="blk-b">${SPEC.fields.filter(f => SHARED.has(f.key)).map(f => fieldHTML(f, bi)).join('')}</div></details>` : '');
   if (FORM_KEY === 'countertop') {      // the top view for the kitchen shape picked, under the line
     const d = document.createElement('div'); d.className = 'ctshape'; d.title = 'Top view - what prints on the order';
     el.appendChild(d);
@@ -256,8 +332,10 @@ function addBlock(values, predictedKeys){
     el.addEventListener('input', upd); el.addEventListener('change', upd); el._shapeUpd = upd;
   }
   $('#blocks').appendChild(el);
-  setBlock(el, values || {}, predictedKeys);
+  setBlock(el, absorb(values || {}), predictedKeys);
+  overrideNote(el);
   if (el._shapeUpd) el._shapeUpd();
+  el.addEventListener('input', () => overrideNote(el));
   el.addEventListener('input', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); });
   el.addEventListener('change', ev => { hingeMirror(el, ev.target); onUserEdit(el, ev.target); refreshBlock(el); doorEdge(el, ev.target); fireRated(el, ev.target); roomDepth(el, ev.target); });
   el.querySelector('[data-act=rm]').onclick = () => { el.remove(); renumber(); dirty = true; };
@@ -341,12 +419,12 @@ async function loadUnit(unit, floorplan, targetEl){
        (r.verified.includes(false) ? ' - some are unverified, double-check' : '');
   if (!r.blocks.length) return;
   const blocks = r.blocks.slice();
-  if (targetEl) { setBlock(targetEl, blocks.shift(), Object.keys(r.blocks[0])); targetEl.dataset.touched = '1'; }
+  if (targetEl) { setBlock(targetEl, absorb(blocks.shift()), Object.keys(r.blocks[0])); targetEl.dataset.touched = '1'; overrideNote(targetEl); }
   // reuse empty lines first, then add more
   const empties = [...document.querySelectorAll('#blocks .blk')].filter(b => !Object.keys(getBlock(b)).length);
   blocks.forEach(b => {
     const el = empties.shift();
-    if (el) { setBlock(el, b, Object.keys(b)); el.dataset.touched = '1'; }
+    if (el) { setBlock(el, absorb(b), Object.keys(b)); el.dataset.touched = '1'; overrideNote(el); }
     else { const n = addBlock(b, Object.keys(b)); n.dataset.touched = '1'; }
   });
   dirty = true; renumber();
@@ -402,6 +480,7 @@ $('#custSel').onchange = async e => {
 };
 
 // initial blocks
+drawDefaults();
 const initial = (DATA.blocks && DATA.blocks.length) ? DATA.blocks : [];
 const fromEmail = {{ 'true' if order and order.source == 'email' and order.status == 'Draft' else 'false' }};
 initial.forEach(b => addBlock(b, fromEmail ? Object.keys(b) : null));
@@ -409,10 +488,25 @@ document.querySelectorAll('#blocks .blk').forEach(el => { doorEdge(el, null); fi
 for (let i = initial.length; i < SPEC.blocks_per_page; i++) addBlock({});
 
 document.querySelectorAll('[data-h], #comments, #sales_rep').forEach(i => i.addEventListener('input', () => dirty = true));
+if ($('#orderDefaults')) $('#orderDefaults').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.preventDefault(); });
+// typing windows row after row: Enter jumps to the next box, then to the next line (a new line if this was the last)
+$('#blocks').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT' || e.target.type === 'checkbox') return;
+  e.preventDefault();
+  const blk = e.target.closest('.blk');
+  const boxes = [...blk.querySelectorAll('.blk-h input[data-k], .blk-b > div:not(.hidden-if) input[data-k], .blk-b > div:not(.hidden-if) select[data-k]')]
+    .filter(i => !i.closest('details:not([open])'));
+  const i = boxes.indexOf(e.target);
+  if (i >= 0 && i < boxes.length - 1) { boxes[i + 1].focus(); return; }
+  let next = blk.nextElementSibling;
+  if (!next) { next = addBlock({}); dirty = true; }
+  const first = next.querySelector('.blk-h input[data-k]'); if (first) first.focus();
+});
 $('#orderForm').addEventListener('submit', () => {
   const header = {}; document.querySelectorAll('[data-h]').forEach(i => { if (i.value.trim()) header[i.dataset.h] = i.value.trim(); });
-  const blocks = [...document.querySelectorAll('#blocks .blk')].map(getBlock).filter(b => Object.keys(b).length);
+  const blocks = [...document.querySelectorAll('#blocks .blk')].map(fullBlock).filter(b => Object.keys(b).length);
   $('#payload').value = JSON.stringify({header, blocks, comments: $('#comments').value.trim(),
+                                        defaults: SHARED.size ? DEF : undefined,
                                         sales_rep: $('#sales_rep') ? $('#sales_rep').value.trim() : '',
                                         layout_id: $('#layoutSel') ? ($('#layoutSel').value || null) : null,
                                         layout: window.CAB_ORDER ? window.CAB_ORDER.data() : undefined});
@@ -457,7 +551,7 @@ $('#discardBtn').addEventListener('click', () => {
   }
   async function refresh() {
     const cid = $('#customer_id').value;
-    const blocks = [...document.querySelectorAll('#blocks .blk')].map(getBlock).filter(b => Object.keys(b).length);
+    const blocks = [...document.querySelectorAll('#blocks .blk')].map(fullBlock).filter(b => Object.keys(b).length);
     let r;
     try {
       r = await fetch(API, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': CSRF},

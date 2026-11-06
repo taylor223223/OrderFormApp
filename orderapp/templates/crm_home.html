@@ -28,11 +28,6 @@
       <td><a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.cname or '(no property)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %}<div class="small muted">{{ a.subject or '' }}{% if a.topics %} · {{ a.topics }}{% endif %}</div></td></tr>
     {% else %}<tr><td class="empty">No activity yet - log your first call above.</td></tr>{% endfor %}
     </table></div>
-    <h2>Haven't talked to in 30+ days</h2>
-    <div class="tablewrap"><table>
-    {% for c in stale %}<tr><td><a href="{{ url_for('customers.view', cid=c.id, tab='crm') }}">{{ c.name }}</a></td><td><span class="tag">{{ c.status }}</span></td><td class="small muted">{{ (c.last or 'never')[:10] }}</td></tr>
-    {% else %}<tr><td class="empty small">Mark properties Active or Prospect (on their CRM tab) and they'll show here when they go quiet.</td></tr>{% endfor %}
-    </table></div>
   </div>
 </div>
 {% endblock %}

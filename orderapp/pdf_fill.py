@@ -225,6 +225,8 @@ def _fill_block(page, idx, fields, block, notes, line_no):
         elif kind == "choice":
             if val in (None, ""):
                 continue
+            if key == "door_edge" and str(val).lower().startswith("bevel"):
+                continue        # beveled edge is the standard door - assumed, so it's left off the paper (11/05)
             opt = match_option(val, f["options"])
             if opt is None and f.get("other_option"):
                 opt = f["other_option"]
@@ -335,13 +337,26 @@ def _fill(form_key, data):
         if spec.get("sales_rep") and data.get("sales_rep"):
             _set_text(idx, spec["sales_rep"], data["sales_rep"])
         notes = []
+        # Unit #: its own box (11/05). One unit on this page -> the Unit # box at the top; several units -> each
+        # item's own Unit # box (multi-item forms). Only goes to the comments when there's no box for it.
+        page_units = []
+        for b in chunk:
+            u = str(b.get("unit") or "").strip()
+            if u and u not in page_units:
+                page_units.append(u)
+        head_unit = len(page_units) == 1 and "Unit#" in idx
+        if head_unit:
+            _set_text(idx, "Unit#", page_units[0])
         contact = contact_line(header)
         if contact and not all(k in spec["header"] for k in ("contact", "contact_phone", "contact_email")):
             notes.append(contact)    # no contact boxes on this paper form: first thing in the comments
         for i, blk in enumerate(chunk):
             line_no = pnum * per_page + i + 1
             bn = []
-            _fill_block(page, idx, spec["blocks"][i], blk, bn, line_no)
+            fields_i = spec["blocks"][i]
+            if head_unit:      # the top box has the unit: the added per-item boxes stay empty
+                fields_i = [f for f in fields_i if f["key"] != "unit"]
+            _fill_block(page, idx, fields_i, blk, bn, line_no)
             if any(f.get("plan") == "sink_left" for f in spec["blocks"][i]) and _no_sink(blk):
                 _hide_sink(page, idx, i)
             if any(f.get("plan") for f in spec["blocks"][i]) and blk.get("ct_shape") and \
@@ -364,7 +379,10 @@ def _fill(form_key, data):
                     warnings.append(f"Line {line_no} comments cut off: '{rest}'")
             else:
                 notes.extend(bn)
-            if not has_unit_field and blk.get("unit"):
+            if head_unit and not has_unit_field and blk.get("room") and not any(
+                    f["key"] == "room" for f in spec["blocks"][i]):
+                notes.insert(0, f"Line {line_no}: {blk['room']}")     # the unit's in its box; the room isn't
+            if not has_unit_field and blk.get("unit") and not head_unit:
                 notes.insert(0, f"Line {line_no}: Unit {blk['unit']}" +
                              (f" ({blk['room']})" if blk.get("room") and not any(
                                  f['key'] == 'room' for f in spec['blocks'][i]) else ""))
@@ -497,6 +515,10 @@ def read_filled_form(pdf_bytes):
                         break
         if blk:
             data["blocks"].append(blk)
+    head_unit = text("Unit#")          # one unit for the whole form: it's in the Unit # box at the top
+    if head_unit:
+        for blk in data["blocks"]:
+            blk.setdefault("unit", head_unit)
     return best, data
 
 

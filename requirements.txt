@@ -1,6 +1,6 @@
 flask>=3.0
 waitress>=3.0
-pymupdf>=1.24,<2.1   # 2.1 crashes (access violation) on Windows - keep on 2.0.x until a fixed release
+pymupdf>=1.24,<2.0   # 2.x: crashes on Windows (2.1) and saves form fields nested (2.0) - stay on 1.2x
 openpyxl>=3.1
 pillow>=10
 pillow-heif>=0.16

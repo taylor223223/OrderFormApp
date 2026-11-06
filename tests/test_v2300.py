@@ -187,7 +187,7 @@ def test_forms_in_one_pdf(app, c):
     b = _save(c, app.cid, "door", [{"qty": "2", "width": "30", "height": "80"}])
     q_ = _save(c, app.cid, "drawer_box", [{"qty": "4", "width": "14"}], kind="quote")
     trk = c.get("/tracking?status=all").get_data(as_text=True)
-    assert 'form="pkgSel"' in trk and "Put the checked forms in one PDF" in trk and "Make it an order" in trk
+    assert 'form="pkgSel"' in trk and "Compile into one PDF" in trk and "Download checked" in trk and "Make it an order" in trk
     r = _post(c, "/orders/package", {"make": "1", "ids": [str(a), str(b), str(q_)]})
     html = r.get_data(as_text=True)
     assert "Made:" in html and "Order package (3 forms)" in html

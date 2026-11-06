@@ -29,6 +29,7 @@ HARDWARE_TYPES = ["Passage", "Privacy", "Entry"]
 HARDWARE_FINISHES = ["Satin Nickel", "Matte Black"]
 NEW_BLIND_STYLES = ["Basswood", "Metal Plus"]
 BLIND_SLATS = ['1"', '2"', '2-1/2"']          # slat size is its own choice (any style, any size)
+FAUX_SLATS = ["Smooth", "Embossed"]          # faux wood slat finish (11/05)
 SUNSCREEN_COLORS = ["Black", "Brown", "Beige", "Stucco", "Gray", "Dark Bronze"]
 
 
@@ -444,7 +445,7 @@ def _measure_rows(sp, prehung):
     """Redraw the company Measurements rows (same wording, Arial 10) a little tighter, on the source page that is
     then copied onto the form. Returns {box name: rect} in source coordinates.
     Door:     hinges 1-4 | width / height | one-sided deadbolt | deadbolt | entry lock | peephole | bore size
-    Pre-Hung: rough opening + jamb thickness | width / height | hinges 1-4 | one-sided deadbolt + deadbolt +
+    Pre-Hung: rough opening + jamb thickness | width / height | one-sided deadbolt + deadbolt +
               entry lock + bore size
               | threshold type, color, size, thickness | hinge color, self closing, NRP | glass, peep hole + location"""
     font = fitz.Font(fontfile=ARIAL)
@@ -458,7 +459,7 @@ def _measure_rows(sp, prehung):
             [("label", "Rough Opening Width:"), ("box", "RoughWidth.0", 58), ("gap", 6),
              ("label", "Rough Opening Height:"), ("box", "RoughHeight.0", 58), ("gap", 6),
              ("label", "Jamb Thickness:"), ("box", "JambThick.0", 0)],
-            size, hinges,
+            size,     # no hinge locations: pre-hung doors come already cut and hung in the frame (11/05)
             [("label", "Top of door to center of:"), ("label", "One-sided deadbolt"), ("box", "OneSided_Deadbolt.0", 44),
              ("label", "Deadbolt"), ("box", "Deadbolt.0", 44), ("label", "Entry lock"), ("box", "EntryLock.0", 44),
              ("label", "Bore size:"), ("box", "BoreSize.0", 0)],
@@ -626,6 +627,10 @@ def patch_blind(doc):
         for col, (x, labels) in enumerate(((64, old), (140, NEW_BLIND_STYLES))):
             for i, lab in enumerate(labels):
                 p.option(f"Blind {n} Style {lab}", x, rows[i] + 8.5, lab)
+        # faux wood slats: smooth or embossed - in the empty spots under the new styles (FW = Faux Wood, 11/05)
+        for i, lab in enumerate(FAUX_SLATS):
+            p.checkbox(f"Blind {n} Slat {lab}", 140, rows[2 + i] + 8.5)
+            p.text(140 + 8.5 + GAP, rows[2 + i] + 8.5 - 1.2, "FW " + lab, size=10)
         p.text(212, rows[0] + 8.5 - 1.2, "Slat size:", bold=True)
         for i, lab in enumerate(BLIND_SLATS):
             p.option(f"Blind {n} Slat {lab}", 212, rows[i + 1] + 8.5, lab)
@@ -681,6 +686,139 @@ def remove_leftovers(doc):
                               graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED)
 
 
+
+# --------------------------------------------------------------------------
+# Unit # in its own box (Taylor, 11/05): at the top next to the P.O. Number on every form (the Date cell is split
+# into Date | Unit #), and per item on the multi-item company forms that had no unit box.
+# --------------------------------------------------------------------------
+UNIT_HEADER = "Unit#"
+DATE_W = 70          # what's left for the date (11/05/2026 fits)
+
+
+def add_unit_header(doc, date_name="Date"):
+    page = doc[0]
+    dw = next((w for w in page.widgets() if w.field_name == date_name), None)
+    if dw is None or any(w.field_name == UNIT_HEADER for w in page.widgets()):
+        return
+    r = fitz.Rect(dw.rect)
+    lab, best = None, 99
+    for b in page.get_text("dict")["blocks"]:
+        for ln in b.get("lines", []):
+            for sp in ln["spans"]:
+                if sp["text"].strip().upper() not in ("DATE", "DATE:") or abs(sp["bbox"][0] - r.x0) > 8:
+                    continue
+                gap = r.y0 - sp["bbox"][3]            # the label sits just above its box
+                if -4 < gap < 16 and abs(gap) < best:
+                    lab, best = sp, abs(gap)
+    split = r.x0 + DATE_W
+    dw.rect = fitz.Rect(r.x0, r.y0, split - 1, r.y1)
+    dw.update()
+    top = (lab["bbox"][1] - 1.5) if lab else r.y0
+    page.draw_line((split, top), (split, r.y1), color=(0, 0, 0), width=0.9)
+    if lab:
+        bold = "Bold" in lab["font"] or lab["flags"] & 16
+        col = lab["color"]
+        rgb = ((col >> 16) & 255) / 255, ((col >> 8) & 255) / 255, (col & 255) / 255
+        text = "UNIT #:" if lab["text"].strip().endswith(":") else "Unit #"
+        font = ARIAL_B if bold else ARIAL
+        page.insert_text((split + (lab["bbox"][0] - r.x0) + 0.5, lab["origin"][1]), text, fontsize=lab["size"],
+                         fontname="AISUB" if bold else "AISU", fontfile=font, color=rgb)
+    w = fitz.Widget()
+    w.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    w.field_name = UNIT_HEADER
+    w.rect = fitz.Rect(split + 1, r.y0, r.x1, r.y1)
+    w.text_font, w.text_fontsize = "Helv", 10
+    if dw.fill_color:
+        w.fill_color = dw.fill_color
+    page.add_widget(w)
+    _keep_clear_buttons(doc, [UNIT_HEADER])
+
+
+def _unit_label(page, x, base, size=8.5, text="Unit #:"):
+    page.insert_text((x, base), text, fontsize=size, fontname="AISU", fontfile=ARIAL)
+    return fitz.Font(fontfile=ARIAL).text_length(text, size)
+
+
+def _text_box(page, name, rect, size=0):
+    w = fitz.Widget()
+    w.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    w.field_name = name
+    w.rect = fitz.Rect(rect)
+    w.text_font, w.text_fontsize = "Helv", size
+    page.add_widget(w)
+    return name
+
+
+def add_item_units(doc, qty_names, mode="after_qty", cell_right=None):
+    """A Unit # box per item (Unit#.0, Unit#.1 ...).
+    after_qty:  the Quantity box gets shorter and 'Unit #: ____' follows it on the same row
+    above_qty:  the empty cell just above Quantity (Vertical Blind inside/outside mount form)
+    under_item: under the Item # box (Screen Door form)"""
+    page = doc[0]
+    W = {w.field_name: w for w in page.widgets()}
+    names = []
+    for i, qn in enumerate(qty_names):
+        qw = W.get(qn)
+        if qw is None:
+            continue
+        r = fitz.Rect(qw.rect)
+        name = f"Unit#.{i}"
+        if mode == "after_qty":
+            right = max(r.x1, cell_right or 0) - 0.5
+            qw.rect = fitz.Rect(r.x0, r.y0, r.x0 + 16, r.y1)
+            qw.update()
+            base = r.y1 - 3.2
+            x = r.x0 + 18
+            x += _unit_label(page, x, base, 8, "Unit:") + 1.5      # narrow cell: "Unit:" + a box that fits 1043
+            page.draw_line((x, r.y1 - 1.5), (right, r.y1 - 1.5), color=(0, 0, 0), width=0.5)
+            names.append(_text_box(page, name, (x, r.y1 - 13, right, r.y1 - 1.5), 8))
+        elif mode == "above_qty":    # the empty first row of the left cell, level with "Actual Window Width"
+            base = r.y0 - 0.3
+            qw.rect = fitz.Rect(r.x0, r.y0 + 3, r.x1, r.y1)
+            qw.update()
+            x = 38.4 + _unit_label(page, 38.4, base, 9) + 3
+            page.draw_line((x, base + 1.5), (r.x1, base + 1.5), color=(0, 0, 0), width=0.5)
+            names.append(_text_box(page, name, (x, base - 9.5, r.x1, base + 1.5), 9))
+        elif mode == "top_half":     # Bi-Pass: the Quantity box is two rows tall - Unit # takes the top row
+            mid = r.y0 + r.height / 2
+            qw.rect = fitz.Rect(r.x0, mid, r.x1, r.y1)
+            qw.update()
+            base = mid - 2.5
+            x = 38.4 + _unit_label(page, 38.4, base, 9) + 3
+            page.draw_line((x, mid - 1), (r.x1, mid - 1), color=(0, 0, 0), width=0.5)
+            names.append(_text_box(page, name, (x, r.y0, r.x1, mid - 1), 9))
+        else:   # under_item
+            iw = W.get(f"Item#.{i}")
+            if iw is None:
+                continue
+            ir = iw.rect
+            y0 = ir.y1 + 3
+            base = y0 + 11
+            x = ir.x0 - 4 + _unit_label(page, ir.x0 - 4, base, 9) + 3
+            page.draw_line((x, base + 1.5), (ir.x1, base + 1.5), color=(0, 0, 0), width=0.5)
+            names.append(_text_box(page, name, (x, y0, ir.x1, base + 1), 9))
+    _keep_clear_buttons(doc, names)
+
+
+ITEM_UNITS = {   # company multi-item forms with no unit box of their own: (Quantity box names, where)
+    "OF-Vertical Blind.pdf": (["Qty.0", "Qty.1.0", "Qty.1.1.0", "Qty.1.1.1.0", "Qty.1.1.1.1"], "after_qty", 141.5),
+    "OrderFormVert.pdf": (["QTY1.0.0", "QTY1.0.1.0", "QTY1.0.1.1.0", "QTY1.0.1.1.1.0", "QTY1.0.1.1.1.1"],
+                          "above_qty"),
+    "OF-Window Screen.pdf": (["Qty.0", "Qty.1.0", "Qty.1.1"], "after_qty", 141.0),
+    "OF-Screen Door.pdf": (["Quantity.0", "Quantity.1.0", "Quantity.1.1.0", "Quantity.1.1.1"], "under_item"),
+    "OF-Bypass Door.pdf": (["Qty1.0", "Qty1.1"], "top_half"),
+}
+UNIT_DATE = {"OF-New Door Order Form.pdf": "Date"}
+NO_UNIT_HEADER = ("OF-Horizontal Blind Order Form.pdf",)     # its UNIT# is on every blind already
+
+
+def unit_boxes(fn, doc):
+    if fn not in NO_UNIT_HEADER:
+        add_unit_header(doc, UNIT_DATE.get(fn, "Date"))
+    if fn in ITEM_UNITS:
+        add_item_units(doc, *ITEM_UNITS[fn])
+
+
 PATCHES = {
     "OF-Vertical Blind.pdf": contact_only("OF-Vertical Blind.pdf"),
     "OrderFormVert.pdf": contact_only("OrderFormVert.pdf"),
@@ -704,6 +842,7 @@ def build_all():
             shutil.copy(os.path.join(forms, fn), src)
         doc = fitz.open(src)
         fix(doc)
+        unit_boxes(fn, doc)
         remove_leftovers(doc)
         doc.save(os.path.join(forms, fn), garbage=3, deflate=True)
         doc.close()

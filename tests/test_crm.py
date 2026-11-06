@@ -140,7 +140,7 @@ def test_crm_and_routes(client):
     post(c, "/crm/log", {"customer_id": cids[3], "kind": "Text", "notes": "Needs screens for 12 units",
                          "follow_up": today, "next": "/"})
     dash = c.get("/").get_data(as_text=True)
-    assert "Follow up: Needs screens for 12 units" in dash
+    assert "Follow up" in dash and "Follow up: Needs screens" not in dash   # titled as typed, not from the note
     # weekly report: page, pdf, csv, send as draft file
     # (with no week given, Mon/Tue default to LAST week's report - so ask for this week explicitly)
     html = c.get(f"/crm/report?week={today}").get_data(as_text=True)

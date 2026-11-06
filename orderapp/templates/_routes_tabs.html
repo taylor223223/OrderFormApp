@@ -6,6 +6,10 @@
   <a href="{{ url_for('plan.trip_log') }}" class="{{ 'on' if _ep == 'plan.trip_log' }}">🧾 Trip log</a>
   {% if _ep == 'plan.day' and day is defined and day %}<span class="spacer"></span>
   <span class="row small" style="gap:4px;align-items:center"><a class="btn sm" href="{{ url_for('plan.day', day=day_shift(day, -1)) }}" title="Day before">←</a>
-  <input type="date" value="{{ day }}" onchange="location.href={{ url_for('plan.day', day='DAY')|tojson }}.replace('DAY', this.value)" style="width:auto">
+  <input type="date" value="{{ day }}" class="goday" data-url="{{ url_for('plan.day', day='DAY') }}" style="width:auto" title="Go to a day" aria-label="Go to a day">
+  <script>/* picking a day opens that day's route (the old inline handler broke on its own quote marks) */
+  document.querySelectorAll('input.goday').forEach(i => i.addEventListener('change', () => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(i.value)) location.href = i.dataset.url.replace('DAY', i.value);
+  }));</script>
   <a class="btn sm" href="{{ url_for('plan.day', day=day_shift(day, 1)) }}" title="Next day">→</a></span>{% endif %}
 </div>

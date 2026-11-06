@@ -617,7 +617,8 @@ def build_door_style(spec, out_path, forms_dir):
             continue
         if typ == "array" and "(Name)" not in val:
             doc.xref_set_key(x, "Fields", "[" + " ".join("(" + nm + ")" for nm in names) + "]")
-    from .form_patches import remove_leftovers
+    from .form_patches import add_unit_header, remove_leftovers
+    add_unit_header(doc)      # Unit # box next to the P.O. Number (11/05)
     remove_leftovers(doc)
     doc.set_metadata({"title": title, "creator": "Apartment Interior Supply"})
     doc.save(out_path, garbage=3, deflate=True)

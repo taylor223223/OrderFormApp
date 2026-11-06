@@ -12,6 +12,10 @@
 {% if not res.start and not res.start_address %}<div class="flash error">No start address yet - add where you leave from in Settings → Route planner (or below for just this day).</div>{% endif %}
 <div class="grid g2">
 <div>
+<form method="post" action="{{ url_for('plan.save_day_note', day=day) }}" class="card daynote"><input type="hidden" name="next" value="{{ url_for('plan.day', day=day) }}">
+<label style="margin:0">📝 Notes for {{ d.strftime('%A %m/%d') }}</label>
+<textarea name="note" rows="2" placeholder="What the day looks like - who's expecting you, what to bring, gate codes... (shows on the Dashboard that morning)">{{ day_note }}</textarea>
+<div class="row" style="justify-content:flex-end;margin-top:4px"><button class="btn sm">Save notes</button></div></form>
 <form method="post" action="{{ url_for('plan.add') }}" class="card row"><input type="hidden" name="day" value="{{ day }}"><input type="hidden" name="next" value="{{ url_for('plan.day', day=day) }}">
 <div style="flex:1;min-width:200px">{% set picker_id='rd_cust' %}{% set pre_customer=None %}{% include '_cust_picker.html' %}</div>
 <input name="purpose" placeholder="Why" style="max-width:170px"><select name="source" style="width:auto"><option value="">Planned</option><option>Call</option><option>Text</option><option>Email</option></select>

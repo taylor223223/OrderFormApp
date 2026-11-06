@@ -44,9 +44,11 @@ def test_catalog_fields():
     assert validate_catalog() == []
     ph, door = _fields("prehung"), _fields("door")
     assert not {"bore_qty", "one_sided_bore", "one_sided_bore_size"} & set(ph)          # replaced
-    for k in ("one_sided_deadbolt", "deadbolt", "entry_lock", "peephole", "hinge1", "hinge4", "threshold_size",
-              "threshold_thick", "fire_rated", "fire_rating"):
+    for k in ("one_sided_deadbolt", "deadbolt", "entry_lock", "peephole", "threshold_size",
+              "threshold_thick", "fire_rated", "fire_rating", "hinge_dim", "hinge_color", "self_closing"):
         assert k in ph, k
+    assert not {"hinge1", "hinge2", "hinge3", "hinge4"} & set(ph)     # pre-hung doors come cut + hung (11/05)
+    assert {"hinge1", "hinge4"} <= set(door)
     assert ph["peephole"]["show_if"][0] == "peephole_yn"
     assert door["self_closing"]["kind"] == "choice" and door["self_closing"]["show_if"] == ("fire_rated", ["Yes"])
     assert [o[0] for o in door["fire_rating"]["options"]] == ["20 min", "45 min", "60 min", "90 min"]
@@ -72,8 +74,9 @@ def test_prehung_pdf_has_new_boxes(app):
     with app.app_context():
         pdf, warns = fill_form("prehung", data)
     txt = _widgets(pdf)
-    for v in ("82-1/2", "35-5/8", "64-1/4", '5-5/8" x 36"', "58", "42"):
+    for v in ("82-1/2", '5-5/8" x 36"', "58", "42"):
         assert v in txt, v
+    assert "35-5/8" not in txt and "64-1/4" not in txt          # no hinge locations on the Pre-Hung form
     assert not any("fire-rated" in w for w in warns)
 
 

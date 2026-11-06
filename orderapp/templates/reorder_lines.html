@@ -12,7 +12,7 @@
 <div><label>Contact email</label><input name="contact_email" value="{{ h.contact_email or '' }}" inputmode="email"></div>
 </div>
 <input type="hidden" name="n" value="{{ lines|length }}">
-<div class="tablewrap"><table><tr><th style="width:70px">Qty</th><th>Item #</th><th>Description</th><th>Size</th><th>For (unit / room)</th><th>Invoice #</th><th>Last bought</th><th>Last $</th></tr>
+<div class="tablewrap"><table><tr><th style="width:70px">Qty</th><th>Item #</th><th>Description</th><th>Size</th><th>For (unit / room)</th><th>Invoice #</th><th>Last bought</th></tr>
 {% for l in lines + [{}, {}, {}, {}, {}] %}{% set i = loop.index0 %}<tr>
 <td><input name="qty_{{ i }}" value="{{ l.qty or '' }}" inputmode="decimal" style="width:60px"></td>
 <td><input name="item_no_{{ i }}" value="{{ l.item_no or '' }}"></td>
@@ -21,7 +21,7 @@
 <td><input name="for_{{ i }}" value="{{ l['for'] or '' }}"></td>
 <td><input name="invoice_{{ i }}" value="{{ l.invoice or '' }}" style="width:90px"></td>
 <td><input name="last_date_{{ i }}" value="{{ l.last_date or '' }}" style="width:100px"></td>
-<td><input name="last_price_{{ i }}" value="{{ l.last_price or '' }}" style="width:80px"><input type="hidden" name="notes_{{ i }}" value="{{ l.notes or '' }}"></td></tr>{% endfor %}
+<td style="display:none"><input type="hidden" name="last_price_{{ i }}" value="{{ l.last_price or '' }}"><input type="hidden" name="notes_{{ i }}" value="{{ l.notes or '' }}"></td></tr>{% endfor %}
 </table></div>
 <button class="btn primary" style="margin-top:10px">Save &amp; update PDF</button>
 </form>

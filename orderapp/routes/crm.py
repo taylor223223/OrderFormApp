@@ -61,11 +61,7 @@ def home():
                                          GROUP BY stage""")}
     week = q("""SELECT kind, COUNT(*) n FROM activities WHERE substr(occurred_at,1,10) BETWEEN ? AND ?
                 GROUP BY kind ORDER BY n DESC""", (mon.isoformat(), sun.isoformat()))
-    stale = q("""SELECT c.id, c.name, c.status, MAX(a.occurred_at) AS last FROM customers c
-                 LEFT JOIN activities a ON a.customer_id=c.id
-                 WHERE coalesce(c.status,'') IN ('Active','Prospect')
-                 GROUP BY c.id HAVING last IS NULL OR last < ? ORDER BY last LIMIT 12""",
-              ((date.today() - timedelta(days=30)).isoformat(),))
+    stale = []      # no automatic "haven't talked to in 30 days" follow-up list any more (11/05)
     from ..accounts import ICON, PLURAL, counts
     return render_template("crm_home.html", acct_counts=counts(), acct_icons=ICON, acct_plural=PLURAL,
                            partners=q("""SELECT c.id, c.name, c.acct_type, c.services, c.city, c.phone,
@@ -120,8 +116,8 @@ def log():
     msgs = ["Logged."]
     if f.get("follow_up"):
         x("INSERT INTO tasks(customer_id, activity_id, title, due_date, owner, created) VALUES (?,?,?,?,?,?)",
-          (cid, aid, f.get("follow_up_title", "").strip() or f.get("subject", "").strip()
-           or (f.get("notes", "").strip()[:60] and "Follow up: " + f.get("notes", "").strip()[:60]) or f"Follow up ({kind.lower()})", f["follow_up"],
+          # only the follow-ups Taylor sets himself (a date / title), named the way he typed them (11/05)
+          (cid, aid, f.get("follow_up_title", "").strip() or f.get("subject", "").strip() or "Follow up", f["follow_up"],
            session.get("username"), now()))
         msgs.append(f"Follow-up set for {f['follow_up']}.")
     if f.get("route_day") and cid:

@@ -958,6 +958,43 @@ def package():
                            customers=q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE"))
 
 
+@bp.route("/orders/download", methods=["POST"])
+@login_required
+def download_many():
+    """The checked orders all at once, each as its own PDF (one .zip download). Compile = one PDF instead."""
+    import zipfile
+    ids = _package_ids()
+    files, warns = [], []
+    for oid in ids:
+        o = q("SELECT id, form_key FROM orders WHERE id=?", (oid,), one=True)
+        if not o or not (o["form_key"] in FORMS or o["form_key"] == RO.FORM_KEY):
+            continue
+        try:
+            path, _ = _make_pdf(oid)
+            files.append(path)
+        except Exception as e:  # noqa: BLE001 - one bad order shouldn't stop the rest
+            warns.append(f"#{oid}: {e}")
+    if not files:
+        flash("Check at least one order that has an order form.", "error")
+        return redirect(request.referrer or url_for("orders.tracking"))
+    buf = io.BytesIO()
+    used = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in files:
+            name = os.path.basename(p)
+            base, ext = os.path.splitext(name)
+            n = 2
+            while name in used:
+                name = f"{base} ({n}){ext}"
+                n += 1
+            used.add(name)
+            z.write(p, name)
+    buf.seek(0)
+    stamp = datetime.now().strftime("%Y-%m-%d %H%M")
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"Orders {stamp} ({len(files)} PDFs).zip")
+
+
 @bp.route("/orders/package/file")
 @login_required
 def package_file():

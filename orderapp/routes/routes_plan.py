@@ -500,7 +500,7 @@ def day(day):
                            has_key=bool(_key()), visit_default=visit_default, geometry=res.get("geometry"),
                            items=ESTIMATE_ITEMS, order_items=ORDER_ITEMS, people=_stop_people(stops),
                            crm_how=list(CRM_HOW), how_of={v: k for k, v in CRM_HOW.items()},
-                           check=route_check(day, res), pins=PINS)
+                           check=route_check(day, res), pins=PINS, day_note=day_note(day))
 
 
 def route_check(day, res):
@@ -578,6 +578,23 @@ def day_timeline(day, legs=None):
             t += timedelta(minutes=s["visit_min"] or visit_default)
         rows.append({"s": s, "arrive": arrive, "leg": leg})
     return rows, t
+
+
+# ------------------------------------------------------------------ notes for a day (written ahead of time)
+def day_note(day):
+    """Notes written for a day, e.g. on Wednesday for Friday - shown on the Dashboard that morning."""
+    return (setting(f"day_note:{day}") or "").strip()
+
+
+@bp.route("/routes/day/<day>/note", methods=["POST"])
+@login_required
+def save_day_note(day):
+    d = _day(day) or abort(404)
+    from ..db import set_setting
+    set_setting(f"day_note:{d.isoformat()}", request.form.get("note", "").strip())
+    flash(f"Notes saved for {d:%A %m/%d}.", "ok")
+    nxt = request.form.get("next") or ""
+    return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.day", day=d.isoformat()))
 
 
 @bp.route("/routes/day/<day>/sheet")
@@ -960,7 +977,8 @@ def overview():
                        mapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NOT NULL", one=True)["n"],
                        unmapped=q("SELECT COUNT(*) n FROM customers WHERE lat IS NULL AND coalesce(address,'')<>''",
                                   one=True)["n"])
-    return render_template("plan.html", **route_tools, terr_on=T.enabled(), terr_n=len(T.my_ids()) if T.enabled() else 0, view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
+    day_notes = {d["iso"]: day_note(d["iso"]) for d in (days or [])}
+    return render_template("plan.html", **route_tools, day_notes=day_notes, terr_on=T.enabled(), terr_n=len(T.my_ids()) if T.enabled() else 0, view=view, days=days, weeks=weeks, recs=recs, proj=proj, label=label,
                            prev=prev_m, nxt=next_m, today=today.isoformat(), monday=today.weekday() == 0,
                            areas=areas, start=request.args.get("start", ""),
                            customers=q("SELECT id, name, acct_type FROM customers ORDER BY name COLLATE NOCASE"))

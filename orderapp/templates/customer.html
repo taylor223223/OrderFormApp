@@ -222,7 +222,7 @@
 <div>
 <form method="post" action="{{ url_for('crm.set_customer_status', cid=c.id) }}" class="card row"><label style="margin:0">Status</label>
 <select name="status" onchange="this.form.submit()" style="width:auto"><option value="">(none)</option>{% for s in statuses %}<option {{ 'selected' if s==c.status }}>{{ s }}</option>{% endfor %}</select>
-<span class="small muted">Active / Prospect accounts show on the CRM page when you haven't talked to them in 30 days.</span></form>
+</form>
 {% set customers = [c] %}{% set pre_customer = c.id %}{% set next_url = url_for('customers.view', cid=c.id, tab='crm') %}{% include '_quick_log.html' %}
 <h2>Timeline</h2>
 <div class="tablewrap"><table>

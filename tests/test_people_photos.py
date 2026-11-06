@@ -321,7 +321,7 @@ def test_door_edge_full_book_vs_beveled(app, c):
     import pymupdf as fitz
     txt = " ".join(str(w.field_value) for p in fitz.open(o["pdf_path"]) for w in (p.widgets() or []))
     txt += " ".join(p.get_text() for p in fitz.open(o["pdf_path"]))
-    assert "Full Book" in txt and "Beveled" in txt
+    assert "Full Book" in txt and "Beveled" not in txt     # beveled is the standard - assumed, left off the paper
     ed = c.get(f"/orders/editor?form=door&customer={app.cid2}").get_data(as_text=True)
     assert "function doorEdge" in ed and "Full Book size" in ed
 

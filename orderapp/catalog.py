@@ -83,6 +83,7 @@ OLD_DOOR_STYLES = {"5 Panel": ("", "5 Panel", ""), "2 Panel": ("", "2 Panel", ""
                    "6 Panel": ("Colonist", "6 Panel", "")}
 NEW_BLIND_STYLES = ["Basswood", "Metal Plus"]
 BLIND_SLATS = ['1"', '2"', '2-1/2"']
+FAUX_SLATS = ["Smooth", "Embossed"]          # faux wood slat finish
 # styles that used to include the slat size (before v2.12) -> (style, slat size)
 OLD_BLIND_STYLES = {'Basswood 2"': ("Basswood", '2"'), 'Basswood 2-1/2"': ("Basswood", '2-1/2"'),
                     '1" Metal Plus Mini': ("Metal Plus", '1"'), '2" Metal Plus': ("Metal Plus", '2"')}
@@ -147,6 +148,7 @@ def _bypass_block(i):
     s = f"1.{i}"
     return [
         _t("qty", "Quantity", f"Qty{s}", w=4),
+        _t("unit", "Unit #", f"Unit#.{i}", multi_unit=True),
         _t("item_no", "Item #", f"Item#.{i}"),
         _c("finish", "Finish", [("Primecoat", f"PrimeCoat{s}"), ("Embossed Primecoat", f"Embossed{s}"),
                                 ("Oak Legacy", f"OakLeg{s}"), ("Walnut Legacy", f"WalLeg{s}")]),
@@ -200,7 +202,9 @@ def _door_common(prehung=False):
             _t("rough_height", "Rough Opening Height (in)", "RoughHeight.0", measure=True),
             _t("jamb_thick", "Jamb Thickness / Width (in)", "JambThick.0", measure=True, placeholder='e.g. 2-1/4"'),
         ]
-    f += [
+    # hinge locations: Door form only - a pre-hung door comes already cut and hung in its frame (Taylor, 11/05;
+    # undoes the v2.23 request). Hinge size, color and self-closing stay.
+    f += [] if prehung else [
         _t("hinge1", "Top of door to top of 1st hinge (in)", "Hinge1.0", measure=True),
         _t("hinge2", "Top of door to top of 2nd hinge (in)", "Hinge2.0", measure=True),
         _t("hinge3", "Top of door to top of 3rd hinge (in)", "Hinge3.0", measure=True),
@@ -310,6 +314,7 @@ def _screen_door_block(i):
     s = SCREEN_DOOR_SUFFIX[i]
     return [
         _t("qty", "Quantity", f"Quantity{s}", w=4),
+        _t("unit", "Unit #", f"Unit#.{i}", multi_unit=True),
         _t("item_no", "Item #", f"Item#.{i}"),
         _t("width", "Door Width (in)", f"DoorWidth{s}", measure=True),
         _t("height", "Door Height (in)", f"DoorHeight{s}", measure=True),
@@ -333,6 +338,7 @@ def _vert_block(i):
     s = VERT_SUFFIX[i]
     return [
         _t("qty", "Quantity", f"Qty{s}", w=4),
+        _t("unit", "Unit #", f"Unit#.{i}", multi_unit=True),
         _t("item_no", "Item #", f"Item#.{i}"),
         _t("room", "Location (room)", f"Location.{i}"),
         _t("width", "Actual Window Width (in) - inside mount", f"IMWidth{s}", measure=True),
@@ -356,6 +362,7 @@ def _vert2_block(i):
     s = VERT2_SUFFIX[i]
     return [
         _t("qty", "Quantity", f"QTY{s}", w=4),
+        _t("unit", "Unit #", f"Unit#.{i}", multi_unit=True),
         _t("room", "Location (room)", f"Location {s}"),
         _c("mount", "Installation", [("Inside Mount", f"Inside {s}"), ("Outside Mount", f"Outside {s}")]),
         _t("width", "Actual Window Width (in)", f"Act Width {s}", measure=True),
@@ -378,6 +385,7 @@ def _window_screen_block(i):
     loc = lambda kind, n, side: f"{kind}SpecLoc{side}{n}.0.{i}"  # noqa: E731
     return [
         _t("qty", "Quantity", f"Qty{s}", w=4),
+        _t("unit", "Unit #", f"Unit#.{i}", multi_unit=True),
         _t("item_no", "Item #", f"Item#.{i}"),
         _t("width", "Window Screen Width (in)", f"ScrWidth{s}", measure=True),
         _t("height", "Window Screen Height (in)", f"ScrHeight{s}", measure=True),
@@ -424,6 +432,9 @@ def _horiz_block(i):
                               ("All Metal", f"{p} Style All Metal"), ("Faux Wood", f"{p} Style Faux Wood")] +
            [(t, f"{p} Style {t}") for t in NEW_BLIND_STYLES]),
         _c("slat_size", "Slat Size", [(t, f"{p} Slat {t}") for t in BLIND_SLATS]),
+        # faux wood slats come smooth or embossed (Taylor, 11/05)
+        _c("slat_finish", "Faux Wood Slats", [(t, f"{p} Slat {t}") for t in FAUX_SLATS],
+           show_if=("style", ["Faux Wood"])),
         _c("room", "Location", [("Bedroom", f"{p} Location Bedroom"), ("Kitchen", f"{p} Location Kitchen"),
                                 ("Living Room", f"{p} Location Living Room"), ("Other", f"{p} Location Other")],
            other_option="Other", other_field="room_other"),
@@ -568,29 +579,26 @@ PRODUCTS = {
 
 
 def _lwh_order(fields):
-    """Standard L x W x H: length / width (and depth) always come before height.
-    Only changes the on-screen order - the PDF is filled by field name, not position."""
+    """Width first, always: W x H (Taylor, 11/05 - many forms say "length" where they mean height, so length is
+    treated like height), then depth. Only the order changes - each group of sizes keeps the spots it had, and the
+    PDF is filled by field name, not position. Groups are matched by prefix (sink_width / sink_length...)."""
     fields = list(fields)
     keys = [f["key"] for f in fields]
-    for hk in [k for k in keys if k == "height" or k.endswith("_height")]:
-        pre = hk[: -len("height")]
-        partners = [pre + s for s in ("length", "width", "depth") if pre + s in keys]
-        if not partners:
+    rank = {"width": 0, "height": 1, "length": 2, "depth": 3}
+    groups = {}
+    for i, k in enumerate(keys):
+        for suf in rank:
+            if k == suf or k.endswith("_" + suf):
+                groups.setdefault(k[: -len(suf)], []).append((i, suf))
+                break
+    for pre, items in groups.items():
+        if len(items) < 2 or not any(s == "width" for _, s in items):
             continue
-        hi = keys.index(hk)
-        last = max(keys.index(k) for k in partners)
-        if hi < last:
-            f = fields.pop(hi)
-            keys.pop(hi)
-            last = max(keys.index(k) for k in partners)
-            fields.insert(last + 1, f)
-            keys.insert(last + 1, hk)
-    # length before width when both exist
-    if "length" in keys and "width" in keys and keys.index("length") > keys.index("width"):
-        f = fields.pop(keys.index("length"))
-        keys.remove("length")
-        fields.insert(keys.index("width"), f)
-        keys.insert(keys.index("width"), "length")
+        slots = sorted(i for i, _ in items)
+        ordered = sorted(items, key=lambda t: rank[t[1]])
+        picked = [fields[i] for i, _ in ordered]
+        for slot, f in zip(slots, picked):
+            fields[slot] = f
     return fields
 
 
@@ -1410,6 +1418,16 @@ def form_list():
     return [(k, FORMS[k]["title"]) for k in FORM_ORDER]
 
 
+# Faster blind entry (Taylor, 11/05): the style and options are the same across a property, so they're set once at
+# the top of the order; each window is then just width, height and location. Any window can still differ.
+ORDER_SETTINGS = {
+    "horizontal_blind": ["style", "slat_size", "slat_finish", "color"],
+    "vertical_blind": ["mount", "valance", "color", "headrail_width", "slat_width", "slat_style"],
+    "vertical_blind_2": ["mount", "color", "headrail_width", "slat_width", "slat_style"],
+    "roller_shade": ["chain_side", "bracket_size", "shade_brand", "shade_fabric", "openness", "color", "color_other"],
+}
+
+
 def public_spec(form_key):
     """JSON-safe description of a form for the browser UI."""
     f = FORMS[form_key]
@@ -1452,6 +1470,7 @@ def public_spec(form_key):
         "fields": fields,
         "has_unit_field": any(x["key"] == "unit" for x in f["blocks"][0]),
         "merged": form_key in MERGED,
+        "shared": [k for k in ORDER_SETTINGS.get(form_key, []) if any(fd["key"] == k for fd in fields)],
     }
 
 

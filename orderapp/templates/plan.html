@@ -24,6 +24,8 @@
 <form method="post" action="{{ url_for('plan.plan_day_add') }}" class="dayarea"><input type="hidden" name="day" value="{{ d.iso }}"><input type="hidden" name="start" value="{{ start }}">
 <input name="account" list="dl_accounts" placeholder="+ Account to visit" title="Pick an account - it goes on this day's route and nearby accounts are suggested" onchange="this.form.submit()"></form>
 {% endif %}
+<form method="post" action="{{ url_for('plan.save_day_note', day=d.iso) }}" class="daynote small"><input type="hidden" name="next" value="{{ url_for('plan.overview', view='week', start=start) }}#d{{ d.iso }}">
+<textarea name="note" rows="{{ 2 if day_notes.get(d.iso) else 1 }}" placeholder="Notes for {{ d.name }}" title="Notes for {{ d.name }} {{ d.date.strftime('%m/%d') }} - shows on the Dashboard that morning" onchange="this.form.submit()">{{ day_notes.get(d.iso, '') }}</textarea></form>
 {% for s in d.stops %}<div class="small">📍 {{ s.cname or s.label }}{% if s.expected %} <span class="muted">· {{ money(s.expected) }}</span>{% endif %}</div>{% endfor %}
 {% for t in d.tasks %}<div class="small">☑ {{ t.title }}{% if t.cname %} <span class="muted">· {{ t.cname }}</span>{% endif %}</div>{% endfor %}
 {% for o in d.orders_due %}<div class="small">📦 <a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a> {{ o.cname or '' }} <span class="muted">{{ o.status }}</span></div>{% endfor %}

@@ -14,8 +14,10 @@ L, R = 36, 576
 NAVY = (0.12, 0.23, 0.41)
 GREY = (0.93, 0.94, 0.96)
 DARK = (0.25, 0.25, 0.25)
-COLS = [("", 18), ("Qty", 32), ("Item #", 74), ("Description", 186), ("Size", 54), ("For (unit / room)", 64),
-        ("Last invoice", 74), ("Last $", 38)]
+# no price column: the price is set when the order is actually placed (Taylor, 11/05) - prices stay in the app's
+# history (previous orders, estimates)
+COLS = [("", 18), ("Qty", 32), ("Item #", 74), ("Description", 224), ("Size", 54), ("For (unit / room)", 64),
+        ("Last invoice", 74)]
 
 
 def _money(v):
@@ -148,7 +150,7 @@ def render(o, data, cust_name=None):
             y += 30
         y += 8
         page.insert_text((L, y + 8), "Same items as before - item #, description, size and invoice # are from this property's "
-                         "past invoices. Last $ is the last invoiced price; please confirm current pricing.",
+                         "past invoices.",
                          fontsize=7, fontname="helv", color=DARK)
         y += 14
         # table header
@@ -164,8 +166,7 @@ def render(o, data, cust_name=None):
                 page.draw_rect(fitz.Rect(L, y, R, y + row_h), color=None, fill=GREY)
             vals = ["", _qty(ln.get("qty")), ln.get("item_no"), inches_text(ln.get("desc") or "") + (f"  ({ln['notes']})" if ln.get("notes") else ""),
                     inches_text(ln.get("size") or ""), ln.get("for"),
-                    " ".join(p for p in [("#" + ln["invoice"]) if ln.get("invoice") else "", ln.get("last_date")] if p),
-                    _money(ln.get("last_price"))]
+                    " ".join(p for p in [("#" + ln["invoice"]) if ln.get("invoice") else "", ln.get("last_date")] if p)]
             x0 = L
             for (lab, w), v in zip(COLS, vals):
                 if lab == "":
