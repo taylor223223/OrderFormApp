@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Map columns{% endblock %}
 {% block body %}
+{% include '_io_tabs.html' %}
 <h1>Map columns</h1><div class="muted">{{ filename }} · {{ n }} rows. Check what each column means, then continue.</div>
 <form method="post" action="{{ url_for('imports.apply_mapping') }}" style="margin-top:12px">
 <input type="hidden" name="token" value="{{ token }}"><input type="hidden" name="filename" value="{{ filename }}">

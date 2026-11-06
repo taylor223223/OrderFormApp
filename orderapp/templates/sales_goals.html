@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Goals & commission{% endblock %}
 {% block body %}
+{% include '_company_nav.html' %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home', year=year) }}">← Sales</a></div><h1>Goals &amp; commission {{ year }}</h1>
 <div class="muted">Set a default monthly goal and commission rate, then change any month that's different.</div></div>
 <form method="get"><select name="year" onchange="this.form.submit()">{% for y in years %}<option {{ 'selected' if y|int == year }}>{{ y }}</option>{% endfor %}</select></form></div>

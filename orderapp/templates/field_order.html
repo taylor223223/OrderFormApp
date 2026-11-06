@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Photo order{% endblock %}
 {% block body %}
+<div class="small"><a href="{{ url_for('orders.new') }}">← New order</a></div>
 <h1>Photo order</h1>
 <div class="muted">Filled out a paper form or wrote sizes down in the field? Snap it and send it. On a phone you can take new pictures or pick from your photos.</div>
 <form method="post" enctype="multipart/form-data" class="card" style="margin-top:12px;max-width:680px">

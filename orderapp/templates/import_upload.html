@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Import CSV{% endblock %}
 {% block body %}
+{% include '_io_tabs.html' %}
 <div class="pagehead"><div><h1>Import CSV / Excel</h1></div><div class="row"><a class="btn" href="{{ url_for('imports.template') }}">⬇ Download purchase-history template</a><a class="btn" href="{{ url_for('customers.history_search') }}">🔎 Search purchase history</a></div></div>
 <div class="muted">Previous orders, customer lists, unit lists or measurement sheets. Nothing is changed until you approve it on the review screen.</div>
 <form method="post" enctype="multipart/form-data" class="card" style="margin-top:12px;max-width:640px">

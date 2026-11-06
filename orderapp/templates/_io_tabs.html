@@ -1,0 +1,6 @@
+{# Import and Export share one top tab (11/06) #}
+{% set _ep = request.endpoint or '' %}
+<div class="tabs" style="margin-bottom:12px">
+  <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if _ep.startswith('imports.') }}">📥 Import CSV / Excel</a>
+  <a href="{{ url_for('exports.index') }}" class="{{ 'on' if _ep.startswith('exports.') }}">📤 Export</a>
+</div>

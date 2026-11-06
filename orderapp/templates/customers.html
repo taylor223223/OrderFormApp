@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Customers{% endblock %}
 {% block body %}
 <div class="pagehead"><div><h1>Customers</h1><div class="muted">Properties / accounts with their contacts, layouts, units and measurements.</div></div>
-<div class="row"><a class="btn" href="{{ url_for('customers.history_search') }}">🔎 Search purchase history</a><a class="btn" href="{{ url_for('imports.upload') }}">Import CSV</a><a class="btn" href="{{ url_for('exports.index') }}">Export</a><a class="btn primary" href="{{ url_for('customers.new', type=typ or 'Property') }}">+ Add {{ (typ or 'Property')|lower if typ != 'Management Company' else 'management co.' }}</a></div></div>
+<div class="row"><a class="btn" href="{{ url_for('holds.index') }}" title="Accounts on hold - no purchases until brought current">⛔ Account Holds{% if holds_count %} ({{ holds_count }}){% endif %}</a><a class="btn" href="{{ url_for('customers.history_search') }}">🔎 Search purchase history</a><a class="btn" href="{{ url_for('imports.upload') }}">Import CSV</a><a class="btn" href="{{ url_for('exports.index') }}">Export</a><a class="btn primary" href="{{ url_for('customers.new', type=typ or 'Property') }}">+ Add {{ (typ or 'Property')|lower if typ != 'Management Company' else 'management co.' }}</a></div></div>
 <div class="taps" style="margin-bottom:10px">
 <a class="btn sm {{ 'primary' if not typ }}" href="{{ url_for('customers.index', q=search, status=status) }}">All · {{ type_counts|sum(attribute=1) }}</a>
 <a class="btn sm {{ 'primary' if terr == 'mine' }}" href="{{ url_for('customers.index', terr=('' if terr == 'mine' else 'mine'), type=typ, q=search, status=status) }}" title="Accounts in my territory (Settings > Territory)">🗺️ My territory</a>

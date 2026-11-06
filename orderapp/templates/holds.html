@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Account Holds{% endblock %}
 {% block body %}
-<div class="pagehead"><div><h1>Account Holds</h1>
+<div class="pagehead"><div><div class="small"><a href="{{ url_for('customers.index') }}">← Customers</a></div><h1>Account Holds</h1>
 <div class="muted">Accounts behind on payments. They must be brought current before any purchase.</div></div>
 <div class="row">{% if rows %}<a class="btn" href="{{ url_for('holds.index', csv=1) }}">Download for Excel</a>{% endif %}</div></div>
 

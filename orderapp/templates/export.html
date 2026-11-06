@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Export{% endblock %}
 {% block body %}
+{% include '_io_tabs.html' %}
 <div class="pagehead"><div><h1>Export data</h1>
 <div class="muted">Download anything in the app for Excel. Excel files have bold headers and filters; CSV opens anywhere.</div></div>
 <div class="row"><a class="btn primary" href="{{ url_for('exports.download', name='everything', fmt='xlsx') }}">⬇ Everything (one Excel file, a tab per list)</a></div></div>

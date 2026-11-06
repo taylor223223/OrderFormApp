@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Items & Stock{% endblock %}
 {% block body %}
+{% include '_company_nav.html' %}
 <div class="pagehead"><div><h1>Items &amp; Stock</h1>
 <div class="muted">{% if counts.n %}{{ '{:,}'.format(counts.n) }} item(s){% if counts.pu %} · price list from {{ counts.pu[:10] }}{% endif %}{% if counts.su %} · stock as of {{ counts.su[:10] }}{% endif %}{% if counts.inv %} · {{ '{:,}'.format(counts.inv) }} more product(s) from invoices{% endif %}{% else %}Import the company Item Price List, Inventory Stock Status, Item Turnover and Sales by Item Summary reports to fill this in.{% endif %}</div></div>
 <a class="btn" href="{{ url_for('sales.import_page') }}">Import reports</a></div>

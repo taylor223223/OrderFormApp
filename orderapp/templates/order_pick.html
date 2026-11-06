@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}New order{% endblock %}
 {% block body %}
-<h1>New order</h1><div class="muted">Pick the customer (optional) and the order form.</div>
+<div class="pagehead"><div><h1>New order</h1><div class="muted">Pick the customer (optional) and the order form - or start from photos.</div></div>
+<div class="row"><a class="btn primary" href="{{ url_for('photos.field_order') }}" title="Take or pick photos in the field and turn them into an order">📷 Photo order</a></div></div>
 <div class="card" style="margin-top:12px;max-width:520px"><label>Customer</label>
 <select id="cust"><option value="">(choose later / new customer)</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if c.id==cid }}>{{ c.name }}</option>{% endfor %}</select></div>
 <div class="formcards">{% for k, t in forms %}<a class="formcard" data-form="{{ k }}" href="#"><b>{{ t }}</b><span class="muted small">Open form</span></a>{% endfor %}</div>
