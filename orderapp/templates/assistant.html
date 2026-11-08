@@ -10,8 +10,19 @@ tasks, and holds anything it isn't sure about for you.
   <form method="post" action="{{ url_for('assistant.summary_now') }}"><button class="btn">Summary now</button></form>
   <a class="btn" href="{{ url_for('settings.index') }}#ai">Settings</a></div></div>
 
+<form method="post" action="{{ url_for('assistant.note') }}" class="card" style="border-left:4px solid #6d28d9;margin-bottom:12px" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='⏳ Working on it… (about 30 seconds)'">
+  <b>📞 Tell your assistant</b> <span class="small muted">- a phone call, text or voicemail. Type it like you'd tell a coworker; it's handled like an email from that customer.</span>
+  <textarea name="text" rows="3" style="margin-top:6px" placeholder="e.g. Pat at Sample Palms called - reorder the 34 x 80 bronze screen doors from last month for units 204 and 210, PO 5512"></textarea>
+  <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
+    <select name="customer_id" style="max-width:280px"><option value="">Customer: let it figure it out</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
+    <input name="email" placeholder="Customer's email (optional)" style="max-width:240px" inputmode="email">
+    <label class="row" style="gap:4px"><input type="checkbox" name="email_customer" value="1" style="width:auto"> Email the customer its questions / confirmation</label>
+    <button class="btn primary" {{ 'disabled' if not enabled }}>Send to assistant</button></div>
+  <div class="small muted">Unchecked: anything it would say to the customer is held for you here instead. Confident orders still go to the order desk like an email would.</div>
+</form>
+
 <div class="row subtabs" style="gap:6px;margin-bottom:12px">
-{% for k, lab in [('review','Needs you'),('schedule','To schedule'),('activity','Everything it did'),('outbox','Emails'),('summaries','Daily summaries')] %}
+{% for k, lab in [('review','Needs you'),('schedule','To schedule'),('activity','Everything it did'),('outbox','Emails'),('summaries','Daily summaries'),('rules','Rules')] %}
 <a class="btn sm {{ 'primary' if tab == k }}" href="{{ url_for('assistant.home', tab=k) }}">{{ lab }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}</div>
 
 {% macro mail(o) %}
@@ -59,6 +70,14 @@ tasks, and holds anything it isn't sure about for you.
 <div class="card" style="margin:6px 0"><div class="small muted">{{ o.ts[:16] }} · {{ o.kind }} · <b>{{ o.status }}</b>{% if o.note %} · {{ o.note }}{% endif %}</div>
 <b>To {{ o.to_addr }}</b> - {{ o.subject }}<pre class="small" style="white-space:pre-wrap;margin:4px 0">{{ o.body }}</pre></div>{% endif %}
 {% else %}<div class="card muted">No emails yet.</div>{% endfor %}
+
+{% elif tab == 'rules' %}
+<form method="post" action="{{ url_for('assistant.rules') }}" class="card">
+  <b>Your rules for the assistant</b>
+  <div class="small muted" style="margin:4px 0 8px">Write them in plain English, one per line. They're added to every instruction it gets and override its defaults. Change them any time.</div>
+  <textarea name="rules" rows="12" placeholder="e.g.&#10;- Bronze is the default screen frame color unless they say otherwise&#10;- Never quote a delivery date&#10;- Anything from Rise Canyon West goes to me for review">{{ rules }}</textarea>
+  <button class="btn primary" style="margin-top:8px">Save rules</button>
+</form>
 
 {% elif tab == 'summaries' %}
 {% for s in summ %}<div class="card" style="margin-bottom:10px"><b>{{ s.day }} · {{ s.period|capitalize }}</b>

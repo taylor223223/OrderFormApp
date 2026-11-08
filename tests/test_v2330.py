@@ -388,6 +388,45 @@ def test_ai_saves_contacts_and_sizes_to_the_app(env):
 
 
 
+def test_phone_note_and_rules(env):
+    """2.34.0: a phone / text typed into the app goes through the assistant; Taylor's rules reach every prompt."""
+    app, A, mail, claude = env
+    systems = []
+    real = claude.ask_json
+
+    def spy(model, system, prompt, max_tokens=0, purpose=""):
+        systems.append(system)
+        return real(model, system, prompt, max_tokens, purpose)
+    A.ask_json = spy
+    with app.app_context():
+        from orderapp.db import set_setting
+        set_setting("ai_rules", "- Bronze is the default screen color")
+    claude.cls = {"category": "order", "summary": "Pat called: screens", "forms": ["window_screen"]}
+    claude.read = dict(ORDER_READ, po="CALL-1")
+    n = len(mail.sent)
+    A._PROV["p"] = mail                    # the app uses the real mail connection here
+    with app.app_context():
+        row = A.note("Pat at Sample Palms called, 2 bronze screens 35x48 unit 204, PO CALL-1", customer_id=app.cid)
+    assert row["status"] == "done" and row["msg_id"].startswith("note-")
+    A._PROV["p"] = None
+    assert all("Bronze is the default screen color" in s for s in systems) and len(systems) >= 3
+    # order desk got it (practice -> my address); the customer reply was held, not sent
+    assert [s["to"] for s in mail.sent[n:]] == ["me@company.test"]
+    held = _q(app, "SELECT * FROM ai_outbox WHERE log_id=? AND kind='customer'", (row["id"],))[0]
+    assert held["status"] == "held" and "phone / text note" in held["note"]
+    assert _q(app, "SELECT 1 FROM orders WHERE po='CALL-1'")
+    with app.app_context():
+        set_setting("ai_rules", "")
+    # the page has the box and the rules tab
+    c = app.test_client()
+    tok = re.search(r'name="csrf-token" content="([^"]+)"', c.get("/login").get_data(as_text=True)).group(1)
+    c.post("/login", data={"username": "tester", "password": "pw-123456", "csrf_token": tok})
+    page = c.get("/assistant").get_data(as_text=True)
+    assert "Tell your assistant" in page and "tab=rules" in page
+    assert "Your rules for the assistant" in c.get("/assistant?tab=rules").get_data(as_text=True)
+
+
+
 def test_summary(env):
     app, A, mail, claude = env
     with app.app_context():

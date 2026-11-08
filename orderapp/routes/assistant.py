@@ -29,11 +29,13 @@ def home():
               "WHERE t.done=0 AND t.owner IN ('ai','ai-schedule') ORDER BY t.id DESC")
     summ = q("SELECT * FROM ai_summaries ORDER BY id DESC LIMIT 20") if tab == "summaries" else []
     counts = {"review": len(held), "schedule": len(sched)}
+    customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
     return render_template("assistant.html", tab=tab, held=held, outbox_for=outbox_for, log=log, outbox=outbox,
                            sched=sched, summ=summ, counts=counts, spend=month_spend(),
                            enabled=setting("ai_enabled") == "1", mode=setting("ai_mode") or "practice",
                            last=setting("ai_last_check") or "", running=_running["on"], loads=json.loads,
-                           today=date.today().isoformat())
+                           today=date.today().isoformat(), customers=customers, rules=setting("ai_rules") or "",
+                           last_note=request.args.get("note", type=int))
 
 
 def _bg(fn):
@@ -165,3 +167,36 @@ def mode():
         if request.form["enabled"] == "1" and not setting("ai_started"):
             set_setting("ai_started", now()[:16])   # only emails from now on - not the whole old inbox
     return redirect(request.referrer or url_for("assistant.home"))
+
+
+@bp.route("/assistant/note", methods=["POST"])
+@login_required
+def note():
+    """A phone call or text, typed in: the assistant handles it like an email from that customer."""
+    from ..ai.assistant import note as ai_note
+    from ..ai.client import AIError
+    text = (request.form.get("text") or "").strip()
+    if not text:
+        flash("Type what the customer said first.", "error")
+        return redirect(url_for("assistant.home"))
+    if setting("ai_enabled") != "1":
+        flash("Turn the assistant on first (Settings -> AI Assistant).", "error")
+        return redirect(url_for("assistant.home"))
+    try:
+        row = ai_note(text, request.form.get("customer_id", type=int), request.form.get("email", ""),
+                      bool(request.form.get("email_customer")))
+    except AIError as e:
+        flash(f"The assistant couldn't do it: {e}", "error")
+        return redirect(url_for("assistant.home"))
+    if row:
+        flash(f"🤖 {row['action']}", "ok" if row["status"] in ("done", "waiting", "info") else "info")
+    return redirect(url_for("assistant.home", tab="review" if row and row["status"] == "held" else "activity",
+                            note=row["id"] if row else None))
+
+
+@bp.route("/assistant/rules", methods=["POST"])
+@login_required
+def rules():
+    set_setting("ai_rules", (request.form.get("rules") or "").strip())
+    flash("Rules saved - the assistant follows them from the next email on.", "ok")
+    return redirect(url_for("assistant.home", tab="rules"))

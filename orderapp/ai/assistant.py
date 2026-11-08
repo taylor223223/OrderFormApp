@@ -235,9 +235,18 @@ urgent (bool), reply (for coworker_task / visit_request / measure_request / walk
 reply from {me} confirming he got it and will take care of it - plain text, no signature; else "")."""
 
 
+def rules_text():
+    """Taylor's own rules, typed in the app (Assistant -> Rules) - added to every instruction Claude gets."""
+    r = (setting("ai_rules") or "").strip()
+    return f"\n\n{signature() or 'THE REP'}'S OWN RULES - always follow these, they override anything above:\n{r}" if r else ""
+
+
+_NOTE = {"on": False, "email_customer": False}   # set while a phone / text note typed in the app is handled
+
+
 def classify(m):
     me = signature() or "the rep"
-    system = CLASSIFY_SYSTEM.format(me=me, coworkers=setting("ai_coworkers") or "-", forms=form_menu())
+    system = CLASSIFY_SYSTEM.format(me=me, coworkers=setting("ai_coworkers") or "-", forms=form_menu()) + rules_text()
     today = date.today()
     prompt = (f"Today is {today:%A %Y-%m-%d}.\nFrom: {m.get('sender_name') or ''} <{m.get('sender') or ''}>"
               f"{' (COWORKER)' if is_coworker(m.get('sender')) else ''}\nSubject: {m.get('subject') or ''}\n"
@@ -300,7 +309,7 @@ def extract(model, m, c, form_keys, thread_id, purpose):
         "(product not clear yet - available forms:)\n" + form_menu()
     prompt = (f"Today is {date.today():%Y-%m-%d}.\n\nAPP RECORDS:\n{customer_facts(c)}\n\nORDER FORMS:\n{specs}\n\n"
               f"EMAIL THREAD (oldest first):\n{thread_text(thread_id, m)}")
-    r = ask_json(model, EXTRACT_SYSTEM.format(me=me), prompt, max_tokens=4000, purpose=purpose)
+    r = ask_json(model, EXTRACT_SYSTEM.format(me=me) + rules_text(), prompt, max_tokens=4000, purpose=purpose)
     r["forms"] = [f for f in (r.get("forms") or []) if isinstance(f, dict) and f.get("form_key") in FORMS]
     r["kind"] = str(r.get("kind") or "unknown").lower()
     return r
@@ -440,6 +449,11 @@ def reply_subject(subject):
 
 
 def customer_reply(to, subject, body, log_id, order_id=None, hold_reason=""):
+    if _NOTE["on"] and not hold_reason:
+        if not _NOTE["email_customer"]:
+            hold_reason = "From your phone / text note - send it only if you want the customer to get it."
+        elif not (to or "").strip():
+            hold_reason = "No email for this customer - add one, then send."
     return queue_email("customer", to, reply_subject(subject), body, [catalog_file()], log_id, order_id, hold_reason)
 
 
@@ -882,7 +896,8 @@ def handle_question(m, email_id, cls, c, tid, coworker=False):
     try:
         body = ask(smart(), f"You draft email replies for {signature() or 'a sales rep'} (apartment interior "
                    "products supplier). Write a short, friendly reply. If you don't know a fact (price, stock, "
-                   "dates), say he'll check and follow up - never guess. Plain text, sign off with his name.",
+                   "dates), say he'll check and follow up - never guess. Plain text, sign off with his name."
+                   + rules_text(),
                    f"APP RECORDS:\n{customer_facts(c)}\n\nEMAIL:\nFrom {m.get('sender')}\nSubject: {m.get('subject')}\n"
                    f"{(m.get('body') or '')[:5000]}", max_tokens=700, purpose="draft reply")
     except AIError:
@@ -897,7 +912,31 @@ def handle_question(m, email_id, cls, c, tid, coworker=False):
 
 
 # ------------------------------------------------------------------ one email
-def process(m, email_id=None):
+def note(text, customer_id=None, contact_email="", email_customer=False):
+    """A phone call / text Taylor types into the app: handled like an email from that customer."""
+    from ..routes.orders import customer_header  # noqa: F401 - keeps imports warm for make_order
+    c = q("SELECT * FROM customers WHERE id=?", (customer_id,), one=True) if customer_id else None
+    to = (contact_email or "").strip() or (c["email"] if c and c["email"] else "")
+    if not to and c:
+        k = q("SELECT email FROM contacts WHERE customer_id=? AND coalesce(email,'')<>'' LIMIT 1", (c["id"],), one=True)
+        to = k["email"] if k else ""
+    me = signature() or "the rep"
+    first = " ".join((text or "").split())[:60]
+    m = {"msg_id": f"note-{datetime.now():%Y%m%d%H%M%S%f}", "sender": to, "sender_name": f"{me} (phone / text note)",
+         "subject": f"Phone/text: {first}", "received": now()[:16], "attachments": [], "attachment_names": [],
+         "body": (f"NOTE TYPED BY {me.upper()} about a phone call or text from the customer"
+                  f"{(' at ' + c['name']) if c else ''}. Everything in it was told to {me} by the customer; if it says "
+                  f"reorder / same as before, {me} still wants to see the matched past order before it is placed.\n\n"
+                  f"{text}")}
+    _NOTE.update(on=True, email_customer=bool(email_customer))
+    try:
+        process(m, None, customer=c)
+    finally:
+        _NOTE.update(on=False, email_customer=False)
+    return q("SELECT * FROM ai_log WHERE msg_id=? ORDER BY id DESC LIMIT 1", (m["msg_id"],), one=True)
+
+
+def process(m, email_id=None, customer=None):
     """Sort one fetched email and act on it. Returns the ai_log id."""
     sender = m.get("sender") or ""
     coworker = is_coworker(sender)
@@ -913,8 +952,8 @@ def process(m, email_id=None):
     if prior and not coworker and cat not in ("quote_approval",):   # answering our questions: back to the order
         cat = cls["category"] = cat if cat in ORDERISH else "order"
     from ..email_parse import match_customer
-    c = None
-    if not coworker:
+    c = customer
+    if not coworker and c is None:
         c, _ = match_customer(sender, f"{m.get('subject') or ''} {m.get('body') or ''}"[:4000])
     if (not c) and cls.get("property"):
         c = find_customer(name=cls["property"])
