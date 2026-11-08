@@ -35,7 +35,8 @@ def home():
                            enabled=setting("ai_enabled") == "1", mode=setting("ai_mode") or "practice",
                            last=setting("ai_last_check") or "", running=_running["on"], loads=json.loads,
                            today=date.today().isoformat(), customers=customers, rules=setting("ai_rules") or "",
-                           last_note=request.args.get("note", type=int))
+                           last_note=request.args.get("note", type=int),
+                           last_result=json.loads(setting("ai_last_result") or "{}"))
 
 
 def _bg(fn):

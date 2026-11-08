@@ -27,6 +27,18 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 SCOPES = ["Mail.ReadWrite", "Mail.Send", "User.Read"]
 
 
+def _local(iso):
+    """Graph's UTC time ('2026-11-08T15:40:00Z') -> this computer's local time '2026-11-08 08:40'."""
+    if not iso:
+        return ""
+    try:
+        from datetime import timezone
+        return datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc).astimezone() \
+            .strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return iso[:16].replace("T", " ")
+
+
 class MailError(Exception):
     pass
 
@@ -266,7 +278,7 @@ class GraphMail:
         for m in data.get("value", []):
             fr = (m.get("from") or {}).get("emailAddress", {})
             out.append({"msg_id": m["id"], "subject": m.get("subject") or "", "sender": fr.get("address", ""),
-                        "sender_name": fr.get("name", ""), "received": (m.get("receivedDateTime") or "")[:16].replace("T", " "),
+                        "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
                         "preview": m.get("bodyPreview", "")[:180], "has_attachments": m.get("hasAttachments")})
         sw = (subject_word or "").strip().lower()
         if sw:
@@ -292,7 +304,7 @@ class GraphMail:
                     atts.append((fn, base64.b64decode(a["contentBytes"])))
         fr = (m.get("from") or {}).get("emailAddress", {})
         return {"msg_id": msg_id, "subject": m.get("subject") or "", "sender": fr.get("address", ""),
-                "sender_name": fr.get("name", ""), "received": (m.get("receivedDateTime") or "")[:16],
+                "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
                 "body": body, "attachments": atts, "attachment_names": names}
 
     def send(self, to, cc, subject, body, attachments, review=True):

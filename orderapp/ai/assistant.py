@@ -987,15 +987,37 @@ def process(m, email_id=None, customer=None):
 
 # ------------------------------------------------------------------ the inbox check
 def run(prov=None, limit=60):
-    """Read new inbox emails since the last check (catches up after the computer was off / offline)."""
+    """Read new inbox emails since the last check (catches up after the computer was off / offline).
+    The result (or the reason it couldn't) is kept in ai_last_result for the Assistant page."""
+    res = {"read": 0, "new": 0, "error": "", "skipped_me": 0, "skipped_old": 0, "seen": 0}
+    try:
+        res = _run_checked(prov, res, limit)
+    except Exception as e:  # noqa: BLE001 - show it, never die silently
+        import traceback
+        res["error"] = f"{type(e).__name__}: {e}"
+        try:
+            from ..paths import data_dir
+            with open(os.path.join(data_dir(), "app.log"), "a", encoding="utf-8") as fh:
+                fh.write(f"\n{now()} AI assistant check failed:\n{traceback.format_exc()}\n")
+        except Exception:  # noqa: BLE001
+            pass
+    res["when"] = now()[:16]
+    set_setting("ai_last_result", json.dumps(res))
+    return res
+
+
+def _run_checked(prov, res, limit):
     from ..emailer import provider
-    res = {"read": 0, "new": 0, "error": ""}
     if setting("ai_enabled") != "1":
-        res["error"] = "The AI assistant is off (Settings -> AI Assistant)."
+        res["error"] = "The AI assistant is off - turn it on in Settings -> AI Assistant."
         return res
     prov = prov or provider(setting)
     if prov.name == "eml":
-        res["error"] = "Email isn't connected (Settings -> Email)."
+        res["error"] = "Email isn't connected - Settings -> Email: pick Microsoft 365 and sign in."
+        return res
+    ok, why = prov.available()
+    if not ok:
+        res["error"] = why
         return res
     _PROV["p"] = prov
     try:
@@ -1023,15 +1045,24 @@ def _run(prov, res, limit):
         return res
     seen = {r["msg_id"] for r in q("SELECT msg_id FROM ai_log WHERE msg_id IS NOT NULL")}
     started = (setting("ai_started") or "")[:16]
-    todo = [mm for mm in msgs if mm["msg_id"] not in seen and not is_me(mm.get("sender"))
-            and (not started or (mm.get("received") or "")[:16] >= started)]
+    todo = []
+    for mm in msgs:
+        if mm["msg_id"] in seen:
+            res["seen"] += 1
+        elif is_me(mm.get("sender")):
+            res["skipped_me"] += 1
+        elif started and (mm.get("received") or "")[:16] < started:
+            res["skipped_old"] += 1
+        else:
+            todo.append(mm)
     todo.sort(key=lambda mm: mm.get("received") or "")
     res["read"] = len(msgs)
     from ..routes.emails import _store
     for mm in todo[:limit]:
         try:
             full = prov.get_message(mm["msg_id"])
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            res["error"] = f"Couldn't open an email ({mm.get('subject') or ''}): {e}"
             continue
         full.setdefault("msg_id", mm["msg_id"])
         full.setdefault("attachment_names", [a[0] for a in full.get("attachments") or []])

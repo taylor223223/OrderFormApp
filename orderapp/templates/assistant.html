@@ -10,6 +10,15 @@ tasks, and holds anything it isn't sure about for you.
   <form method="post" action="{{ url_for('assistant.summary_now') }}"><button class="btn">Summary now</button></form>
   <a class="btn" href="{{ url_for('settings.index') }}#ai">Settings</a></div></div>
 
+{% if running %}<meta http-equiv="refresh" content="5">{% endif %}
+{% if last_result %}{% set r = last_result %}
+<div class="card" style="margin-bottom:10px;border-left:4px solid {{ '#b91c1c' if r.error else '#15803d' }}">
+  <b>Last check {{ r.when }}:</b>
+  {% if r.error %}<span style="color:#b91c1c">✘ {{ r.error }}</span>{% endif %}
+  {% if r.read is defined %}<span class="small">{{ r.read }} email(s) in the inbox lately · <b>{{ r.new }} new handled</b>
+  {% if r.seen %} · {{ r.seen }} already done{% endif %}{% if r.skipped_me %} · {{ r.skipped_me }} from your own address (skipped){% endif %}
+  {% if r.skipped_old %} · {{ r.skipped_old }} from before you turned it on (skipped){% endif %}</span>{% endif %}
+</div>{% endif %}
 <form method="post" action="{{ url_for('assistant.note') }}" class="card" style="border-left:4px solid #6d28d9;margin-bottom:12px" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='⏳ Working on it… (about 30 seconds)'">
   <b>📞 Tell your assistant</b> <span class="small muted">- a phone call, text or voicemail. Type it like you'd tell a coworker; it's handled like an email from that customer.</span>
   <textarea name="text" rows="3" style="margin-top:6px" placeholder="e.g. Pat at Sample Palms called - reorder the 34 x 80 bronze screen doors from last month for units 204 and 210, PO 5512"></textarea>

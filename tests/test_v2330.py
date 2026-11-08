@@ -427,6 +427,33 @@ def test_phone_note_and_rules(env):
 
 
 
+def test_check_result_is_shown(env):
+    """2.34.1: every check leaves a visible result - counts, skipped-from-you, and any error."""
+    app, A, mail, claude = env
+    mail.inbox = [_msg("r1", "me@company.test", "to myself", "hi")]
+    with app.app_context():
+        r = A.run(prov=mail)
+    assert r["skipped_me"] == 1 and r["new"] == 0 and not r["error"]
+
+    class Broken(FakeMail):
+        def list_messages(self, **kw):
+            raise RuntimeError("token expired")
+    with app.app_context():
+        r = A.run(prov=Broken())
+        from orderapp.db import setting
+        assert "token expired" in r["error"] and "token expired" in setting("ai_last_result")
+    c = app.test_client()
+    tok = re.search(r'name="csrf-token" content="([^"]+)"', c.get("/login").get_data(as_text=True)).group(1)
+    c.post("/login", data={"username": "tester", "password": "pw-123456", "csrf_token": tok})
+    assert "token expired" in c.get("/assistant").get_data(as_text=True)
+
+
+def test_graph_time_is_local():
+    from orderapp.emailer import _local
+    assert len(_local("2026-11-08T15:40:00Z")) == 16 and _local("") == ""
+
+
+
 def test_summary(env):
     app, A, mail, claude = env
     with app.app_context():
