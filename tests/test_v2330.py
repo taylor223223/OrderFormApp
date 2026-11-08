@@ -461,3 +461,69 @@ def test_summary(env):
     assert "End of day" in body and "Needs you" in body and "At a glance" in body
     assert "Who reached out and what your assistant did" in body and "kelli" in body and "Emails sent for you" in body
     assert "Orders and quotes it made" in body and "Saved to the app" in body and "added Jo Newperson" in body
+
+
+def test_outlook_reads_every_inbox_newest_first(monkeypatch):
+    """2.34.3: classic Outlook - every account's inbox, walked newest first, no date-filter string."""
+    from datetime import datetime as dt, timedelta as td
+    from orderapp.emailer import OutlookDesktop
+
+    class Att:
+        Count = 0
+
+    class Item:
+        Class = 43
+
+        def __init__(self, eid, mins_ago, subj):
+            self.EntryID, self.Subject, self.Body = eid, subj, "body"
+            self.ReceivedTime = dt.now() - td(minutes=mins_ago)
+            self.SenderName, self.SenderEmailType, self.SenderEmailAddress = "Pat", "SMTP", "pat@x.test"
+            self.Attachments, self.UnRead = Att(), True
+
+    class Items:
+        def __init__(self, items):
+            self.items, self.i = items, 0
+
+        def Sort(self, *_):
+            self.items.sort(key=lambda x: x.ReceivedTime, reverse=True)
+
+        def GetFirst(self):
+            self.i = 0
+            return self.items[0] if self.items else None
+
+        def GetNext(self):
+            self.i += 1
+            return self.items[self.i] if self.i < len(self.items) else None
+
+    class Folder:
+        def __init__(self, sid, items):
+            self.StoreID, self.Items = sid, Items(items)
+
+    empty = Folder("S1", [])                                   # the default store: an empty data file
+    work = Folder("S2", [Item("a", 5, "new order"), Item("b", 60 * 24 * 5, "old")])
+
+    class Store:
+        def __init__(self, f):
+            self.StoreID, self.f = f.StoreID, f
+
+        def GetDefaultFolder(self, n):
+            return self.f
+
+    class Stores:
+        Count = 2
+        lst = [Store(empty), Store(work)]
+
+        def Item(self, i):
+            return self.lst[i - 1]
+
+    _stores = Stores()
+
+    class NS:
+        Stores = _stores
+
+        def GetDefaultFolder(self, n):
+            return empty
+
+    monkeypatch.setattr(OutlookDesktop, "_ns", lambda self: (None, NS()))
+    msgs = OutlookDesktop().list_messages(days=2)
+    assert [m["subject"] for m in msgs] == ["new order"] and msgs[0]["msg_id"] == "a|S2"

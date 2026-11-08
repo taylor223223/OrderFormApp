@@ -96,42 +96,78 @@ class OutlookDesktop:
         except Exception:  # noqa: BLE001
             return ""
 
+    @staticmethod
+    def _inboxes(ns):
+        """Every account's Inbox in the Outlook profile (the default one first) - [(folder, store_id)]."""
+        out, seen = [], set()
+        try:
+            f = ns.GetDefaultFolder(6)
+            out.append((f, f.StoreID))
+            seen.add(f.StoreID)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for i in range(1, ns.Stores.Count + 1):
+                st = ns.Stores.Item(i)
+                try:
+                    if st.StoreID in seen:
+                        continue
+                    f = st.GetDefaultFolder(6)
+                    out.append((f, st.StoreID))
+                    seen.add(st.StoreID)
+                except Exception:  # noqa: BLE001 - public folders, archives etc. have no inbox
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+
     def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
+        """Newest first from every inbox, walking back until older than `days` (no date-filter strings -
+        those depend on Windows' date format and silently match nothing)."""
         _, ns = self._ns()
-        inbox = ns.GetDefaultFolder(6)
-        items = inbox.Items
-        items.Sort("[ReceivedTime]", True)
-        since = (datetime.now() - timedelta(days=int(days))).strftime("%m/%d/%Y %I:%M %p")
-        flt = f"[ReceivedTime] >= '{since}'"
-        if unread_only:
-            flt += " AND [UnRead] = True"
-        items = items.Restrict(flt)
-        out = []
-        it = items.GetFirst()
+        since = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d %H:%M")
         s = (search or "").lower()
         sw = (subject_word or "").strip().lower()
-        while it is not None and len(out) < int(limit):
-            try:
-                if it.Class == 43:  # MailItem
-                    subj = it.Subject or ""
-                    if sw and sw not in subj.lower():     # cheap check first - skip the body entirely
-                        it = items.GetNext()
-                        continue
-                    body = it.Body or ""
-                    if not s or s in subj.lower() or s in body[:3000].lower() or s in (it.SenderName or "").lower():
-                        out.append({
-                            "msg_id": it.EntryID, "subject": subj, "sender": self._sender(it),
-                            "sender_name": it.SenderName or "", "received": str(it.ReceivedTime)[:16],
-                            "preview": " ".join(body.split())[:180], "has_attachments": it.Attachments.Count > 0,
-                        })
-            except Exception:  # noqa: BLE001
-                pass
-            it = items.GetNext()
-        return out
+        out = []
+        for inbox, store_id in self._inboxes(ns):
+            items = inbox.Items
+            items.Sort("[ReceivedTime]", True)
+            it = items.GetFirst()
+            n = 0
+            while it is not None and n < int(limit):
+                try:
+                    if it.Class == 43:  # MailItem
+                        when = str(it.ReceivedTime)[:16]
+                        if when < since:
+                            break                             # sorted newest first: the rest are older
+                        if unread_only and not it.UnRead:
+                            it = items.GetNext()
+                            continue
+                        subj = it.Subject or ""
+                        if sw and sw not in subj.lower():     # cheap check first - skip the body entirely
+                            it = items.GetNext()
+                            continue
+                        body = it.Body or ""
+                        if not s or s in subj.lower() or s in body[:3000].lower() or s in (it.SenderName or "").lower():
+                            out.append({
+                                "msg_id": f"{it.EntryID}|{store_id}", "subject": subj, "sender": self._sender(it),
+                                "sender_name": it.SenderName or "", "received": when,
+                                "preview": " ".join(body.split())[:180], "has_attachments": it.Attachments.Count > 0,
+                            })
+                            n += 1
+                except Exception:  # noqa: BLE001
+                    pass
+                it = items.GetNext()
+        out.sort(key=lambda m: m["received"], reverse=True)
+        return out[:int(limit)]
+
+    def _item(self, ns, msg_id):
+        entry, _, store = (msg_id or "").partition("|")
+        return ns.GetItemFromID(entry, store) if store else ns.GetItemFromID(entry)
 
     def get_message(self, msg_id):
         _, ns = self._ns()
-        it = ns.GetItemFromID(msg_id)
+        it = self._item(ns, msg_id)
         atts = []
         tmp = os.path.join(data_dir(), "tmp")
         os.makedirs(tmp, exist_ok=True)
