@@ -101,7 +101,7 @@ class OutlookDesktop:
         inbox = ns.GetDefaultFolder(6)
         items = inbox.Items
         items.Sort("[ReceivedTime]", True)
-        since = (datetime.now() - timedelta(days=int(days))).strftime("%m/%d/%Y %H:%M %p")
+        since = (datetime.now() - timedelta(days=int(days))).strftime("%m/%d/%Y %I:%M %p")
         flt = f"[ReceivedTime] >= '{since}'"
         if unread_only:
             flt += " AND [UnRead] = True"

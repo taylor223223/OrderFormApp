@@ -29,7 +29,8 @@
       <div><label>Application (client) ID</label><input name="graph_client_id" value="{{ v.graph_client_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
       <div><label>Tenant</label><input name="graph_tenant" value="{{ v.graph_tenant }}"><div class="small muted">"common" works for most; or your company's tenant ID.</div></div>
     </div>
-    <div class="small muted">See README → "Microsoft 365 setup" for the 5-minute app registration.</div>
+    <div class="small" style="margin-top:6px"><b>Then: Save settings, and click "Sign in to Microsoft" in the Microsoft account box at the bottom of this page.</b>
+      {% if graph_user %}<span class="tag ok">Signed in as {{ graph_user }}</span>{% else %}<span class="tag warn">Not signed in yet</span>{% endif %}</div>
   </div>
   <h3 id="ai">🤖 AI Assistant</h3>
   <div class="card" style="background:#f8fafc">
