@@ -365,3 +365,30 @@ def test_project_quotes_come_back_as_one(env):
     finally:
         with app.app_context():
             set_setting("ai_mode", "practice")
+
+
+def test_ai_saves_contacts_and_sizes_to_the_app(env):
+    """2.33.5: a new person who emails an order is added to the customer's contacts; a different phone for someone
+    on file goes to Review (never overwritten); the order's sizes land on the unit."""
+    app, A, mail, claude = env
+    claude.cls = {"category": "order", "summary": "Jo orders screens", "forms": ["window_screen"]}
+    claude.read = dict(ORDER_READ, contact_name="Jo Newperson", contact_phone="480-555-0199",
+                       contact_email="jo@samplepalms.test", po="SP-20", unit="512",
+                       forms=[{"form_key": "window_screen", "lines": [{"qty": "1", "unit": "512", "width": "29",
+                                                                        "height": "57"}]}])
+    mail.inbox = [_msg("s1", "jo@samplepalms.test", "Screen 512", "1 screen 29x57 for 512, Jo 480-555-0199")]
+    with app.app_context():
+        A.run(prov=mail)
+    k = _q(app, "SELECT * FROM contacts WHERE email='jo@samplepalms.test'")
+    assert len(k) == 1 and k[0]["name"] == "Jo Newperson" and k[0]["phone"] == "480-555-0199"
+    assert "added Jo Newperson" in _q(app, "SELECT action FROM ai_log WHERE msg_id='s1'")[0]["action"]
+    assert _q(app, """SELECT 1 FROM measurements m JOIN units u ON u.id=m.unit_id
+                      WHERE u.unit_number='512' AND m.customer_id=?""", (app.cid,))
+    # Pat (on file) writes in with a new phone -> not overwritten, goes to Review
+    claude.read = dict(ORDER_READ, contact_phone="623-555-0177", po="SP-21")
+    mail.inbox = [_msg("s2", "pat@samplepalms.test", "Screens again", "same thing, call me at 623-555-0177")]
+    with app.app_context():
+        A.run(prov=mail)
+    assert _q(app, "SELECT phone FROM contacts WHERE email='pat@samplepalms.test'")[0]["phone"] == "602-555-0100"
+    ch = _q(app, "SELECT * FROM changes WHERE kind='new_contact' AND status='pending'")
+    assert ch and "623-555-0177" in ch[-1]["new_value"]

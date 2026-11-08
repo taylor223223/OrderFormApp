@@ -483,6 +483,72 @@ def order_desk_email(oid):
     return _fmt(setting("subject_template"), o, data), body, o["pdf_path"]
 
 
+
+# ------------------------------------------------------------------ keeping the app's records up to date
+def _digits(s):
+    return re.sub(r"\D", "", s or "")[-10:]
+
+
+def save_contact(c, name, phone, email, source=""):
+    """Put the person who emailed on the customer's contacts. New person -> added. Known person -> blank phone /
+    email / name filled in. Something different from what's on file (e.g. a new phone) -> the Review tab, never
+    overwritten. Returns a short note of what changed, or ""."""
+    if not c:
+        return ""
+    name, phone, email = (name or "").strip(), (phone or "").strip(), (email or "").strip().lower()
+    if not (name or email):
+        return ""
+    from ..changes import _same
+    for k in q("SELECT * FROM contacts WHERE customer_id=?", (c["id"],)):
+        if (email and (k["email"] or "").lower() == email) or (name and k["name"] and _same(k["name"], name)):
+            fill = {f: v for f, v in (("name", name), ("phone", phone), ("email", email)) if v and not (k[f] or "").strip()}
+            for f, v in fill.items():
+                x(f"UPDATE contacts SET {f}=? WHERE id=?", (v, k["id"]))
+            differ = {}
+            if phone and k["phone"] and _digits(phone) != _digits(k["phone"]):
+                differ["phone"] = phone
+            if email and k["email"] and email != k["email"].lower():
+                differ["email"] = email
+            if differ:
+                from ..changes import add_change, new_batch
+                b = new_batch("ai", f"AI assistant: {k['name'] or email} at {c['name']} {source}".strip())
+                add_change(b, "new_contact", customer_id=c["id"], payload={"contact_id": k["id"], **differ},
+                           new=", ".join(f"{f}: {v}" for f, v in differ.items()), old=k["name"] or k["email"])
+            out = []
+            if fill:
+                out.append(f"filled in {', '.join(fill)} for {k['name'] or email}")
+            if differ:
+                out.append(f"new {', '.join(differ)} for {k['name'] or email} waiting in Review")
+            return "; ".join(out)
+    x("INSERT INTO contacts(customer_id, name, role, email, phone, notes) VALUES (?,?,?,?,?,?)",
+      (c["id"], name or email, "", email, phone, f"Added by the AI assistant from an email {source}".strip()))
+    return f"added {name or email} to {c['name']}'s contacts"
+
+
+def save_to_app(a, c, m, oids):
+    """After an order / quote: the contact and the unit sizes go into the app, like doing it by hand."""
+    notes = []
+    try:
+        n = save_contact(c, a.get("contact_name"), a.get("contact_phone"),
+                         a.get("contact_email") or (m.get("sender") if not is_coworker(m.get("sender")) else ""),
+                         f"({m.get('subject') or ''})"[:80])
+        if n:
+            notes.append(n)
+    except Exception:  # noqa: BLE001 - never lose an order over a contact
+        pass
+    try:
+        from ..unit_sizes import save_order_sizes
+        added = updated = 0
+        for oid in oids or []:
+            ad, up = save_order_sizes(oid)
+            added, updated = added + ad, updated + up
+        if added or updated:
+            notes.append(f"unit sizes saved ({added} new, {updated} updated)")
+    except Exception:  # noqa: BLE001
+        pass
+    return "; ".join(notes)
+
+
 # ------------------------------------------------------------------ the log
 def log(m, email_id, thread_id, cls, action, status, reasons=None, detail="", order_ids=None, stop_id=None,
         task_id=None, customer_id=None):
@@ -550,7 +616,9 @@ def handle_order(m, email_id, cls, c, tid, prior):
     if ask_customer:
         oids = [make_order(a, f, c, m, kind, "AI assistant: waiting on the customer for: " + "; ".join(ask_customer))
                 for f in a.get("forms") or [] if f.get("lines")]
-        lid = log(m, email_id, tid, cls, "Asked the customer for: " + "; ".join(ask_customer)[:300], "waiting",
+        saved = save_to_app(dict(a, contact_name=a.get("contact_name") or m.get("sender_name")), c, m, [])
+        lid = log(m, email_id, tid, cls, "Asked the customer for: " + "; ".join(ask_customer)[:300]
+                  + (f" - saved to the app: {saved}" if saved else ""), "waiting",
                   ask_customer, detail=json.dumps(a)[:20000], order_ids=oids, customer_id=cid)
         st = customer_reply(to, m.get("subject"), a.get("reply_to_customer") or "", lid, oids[0] if oids else None)
         x("UPDATE ai_threads SET category=? WHERE id=?",
@@ -571,7 +639,9 @@ def handle_order(m, email_id, cls, c, tid, prior):
     if kind == "quote" and len(oids) > 1:     # one project, several forms: the quotes go back as ONE document
         for oid in oids:
             x("UPDATE orders SET quote_group=? WHERE id=?", (f"t{tid}", oid))
-    lid = log(m, email_id, tid, cls, f"{'Quote request' if kind == 'quote' else 'Order'} made and sent to the order desk",
+    saved = save_to_app(a, c, m, oids)
+    lid = log(m, email_id, tid, cls, f"{'Quote request' if kind == 'quote' else 'Order'} made and sent to the order desk"
+              + (f" - saved to the app: {saved}" if saved else ""),
               "done", [], detail=json.dumps(a)[:20000], order_ids=oids, customer_id=cid)
     desk = (setting("order_to") or "").strip()
     for oid in oids:
