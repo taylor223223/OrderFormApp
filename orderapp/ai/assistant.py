@@ -192,16 +192,16 @@ def customer_facts(c):
     if units:
         lines.append("  units on file: " + ", ".join(units))
     for o in q("""SELECT id, title, po, order_date, kind, status, data FROM orders WHERE customer_id=?
-                  ORDER BY id DESC LIMIT 8""", (c["id"],)):
+                  ORDER BY id DESC LIMIT 40""", (c["id"],)):
         d = loads(o["data"]) or {}
         items = "; ".join(", ".join(f"{k}={v}" for k, v in b.items() if v and k in
                                     ("qty", "width", "height", "length", "color", "style", "unit", "room"))
-                          for b in (d.get("blocks") or [])[:6])
+                          for b in (d.get("blocks") or [])[:12])
         lines.append(f"  app order #{o['id']} {o['order_date'] or ''} {o['title']} PO {o['po'] or '-'} "
-                     f"({o['kind'] or 'order'}, {o['status']}): {items[:300]}")
+                     f"({o['kind'] or 'order'}, {o['status']}): {items[:600]}")
     try:
         from ..order_insights import purchases
-        for p in purchases(c["id"])[:25]:
+        for p in purchases(c["id"])[:150]:
             lines.append(f"  invoice {p.get('invoice') or ''} {p.get('date') or ''}: {p.get('qty') or ''} x "
                          f"{(p.get('desc') or '')[:90]}")
     except Exception:  # noqa: BLE001
@@ -254,10 +254,13 @@ JSON object only.
 
 Rules:
 - Sizes are inches (convert feet: 6' = 72). Width first, then height/length.
-- If the customer refers to a past order ("same as last time", "reorder", "like unit 204"), look for it in the
-  app records below. Fill the lines from it ONLY if the customer already confirmed that exact order in this email
-  thread; otherwise set is_reorder true, describe the best match in reorder_match, and ask them to confirm it (or
-  ask what product they mean if nothing matches).
+- If the customer refers to a past order ("same as last time", "reorder", "like unit 204", "the 34 and 36 inch
+  screens we got before"), search ALL the app records below for the order / invoice lines that match what they
+  describe - the product AND any sizes, unit, color or date they mention. Never just take the most recent order:
+  a match must fit every detail they gave. If several fit, list them and ask which one. Fill the lines from it ONLY
+  if the customer already confirmed that exact order in this email thread; otherwise set is_reorder true, describe
+  the match (date, invoice/order #, items and sizes) in reorder_match, and ask them to confirm it (or ask what
+  product they mean if nothing matches).
 - kind: "order" or "quote" if the customer said so; "unknown" if not clear (then ask).
 - Contact: we need a contact name AND phone number for every order and quote. Use the email/signature, else a
   contact on file. For a quote we also need an email for the quote (use the sender or one on file). Only ask for
@@ -368,14 +371,15 @@ def queue_email(kind, to, subject, body, attachments=None, log_id=None, order_id
     """kind: customer | order | coworker. Sends now, or stores it held / as practice. Returns the outbox status."""
     attachments = [a for a in (attachments or []) if a and os.path.exists(a)]
     to = (to or "").strip()
-    flag = {"customer": "ai_auto_customer", "order": "ai_auto_orders", "coworker": "ai_auto_coworker"}[kind]
+    flag = {"customer": "ai_auto_customer", "quote": "ai_auto_customer", "order": "ai_auto_orders",
+            "coworker": "ai_auto_coworker"}[kind]
     status, note, real_to = "held", hold_reason, to
     if hold_reason:
         status = "held"
     elif practice():
         tests = _addr_list(setting("ai_test_senders"))
         ptarget = (setting("ai_practice_to") or "").strip()
-        if kind in ("customer", "coworker") and to.lower() in tests:
+        if kind in ("customer", "quote", "coworker") and to.lower() in tests:
             status, note = "send", "Practice mode: sent because this is a test address."
         elif kind == "order" and ptarget:
             status, note, real_to = "send", f"Practice mode: sent to {ptarget} instead of {to}.", ptarget
@@ -411,6 +415,9 @@ def send_outbox(out_id, prov=None):
     x("UPDATE ai_outbox SET status='sent', sent_at=? WHERE id=?", (now(), out_id))
     if o["order_id"] and o["kind"] == "order":
         _mark_sent(o["order_id"], o["to_addr"])
+    if o["order_id"] and o["kind"] == "quote":      # the priced quote went to the customer: Quote sent
+        x("UPDATE orders SET status='Quoted', updated=? WHERE id=?", (now(), o["order_id"]))
+        add_status(o["order_id"], "Quoted", f"AI assistant: quote emailed to {o['to_addr']}")
     return "sent"
 
 
@@ -661,15 +668,18 @@ def handle_quote_returned(m, email_id, cls, c, tid):
                 saved.append(p)
     h = (loads(o["data"]) or {}).get("header", {})
     to = h.get("quote_email") or h.get("contact_email") or ""
-    lid = log(m, email_id, tid, cls, f"Quote #{o['id']} marked Quote received", "held",
-              ["Check the pricing, then send the quote to the customer (Outbox)."], order_ids=[o["id"]],
-              customer_id=o["customer_id"])
+    hold = ([] if to else ["No email on the quote for the customer - add it, then send."]) + \
+        ([] if saved else ["The office's email had no PDF quote attached - check it, then send."])
+    lid = log(m, email_id, tid, cls, f"Quote #{o['id']} received" + (" - held" if hold else " - sending it to the customer"),
+              "held" if hold else "done", hold, order_ids=[o["id"]], customer_id=o["customer_id"])
     body = (f"Hello {h.get('quote_to') or h.get('contact') or ''},\n\nHere is the quote you asked for"
             f"{(' (PO ' + o['po'] + ')') if o['po'] else ''}. The product catalog is attached too. Just reply to let "
             f"me know if you'd like to go ahead.\n\nThank you,\n{signature()}")
-    queue_email("customer", to, f"Your quote - {o['title']}", body, saved + [catalog_file()], lid, o["id"],
-                hold_reason="Quotes with prices wait for you - check it, then send.")
-    _set_thread(tid, "held")
+    st = queue_email("quote", to, f"Your quote - {o['title']}", body, saved + [catalog_file()], lid, o["id"],
+                     hold_reason="; ".join(hold))
+    if st != "sent":
+        add_status(o["id"], "Confirmed", f"AI assistant: quote email to the customer {st} (Assistant -> Emails)")
+    _set_thread(tid, "held" if hold else "done")
 
 
 def handle_quote_approval(m, email_id, cls, c, tid):

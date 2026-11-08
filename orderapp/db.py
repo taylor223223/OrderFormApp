@@ -126,9 +126,11 @@ DEFAULT_SETTINGS = {
     "ai_auto_customer": "1",
     "ai_auto_coworker": "1",
     "ai_coworker_domain": "apartmentinterior.net",
-    "ai_coworkers": "Kelli - greatservice@apartmentinterior.net - HR, office manager, compliance, account setup\n"
-                    "Nicole - general orders and production\nMarty - general orders, production, warehouse, delivery\n"
-                    "Coleen - product and vendor questions\nJimmy / Sally - orders@apartmentinterior.net - order desk",
+    "ai_coworkers": "Kelli - greatservice@apartmentinterior.net - office manager, HR, compliance, account setup\n"
+                    "Nicole - general orders and production\nMarty - general orders, production, order status, "
+                    "warehouse, delivery\nColeen - product, inventory and vendor questions\n"
+                    "Nicolette - collections\nMike - sales, new customers\n"
+                    "Jimmy / Sally - orders@apartmentinterior.net - order desk",
     "ai_summary_morning": "07:00",
     "ai_summary_evening": "17:00",
     "ai_lookback_days": "3",
@@ -386,6 +388,11 @@ def _data_migrations(con):
     """One-time fixes to saved data when a field changes shape. Each runs once (flag in settings)."""
     import json
     done = {r[0] for r in con.execute("SELECT key FROM settings WHERE key LIKE 'dm_%'")}
+    if "dm_ai_coworkers2" not in done:   # 2.33.1: Nicolette (collections), Mike added to the starting coworker list
+        r = con.execute("SELECT value FROM settings WHERE key='ai_coworkers'").fetchone()
+        if r and r[0] and "Nicolette" not in r[0] and r[0].startswith("Kelli - greatservice"):
+            con.execute("DELETE FROM settings WHERE key='ai_coworkers'")   # the new default is put back below
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_ai_coworkers2', '1')")
     if "dm_blind_slat" not in done:
         from .catalog import OLD_BLIND_STYLES, split_blind_style
         olds = tuple(OLD_BLIND_STYLES)

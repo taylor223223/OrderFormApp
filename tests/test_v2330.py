@@ -247,3 +247,33 @@ def test_summary(env):
     with app.app_context():
         body = A.build_summary("evening")
     assert "End of day" in body and "Needs you" in body and "Done for you" in body
+
+
+def test_quote_back_from_office_goes_to_customer(env):
+    """2.33.1: a priced quote from the office is sent straight to the customer (no hold) -> Quote sent."""
+    app, A, mail, claude = env
+    o = _q(app, "SELECT * FROM orders WHERE po='SP-9'")[0]        # the quote request from the live-mode test
+    with app.app_context():
+        from orderapp.db import x
+        x("UPDATE orders SET data=json_set(data, '$.header.quote_email', 'tester@example.test') WHERE id=?", (o["id"],))
+    claude.cls = {"category": "quote_returned", "summary": "Office: pricing for Sample Palms", "po": "SP-9",
+                  "property": "Sample Palms (made up)", "forms": []}
+    m = _msg("m10", "sally@company.test", "Quote SP-9", "Here's the quote.")
+    m["attachments"] = [("Quote SP-9.pdf", b"%PDF-1.4 fake")]
+    m["attachment_names"] = ["Quote SP-9.pdf"]
+    mail.inbox = [m]
+    with app.app_context():
+        A.run(prov=mail)
+    sent = mail.sent[-1]
+    assert sent["to"] == "tester@example.test" and sent["subject"].startswith("Your quote")
+    assert any("Quote received" in p for p in sent["attachments"]) and len(sent["attachments"]) == 2
+    assert _q(app, "SELECT status FROM orders WHERE id=?", (o["id"],))[0]["status"] == "Quoted"
+    assert _q(app, "SELECT status FROM ai_log WHERE msg_id='m10'")[0]["status"] == "done"
+
+
+def test_reorder_prompt_matches_on_sizes_not_latest(app):
+    from orderapp.ai import assistant as A
+    assert "Never just take the most recent order" in A.EXTRACT_SYSTEM
+    with app.app_context():
+        from orderapp.db import setting
+        assert "Nicolette - collections" in setting("ai_coworkers")
