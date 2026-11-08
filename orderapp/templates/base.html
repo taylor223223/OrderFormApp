@@ -30,7 +30,9 @@
     <a href="{{ url_for('library.index') }}" class="{{ 'on' if ep.startswith('library.') }}" style="--c:#7c3aed"><span class="ic">📄</span>Order Forms</a>
     <a href="{{ url_for('customers.index') }}" class="{{ 'on' if ep.startswith('customers.') or ep.startswith('holds.') }}" style="--c:#d97706"><span class="ic">🏢</span>Customers{% if holds_count %}<span class="badge" title="Accounts on hold - see Customers → Account Holds">{{ holds_count }}</span>{% endif %}</a>
     <a href="{{ url_for('crm.home') }}" class="{{ 'on' if ep.startswith('crm.') }}" style="--c:#db2777"><span class="ic">🤝</span>CRM</a>
-    <a href="{{ url_for('company.home') }}" class="{{ 'on' if ep.startswith('company.') or ep.startswith('sales.') }}" style="--c:#0f766e" title="Company data, my sales, items &amp; stock"><span class="ic">🗄️</span>Company Data</a>
+    <a href="{{ url_for('sales.home') }}" class="{{ 'on' if ep.startswith('sales.') and ep != 'sales.items' }}" style="--c:#2a78d6"><span class="ic">💲</span>Sales</a>
+    <a href="{{ url_for('company.home') }}" class="{{ 'on' if ep.startswith('company.') }}" style="--c:#0f766e"><span class="ic">🗄️</span>Company Data</a>
+    <a href="{{ url_for('sales.items') }}" class="{{ 'on' if ep == 'sales.items' }}" style="--c:#4f46e5"><span class="ic">🏷️</span>Items &amp; Stock</a>
     <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email{% if email_drafts %}<span class="badge" title="Order emails turned into drafts, waiting for review">{{ email_drafts }}</span>{% endif %}</a>
     <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') or ep.startswith('exports.') }}" style="--c:#a16207"><span class="ic">📥</span>Import / Export</a>
     <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}" style="--c:#b45309"><span class="ic">✅</span>Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>

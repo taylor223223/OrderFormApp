@@ -1,7 +1,30 @@
 {% extends "base.html" %}{% block title %}Quotes{% endblock %}
 {% block body %}
-<div class="pagehead"><div><h1>Quotes &amp; estimates</h1>
-<div class="muted">Priced from each account's own history: agreed account price first, then what they last paid, then the latest price anyone paid.</div></div></div>
+<div class="pagehead"><div><h1>Quotes</h1>
+<div class="muted">Quote requests: Request sent → Quote received → Quote sent (to the customer) → Approved / ordered. Approved quotes become orders in Order Tracking.</div></div>
+<div class="row"><a class="btn primary" href="{{ url_for('orders.new', kind='quote') }}">+ New quote request</a></div></div>
+<div class="row" style="gap:6px;margin-bottom:10px"><a class="btn sm {{ 'primary' if not stage }}" href="{{ url_for('quotes.index') }}">All steps</a>
+{% for g in stages %}<a class="btn sm {{ 'primary' if g.key == stage }}" href="{{ url_for('quotes.index', stage=g.key) }}">{{ g.title.split(' - ')[0].replace(' (last 60 days)', '') }} ({{ g.rows|length }})</a>{% endfor %}</div>
+{% for g in stages if g.show and (g.rows or stage) and not (g.key == 'declined' and not stage) %}
+<div class="card" style="margin-bottom:12px"><h3 style="margin:0">{{ g.title }} <span class="muted">({{ g.rows|length }})</span></h3>
+{% if g.hint %}<div class="small muted" style="margin-bottom:6px">{{ g.hint }}</div>{% endif %}
+<div class="tablewrap"><table><tr><th>#</th><th>Customer</th><th>Form</th><th>PO</th><th>Updated</th><th>Quote goes to</th><th>Step</th></tr>
+{% for o in g.rows %}<tr><td><a href="{{ url_for('orders.view', oid=o.id) }}">#{{ o.id }}</a></td><td>{{ o.cname or '' }}</td>
+<td><a href="{{ url_for('orders.editor', order=o.id) }}" title="Open the form">{{ o.title }}</a></td><td>{{ o.po or '' }}</td><td class="small nowrap">{{ (o.updated or '')[:10] }}</td>
+<td class="small">{% if o.to %}<b>{{ o.to }}</b>{% endif %}{% if o.via %} · {{ o.via }}{% endif %}
+  {% if o.email %}<div><a href="mailto:{{ o.email }}">{{ o.email }}</a></div>{% endif %}{% if o.phone %}<div><a href="tel:{{ o.phone }}">{{ o.phone }}</a></div>{% endif %}
+  {% if not (o.to or o.email or o.phone) %}<span class="muted">not set - open the form</span>{% endif %}</td>
+<td>{% if g.key == 'approved' %}<span class="tag ok">{{ o.label }}</span>{% else %}
+<form method="post" action="{{ url_for('orders.set_status', oid=o.id) }}"><input type="hidden" name="next" value="{{ request.full_path }}">
+<div class="taps sm tapgrid">{% set cur = tap_for(o.status, o.kind) %}{% for row in tap_grid_for('quote') %}{% for t in row %}<button name="tap" value="{{ t }}" class="{{ 'on' if t == cur }}"{% if t == 'Approved / ordered' %} onclick="return confirm('Approved? This makes it an order (Order ready in Order Tracking).')"{% endif %}>{{ t }}</button>{% endfor %}{% endfor %}</div>
+{% if g.key != 'declined' %}<button name="tap" value="Declined" class="btn sm" style="margin-top:4px" title="The customer said no">Declined</button>{% else %}<button name="tap" value="Quote sent" class="btn sm" style="margin-top:4px">Reopen</button>{% endif %}</form>{% endif %}</td></tr>{% endfor %}
+{% if not g.rows %}<tr><td class="empty" colspan="7">None.</td></tr>{% endif %}
+</table></div></div>
+{% endfor %}
+{% if not stage and not (stages|selectattr('rows')|list) %}<div class="card muted">No quote requests yet. On any order form, tap 💲 QUOTE at the top (or + New quote request) and fill in who the quote goes to.</div>{% endif %}
+
+<h2 style="margin-top:22px">Price quotes</h2>
+<div class="muted" style="margin-bottom:8px">Priced from each account's own history: agreed account price first, then what they last paid, then the latest price anyone paid.</div>
 <form method="post" action="{{ url_for('quotes.new') }}" class="card row" style="gap:8px;align-items:flex-end">
   <div style="flex:2;min-width:220px"><label>Customer</label><select name="customer_id" required><option value="">Pick a customer…</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
   <div style="flex:2;min-width:220px"><label>What it's for (optional)</label><input name="title" placeholder="e.g. 12 unit renovation, building 3"></div>

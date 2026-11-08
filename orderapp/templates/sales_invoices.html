@@ -1,6 +1,5 @@
 {% extends "base.html" %}{% block title %}Sales invoices{% endblock %}
 {% block body %}
-{% include '_company_nav.html' %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home') }}">← Sales</a></div><h1>Invoices</h1>
 <div class="muted">{{ rows|length }} invoice(s){% if rows %} · ${{ '{:,.2f}'.format(total) }}{% endif %}</div></div></div>
 <form class="row" method="get" style="gap:8px;margin-bottom:12px">

@@ -216,7 +216,7 @@ def test_notes_for_a_future_day(app, c):
                                                    "next": "/plan"})
     assert r.status_code == 302 and r.headers["Location"].endswith("/plan")
     assert "Gate code 4321" in c.get(f"/routes/day/{FRIDAY}").get_data(as_text=True)
-    assert "Gate code 4321" in c.get("/plan").get_data(as_text=True)
+    assert "Gate code 4321" in c.get(f"/plan?view=week&start={FRIDAY}").get_data(as_text=True)   # that day's week
     assert "Notes for today" not in c.get("/").get_data(as_text=True)          # not today's
     c.post(f"/routes/day/{TODAY}/note", data={"csrf_token": c.t, "note": "Maintenance walk at 10"})
     dash = c.get("/").get_data(as_text=True)

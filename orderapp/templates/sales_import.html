@@ -1,6 +1,5 @@
 {% extends "base.html" %}{% block title %}Import sales{% endblock %}
 {% block body %}
-{% include '_company_nav.html' %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.home') }}">← Sales</a></div><h1>Import sales history</h1>
 <div class="muted">One row per line item (invoice #, date, customer, item, amount...). Importing the same invoices again updates them - no duplicates.</div></div></div>
 {% if step == 'upload' %}

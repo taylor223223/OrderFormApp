@@ -4,11 +4,11 @@
 <div class="holdbanner" id="holdBanner" {% if not hold %}style="display:none"{% endif %}><b>⛔ ACCOUNT HOLD</b> — <span id="holdText">{% if hold %}{{ hold.name }} owes <b>${{ '{:,.2f}'.format(hold.balance or 0) }}</b>{% endif %}</span>. This account must be brought current before any purchase.
 <a href="{{ url_for('holds.index') }}">Account Holds</a></div>
 <div class="pagehead">
-  <div><div class="kindtoggle" role="radiogroup" aria-label="Order or estimate">
+  <div><div class="kindtoggle" role="radiogroup" aria-label="Order or quote" title="Pick first: is this an order or a quote?">
     <button type="button" data-kind="order" class="{{ 'on' if kind != 'quote' }}" title="The form says ORDER">🧾 ORDER</button><button type="button" data-kind="quote" class="{{ 'on' if kind == 'quote' }}" title="The form's title says QUOTE instead of ORDER">💲 QUOTE</button>
   </div>
   <h1><span id="formTitle" data-order="{{ spec.title }}" data-quote="{{ spec.title.replace(' Order Form', ' Quote Request') if ' Order Form' in spec.title else spec.title ~ ' (Quote Request)' }}">{{ spec.title if kind != 'quote' else (spec.title.replace(' Order Form', ' Quote Request') if ' Order Form' in spec.title else spec.title ~ ' (Quote Request)') }}</span>{% if order %} <span class="muted">#{{ order.id }}</span>{% endif %}</h1>
-  <div class="small" id="quoteNote" {% if kind != 'quote' %}hidden{% endif %} style="color:#b91c1c;font-weight:600">Quote: same form, but its title says QUOTE instead of ORDER, the email asks for pricing, and it isn't counted as an order. It shows in Order Tracking marked QUOTE - one tap turns it into an order.</div>
+  <div class="small" id="quoteNote" {% if kind != 'quote' %}hidden{% endif %} style="color:#b91c1c;font-weight:600">Quote: same form, but its title says QUOTE instead of ORDER, the email asks for pricing, and it isn't counted as an order. It's tracked on the Quotes tab - when it's approved, one tap makes it an order.</div>
   <div class="muted small">Yellow = predicted from saved measurements / past orders. Check it, then save. Dropdowns accept any typed value.</div></div>
   <div class="row">
     <select id="switchForm" style="max-width:260px" title="Switch form">{% for k, t in forms %}<option value="{{ k }}" {{ 'selected' if k==form_key }}>{{ t }}</option>{% endfor %}</select>
@@ -23,6 +23,16 @@
 <input type="hidden" name="source" value="{{ order.source if order else 'manual' }}">
 <input type="hidden" name="kind" id="kind" value="{{ kind }}">
 
+<div class="card" id="quoteBox" {% if kind != 'quote' %}hidden{% endif %} style="border:2px solid #fca5a5;background:#fff7f7">
+  <h3 style="margin:0 0 6px;color:#991b1b">💲 Quote - who gets the finished quote?</h3>
+  <div class="grid g4">
+    <div><label>Quote goes to</label><input data-h="quote_to" id="quoteTo" list="dl_people" placeholder="Name" autocomplete="off"></div>
+    <div><label>Send it by</label><select data-h="quote_via" id="quoteVia"><option value="">-</option><option>Email</option><option>Phone call</option><option>Text</option></select></div>
+    <div><label>Their email</label><input data-h="quote_email" id="quoteEmail" inputmode="email"></div>
+    <div><label>Their phone</label><input data-h="quote_phone" id="quotePhone" inputmode="tel"></div>
+  </div>
+  <div class="small muted" style="margin-top:4px">Steps on the Quotes tab: Request sent → Quote received → Quote sent → Approved / ordered (then it's an order).</div>
+</div>
 <div class="card">
   <div class="grid g4">
     <div style="grid-column:span 2"><label>Customer</label>
@@ -533,6 +543,12 @@ $('#orderForm').addEventListener('submit', () => {
 document.querySelectorAll('.kindtoggle button').forEach(btn => btn.addEventListener('click', () => {
   document.querySelectorAll('.kindtoggle button').forEach(x => x.classList.toggle('on', x === btn));
   const k = btn.dataset.kind; $('#kind').value = k; $('#quoteNote').hidden = k !== 'quote';
+  $('#quoteBox').hidden = k !== 'quote';
+  if (k === 'quote') {     // start the quote's recipient from the contact (change it if someone else gets the quote)
+    [['#quoteTo', '#contactName'], ['#quoteEmail', '#contactEmail'], ['#quotePhone', '#contactPhone']].forEach(([a, b]) => {
+      if (!$(a).value.trim() && $(b) && $(b).value.trim()) $(a).value = $(b).value.trim(); });
+    if (!$('#quoteVia').value) $('#quoteVia').value = $('#quoteEmail').value ? 'Email' : ($('#quotePhone').value ? 'Phone call' : '');
+  }
   const t = $('#formTitle'); t.textContent = t.dataset[k]; dirty = true;
 }));
 $('#photoInput').addEventListener('change', e => {

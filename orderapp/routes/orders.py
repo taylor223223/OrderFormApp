@@ -98,8 +98,10 @@ def new():
     cid = request.args.get("customer", type=int)
     if not form_key:
         customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
-        return render_template("order_pick.html", forms=form_list(), customers=customers, cid=cid)
-    return redirect(url_for("orders.editor", form=form_key, customer=cid or ""))
+        return render_template("order_pick.html", forms=form_list(), customers=customers, cid=cid,
+                               kind=request.args.get("kind", ""))
+    return redirect(url_for("orders.editor", form=form_key, customer=cid or "",
+                            **({"kind": "quote"} if request.args.get("kind") == "quote" else {})))
 
 
 @bp.route("/orders/editor")
@@ -544,15 +546,21 @@ def reorder(oid):
 def set_status(oid):
     o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
     st = request.form.get("status")
-    from ..order_kind import TAPS, kind_title
+    from ..order_kind import APPROVED, TAPS, kind_title
     tap = next((t for t in TAPS if t[0] == request.form.get("tap")), None)
-    if tap:                       # one tap: "Quote sent" = status Sent + it's an estimate
+    note = request.form.get("note", "").strip()
+    if tap:                       # one tap: "Request sent" = status Sent + it's a quote
         st = tap[2]
         if tap[1] and tap[1] != (o["kind"] or "order"):
             x("UPDATE orders SET kind=?, title=? WHERE id=?", (tap[1], kind_title(o["title"], tap[1]), oid))
             if o["pdf_path"] and os.path.exists(o["pdf_path"]) and o["form_key"] in FORMS:
                 _make_pdf(oid)    # banner on / off
             o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+        if tap[0] == APPROVED:    # the customer said yes: it's an order now (ready to send in)
+            x("UPDATE orders SET quote_approved_at=?, sent_at=NULL WHERE id=?", (now(), oid))   # sent = when the ORDER goes in
+            o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+            note = "Quote approved - now an order"
+            flash(f"Quote #{oid} approved - it's an order now (Order ready in Order Tracking).", "ok")
     if st in STATUSES:
         fields = {"status": st, "updated": now()}
         for k in ("vendor_ref", "due_date", "notes"):
@@ -561,8 +569,8 @@ def set_status(oid):
         if st == "Sent" and not o["sent_at"]:
             fields["sent_at"] = now()
         x(f"UPDATE orders SET {', '.join(k + '=?' for k in fields)} WHERE id=?", list(fields.values()) + [oid])
-        if st != o["status"] or request.form.get("note"):
-            add_status(oid, st, request.form.get("note", "").strip())
+        if st != o["status"] or note:
+            add_status(oid, st, note)
     nxt = request.form.get("next") or ""
     return redirect(nxt if nxt.startswith("/") else url_for("orders.view", oid=oid))
 
@@ -600,7 +608,8 @@ def restore(tid):
 @bp.route("/tracking")
 @login_required
 def tracking():
-    from ..order_kind import TAP_LABELS, TAPS, status_label
+    from ..order_kind import TAP_GRIDS, TAP_LABELS, TAPS, status_label
+    QUOTE_LABELS = [lab for t_ in TAP_GRIDS["quote"] for lab in t_] + ["Quote ready", "Declined"]
     month = request.args.get("month", "").strip()[:7]
     st = request.args.get("status", "all" if month else "open")
     s = request.args.get("q", "").strip()
@@ -616,6 +625,8 @@ def tracking():
     if st == "open":
         sql += f" AND o.status IN ({','.join('?' * len(OPEN_STATUSES))})"
         args += OPEN_STATUSES
+    elif st == "quotes":
+        sql += " AND coalesce(o.kind,'order')='quote'"
     elif st in TAP_LABELS:
         _t = next(t for t in TAPS if t[0] == st)
         sql += " AND o.status=?"
@@ -626,6 +637,9 @@ def tracking():
     elif st and st != "all":
         sql += " AND o.status=?"
         args.append(st)
+    quote_tab = st == "quotes" or st in QUOTE_LABELS
+    if not quote_tab and st != "all":   # quotes live on the Quotes tab; approved ones are orders and show here
+        sql += " AND coalesce(o.kind,'order')<>'quote'"
     if s:
         sql += " AND (c.name LIKE ? OR o.po LIKE ? OR o.title LIKE ? OR o.vendor_ref LIKE ? OR o.notes LIKE ?)"
         args += [f"%{s}%"] * 5
@@ -647,7 +661,10 @@ def tracking():
         totals = tracking_totals()
     except Exception:   # noqa: BLE001 - the board must always load
         totals = None
+    open_quotes = q(f"""SELECT COUNT(*) n FROM orders WHERE coalesce(kind,'order')='quote'
+                        AND status IN ({','.join('?' * len(OPEN_STATUSES))})""", OPEN_STATUSES, one=True)["n"]
     return render_template("tracking.html", rows=rows, statuses=STATUSES, st=st, s=s, counts=counts,
+                           order_chips=[lab for row in TAP_GRIDS["order"] for lab in row], open_quotes=open_quotes,
                            customers=customers, month=month, totals=totals, out_dir=output_dir(),
                            trash=trash, undo=undo)
 

@@ -119,14 +119,14 @@ DEFAULT_SETTINGS = {
 }
 
 STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
-            "Installed", "Completed", "On Hold", "Cancelled"]
+            "Installed", "Completed", "On Hold", "Cancelled", "Quoted"]
 ACTIVITY_KINDS = ["In person", "Call", "Text", "Email", "Site visit", "Drop-in", "Meeting", "Trade show", "Voicemail", "Other"]
 CUSTOMER_STATUSES = ["Lead", "Prospect", "Active", "Inactive"]
 DEAL_STAGES = ["Lead", "Contacted", "Quote sent", "Negotiating", "Won", "Lost"]
 TOPICS = ["Doors", "Pre-hung doors", "Bi-pass doors", "Screen doors", "Window screens", "Vertical blinds",
           "Horizontal blinds", "Baseboards", "Cabinets", "Pricing", "Delivery", "Vendor setup", "Turn schedule",
           "Rehab / renovation", "Complaint", "Samples"]
-OPEN_STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "On Hold"]
+OPEN_STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "On Hold", "Quoted"]
 
 
 def now():
@@ -199,7 +199,8 @@ MIGRATIONS = {
     "floorplans": {"plan": "TEXT"},
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
-    "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT", "kind": "TEXT"},
+    "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT", "kind": "TEXT",
+               "quote_approved_at": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
     "activities": {"order_id": "INTEGER", "temp": "TEXT", "ordered": "TEXT", "order_what": "TEXT"},
 }

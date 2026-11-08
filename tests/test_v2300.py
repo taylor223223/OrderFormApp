@@ -171,8 +171,9 @@ def test_discard_and_quotes_tab_and_tap_pairs(app, c):
     nav = c.get("/").get_data(as_text=True)
     i_trk, i_quotes, i_forms = nav.index("Order Tracking</a>"), nav.index("Quotes</a>"), nav.index("Order Forms</a>")
     assert i_trk < i_quotes < i_forms                                   # Quotes sits right after Order Tracking
-    from orderapp.order_kind import TAP_GRID
-    assert TAP_GRID == [["Order ready", "Order sent", "Delivered"], ["Quote ready", "Quote sent", None]]
+    from orderapp.order_kind import TAP_GRIDS
+    assert TAP_GRIDS["order"] == [["Order ready", "Order sent", "Delivered"]]
+    assert TAP_GRIDS["quote"] == [["Request sent", "Quote received"], ["Quote sent", "Approved / ordered"]]
 
 
 def _save(c, cid, form, blocks, kind="order"):
@@ -187,7 +188,7 @@ def test_forms_in_one_pdf(app, c):
     b = _save(c, app.cid, "door", [{"qty": "2", "width": "30", "height": "80"}])
     q_ = _save(c, app.cid, "drawer_box", [{"qty": "4", "width": "14"}], kind="quote")
     trk = c.get("/tracking?status=all").get_data(as_text=True)
-    assert 'form="pkgSel"' in trk and "Compile into one PDF" in trk and "Download checked" in trk and "Make it an order" in trk
+    assert 'form="pkgSel"' in trk and "Compile into one PDF" in trk and "Download checked" in trk and "Approved / ordered" in trk
     r = _post(c, "/orders/package", {"make": "1", "ids": [str(a), str(b), str(q_)]})
     html = r.get_data(as_text=True)
     assert "Made:" in html and "Order package (3 forms)" in html

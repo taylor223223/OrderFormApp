@@ -1,12 +1,10 @@
-{# Company Data: everything from the company reports - all accounts, my sales, items & stock (one top tab, 11/06) #}
+{# Company Data sub-tabs. Sales and Items & Stock are their own top tabs again (11/07) - keeps Company Data quick. #}
 <div class="row subtabs" style="gap:6px;margin-bottom:12px;flex-wrap:wrap">
 {% set _ep = request.endpoint or '' %}
 {% for ep_, label, on in [('company.home','Overview', _ep == 'company.home'),
-                          ('sales.home','My Sales', _ep.startswith('sales.') and _ep != 'sales.items'),
                           ('company.accounts','Accounts', _ep in ('company.accounts', 'company.account')),
                           ('company.insights','Insights', _ep == 'company.insights'),
                           ('company.explore','Explore & chart', _ep == 'company.explore'),
-                          ('company.sales','All sales lines', _ep == 'company.sales'),
-                          ('sales.items','Items & Stock', _ep == 'sales.items')] %}
+                          ('company.sales','All sales lines', _ep == 'company.sales')] %}
 <a class="btn sm {{ 'primary' if on }}" href="{{ url_for(ep_) }}">{{ label }}</a>{% endfor %}
 <span class="spacer"></span><a class="btn sm" href="{{ url_for('sales.import_page') }}">Import reports</a></div>

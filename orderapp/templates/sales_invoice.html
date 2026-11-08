@@ -1,6 +1,5 @@
 {% extends "base.html" %}{% block title %}Invoice {{ s.invoice_no }}{% endblock %}
 {% block body %}
-{% include '_company_nav.html' %}
 <div class="pagehead"><div><div class="small"><a href="{{ url_for('sales.invoices') }}">← Invoices</a></div><h1>Invoice {{ s.invoice_no }}</h1>
 <div class="muted">{{ s.invoice_date }} · {% if s.customer_id %}<a href="{{ url_for('customers.view', cid=s.customer_id) }}">{{ s.cname }}</a>{% else %}{{ s.cname }}{% endif %}{% if s.po %} · PO {{ s.po }}{% endif %}{% if s.rep %} · Rep {{ s.rep }}{% endif %}</div></div>
 <div class="row" style="gap:6px">{% if s.customer_id %}<form method="post" action="{{ url_for('quotes.new') }}"><input type="hidden" name="invoice" value="{{ s.id }}"><button class="btn sm primary" title="New quote with these items at today's account prices">🧾 Re-quote / reorder</button></form>{% endif %}

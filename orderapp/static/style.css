@@ -344,3 +344,4 @@ select.pinsel.on{background:#fff3e0;border-color:#e8a33d;color:#8a4b00}
 .orderdefs{border-left:5px solid #2a78d6;background:#f5f9ff}
 .blk .ovr{margin:4px 10px 8px} .blk .ovr summary{cursor:pointer;color:var(--muted)}
 .blk .ovr.on summary{color:#b45309;font-weight:600}
+[hidden]{display:none!important}

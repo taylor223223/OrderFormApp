@@ -4,11 +4,22 @@ An estimate is an order row with kind='quote': same form and lines, but it's tit
 its PDF carries a QUOTE REQUEST banner, the email asks for pricing, and it's left out of order totals.
 """
 # (button label, kind it sets or None to keep, stored status)
-TAPS = [("Order ready", "order", "Ready"), ("Quote ready", "quote", "Ready"), ("Order sent", "order", "Sent"),
-        ("Quote sent", "quote", "Sent"), ("Delivered", None, "Delivered")]
-TAP_LABELS = [t[0] for t in TAPS]
-# how the buttons sit: each order step over its quote step, Delivered on its own
-TAP_GRID = [["Order ready", "Order sent", "Delivered"], ["Quote ready", "Quote sent", None]]
+# A quote goes: request sent (to the office/vendor for pricing) -> quote received (pricing came back) ->
+# quote sent (to the customer) -> approved / ordered (it becomes an order) - or declined.
+APPROVED = "Approved / ordered"
+TAPS = [("Order ready", "order", "Ready"), ("Order sent", "order", "Sent"), ("Delivered", None, "Delivered"),
+        ("Quote ready", "quote", "Ready"), ("Request sent", "quote", "Sent"), ("Quote received", "quote", "Confirmed"),
+        ("Quote sent", "quote", "Quoted"), (APPROVED, "order", "Ready"), ("Declined", "quote", "Cancelled")]
+TAP_LABELS = [t[0] for t in TAPS if t[0] != APPROVED]
+QUOTE_STEPS = ["Quote ready", "Request sent", "Quote received", "Quote sent"]
+# the buttons each kind shows (orders: their three steps; quotes: the four quote steps + approved)
+TAP_GRIDS = {"order": [["Order ready", "Order sent", "Delivered"]],
+             "quote": [["Request sent", "Quote received"], ["Quote sent", APPROVED]]}
+TAP_GRID = TAP_GRIDS["order"]
+
+
+def tap_grid_for(kind):
+    return TAP_GRIDS["quote" if (kind or "order") == "quote" else "order"]
 
 
 def is_quote(o):
@@ -21,13 +32,16 @@ def is_quote(o):
 def status_label(status, kind="order"):
     q = (kind or "order") == "quote"
     word = "Quote" if q else "Order"
+    if q:
+        return {"Ready": "Quote ready", "Sent": "Request sent", "Draft": "Quote draft", "Confirmed": "Quote received",
+                "Quoted": "Quote sent", "Cancelled": "Declined"}.get(status or "", status or "")
     return {"Ready": f"{word} ready", "Sent": f"{word} sent", "Draft": f"{word} draft",
             "Confirmed": f"{word} received"}.get(status or "", status or "")
 
 
 def tap_for(status, kind):
     lab = status_label(status, kind)
-    return lab if lab in TAP_LABELS else None
+    return lab if any(lab in row for row in tap_grid_for(kind)) else None
 
 
 def kind_title(title, kind):

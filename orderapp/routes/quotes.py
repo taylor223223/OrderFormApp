@@ -20,6 +20,38 @@ def _hold(cid):
     return hold_for(cid) if cid else None
 
 
+# ------------------------------------------------------------------ quote requests (order forms marked QUOTE)
+# (key, heading, which rows, what to do next)
+STAGES = [("todo", "Not sent yet", "Fill it in and send the request in for pricing."),
+          ("sent", "Request sent - waiting on pricing", "Mark Quote received when the pricing comes back."),
+          ("received", "Quote received - send it to the customer", "Send it to the person below, then mark Quote sent."),
+          ("quoted", "Quote sent - waiting on the customer", "When they say yes: Approved / ordered."),
+          ("approved", "Approved / ordered (last 60 days)", "These are orders now - see Order Tracking."),
+          ("declined", "Declined", "")]
+_STAGE_SQL = {"todo": "kind='quote' AND o.status IN ('Draft','Ready')", "sent": "kind='quote' AND o.status='Sent'",
+              "received": "kind='quote' AND o.status='Confirmed'", "quoted": "kind='quote' AND o.status='Quoted'",
+              "approved": "coalesce(o.quote_approved_at,'')>=date('now','-60 days')",
+              "declined": "kind='quote' AND o.status='Cancelled'"}
+
+
+def quote_requests(only=""):
+    """Order forms marked QUOTE, by step: [{key, title, hint, rows}] (every step, so the counts show)."""
+    from ..order_kind import status_label
+    out = []
+    for key, title, hint in STAGES:
+        rows = [dict(r) for r in q(f"""SELECT o.*, c.name cname FROM orders o LEFT JOIN customers c
+                     ON c.id=o.customer_id WHERE {_STAGE_SQL[key]} ORDER BY o.updated DESC LIMIT 200""")]
+        for r in rows:
+            h = (loads(r["data"]) or {}).get("header", {})
+            r["to"] = h.get("quote_to") or h.get("contact") or ""
+            r["via"] = h.get("quote_via") or ""
+            r["email"] = h.get("quote_email") or (h.get("contact_email") if not h.get("quote_to") else "") or ""
+            r["phone"] = h.get("quote_phone") or (h.get("contact_phone") if not h.get("quote_to") else "") or ""
+            r["label"] = status_label(r["status"], r["kind"])
+        out.append({"key": key, "title": title, "hint": hint, "rows": rows, "show": not only or only == key})
+    return out
+
+
 # ------------------------------------------------------------------ quotes
 @bp.route("/quotes")
 @login_required
@@ -34,6 +66,7 @@ def index():
     rows = q(sql + " ORDER BY qu.id DESC LIMIT 300", args)
     counts = {r["status"]: r["n"] for r in q("SELECT status, COUNT(*) n FROM quotes GROUP BY status")}
     return render_template("quotes.html", rows=rows, status=st, statuses=QT.QUOTE_STATUSES, counts=counts,
+                           stages=quote_requests(request.args.get("stage", "")), stage=request.args.get("stage", ""),
                            now_date=date.today().isoformat(),
                            customers=q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE"))
 

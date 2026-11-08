@@ -249,8 +249,9 @@ def test_estimate_toggle_and_status_taps(app, c):
     t = fitz.open(o["pdf_path"])[0].get_text()
     assert "Door Quote Form" in t and "Door Order Form" not in t        # the title bar says QUOTE
     page = c.get(f"/orders/{oid}").get_data(as_text=True)
-    assert 'value="Quote ready" class="on"' in page and "<select name=\"status\">" not in page
-    assert "Turn into an order" in page
+    assert "Now: <b>Quote ready</b>" in page and 'value="Request sent"' in page and "<select name=\"status\">" not in page
+    assert 'value="Order sent"' not in page                             # a quote shows the quote steps
+    assert "Copy as a new order" in page
     assert "Please price the attached" in c.get(f"/orders/{oid}/send").get_data(as_text=True)
     # one tap -> order sent: becomes an order, banner gone
     c.post(f"/orders/{oid}/status", data={"csrf_token": c.t, "tap": "Order sent"})

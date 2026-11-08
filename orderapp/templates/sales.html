@@ -2,7 +2,6 @@
 {% macro money(v) %}${{ '{:,.0f}'.format(v or 0) }}{% endmacro %}
 {% macro pct(v) %}{% if v is none %}<span class="muted">-</span>{% elif v >= 0 %}<span class="up">▲ {{ v }}%</span>{% else %}<span class="down">▼ {{ -v }}%</span>{% endif %}{% endmacro %}
 {% block body %}
-{% include '_company_nav.html' %}
 <div class="pagehead"><div><h1>Sales{% if cname %} · {{ cname }}{% endif %}{% if cat %} · {{ cat }}{% endif %}</h1>
 <div class="muted">Your sales history from the company system: by month, customer and product, plus goals and commission.</div></div>
 <div class="row"><a class="btn" href="{{ url_for('sales.invoices', year=year, customer=cid, category=cat) }}">Invoices</a>
