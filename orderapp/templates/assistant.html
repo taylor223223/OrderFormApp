@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% block title %}Assistant{% endblock %}
+{% block body %}
+<div class="pagehead"><div><h1>🤖 Assistant</h1>
+<div class="muted">Reads your inbox, makes orders and quotes, asks customers for what's missing, adds visits to Routes and
+tasks, and holds anything it isn't sure about for you.
+{% if enabled %}<b>{{ 'PRACTICE MODE - emails are held (except to your test addresses)' if mode != 'live' else 'LIVE - confident emails are sent for you' }}</b>{% else %}<b>Off</b> - turn it on in Settings → AI Assistant.{% endif %}
+{% if last %} · Last checked {{ last }}{% endif %} · This month ${{ '%.2f'|format(spend) }}</div></div>
+<div class="row" style="gap:6px">
+  <form method="post" action="{{ url_for('assistant.run_now') }}"><input type="hidden" name="tab" value="{{ tab }}"><button class="btn primary" {{ 'disabled' if not enabled }}>{{ '⏳ Checking…' if running else '⟳ Check email now' }}</button></form>
+  <form method="post" action="{{ url_for('assistant.summary_now') }}"><button class="btn">Summary now</button></form>
+  <a class="btn" href="{{ url_for('settings.index') }}#ai">Settings</a></div></div>
+
+<div class="row subtabs" style="gap:6px;margin-bottom:12px">
+{% for k, lab in [('review','Needs you'),('schedule','To schedule'),('activity','Everything it did'),('outbox','Emails'),('summaries','Daily summaries')] %}
+<a class="btn sm {{ 'primary' if tab == k }}" href="{{ url_for('assistant.home', tab=k) }}">{{ lab }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}</div>
+
+{% macro mail(o) %}
+<form method="post" action="{{ url_for('assistant.outbox_send', oid=o.id) }}" class="card" style="background:#fafbfc;margin:6px 0">
+  <div class="small muted">{{ {'customer':'Reply to customer','order':'To the order desk','coworker':'Reply to coworker'}[o.kind] }} · <b>{{ o.status }}</b>{% if o.note %} · {{ o.note }}{% endif %}</div>
+  <div class="grid g2"><div><label>To</label><input name="to_addr" value="{{ o.to_addr }}"></div><div><label>Subject</label><input name="subject" value="{{ o.subject }}"></div></div>
+  <label>Message</label><textarea name="body" rows="6">{{ o.body }}</textarea>
+  {% if o.files %}<div class="small muted">Attached: {% for f in o.files %}{{ f.replace('\\','/').split('/')[-1] }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+  <div class="row" style="gap:6px;margin-top:6px"><button class="btn sm primary">Send it</button>
+  <button class="btn sm" formaction="{{ url_for('assistant.outbox_drop', oid=o.id) }}">Don't send</button></div>
+</form>{% endmacro %}
+
+{% if tab == 'review' %}
+{% for h in held %}
+<div class="card" style="margin-bottom:10px;border-left:4px solid {{ '#b91c1c' if h.status == 'error' else '#d97706' }}">
+  <div class="row" style="justify-content:space-between"><div><b>{{ h.sender_name or h.sender }}</b> <span class="muted small">{{ h.received or h.ts }}</span>
+  <div>{{ h.summary or h.subject }}</div><div class="small muted">{{ h.subject }}</div></div>
+  <form method="post" action="{{ url_for('assistant.log_done', lid=h.id) }}"><button class="btn sm">✓ Done - remove</button></form></div>
+  <div style="margin-top:6px"><b>{{ h.action }}</b></div>
+  <ul class="small" style="margin:4px 0">{% for r in loads(h.reasons or '[]') %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% if h.order_ids %}<div class="small">Draft{{ 's' if ',' in h.order_ids }}: {% for o in h.order_ids.split(',') if o %}<a href="{{ url_for('orders.editor', order=o) }}">#{{ o }} (open the form)</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+  {% if h.email_id %}<div class="small"><a href="{{ url_for('emails.message', rid=h.email_id) }}">Read the email</a></div>{% endif %}
+  {% for o in outbox_for.get(h.id, []) %}{{ mail(o) }}{% endfor %}
+</div>
+{% else %}<div class="card muted">Nothing waiting on you. 🎉</div>{% endfor %}
+
+{% elif tab == 'schedule' %}
+<div class="tablewrap"><table><tr><th>Visit / task</th><th>Property</th><th>Added</th><th></th></tr>
+{% for t in sched %}<tr><td>{{ t.title }}</td><td>{{ t.cname or '' }}</td><td class="small nowrap">{{ (t.created or '')[:10] }}</td>
+<td><form method="post" action="{{ url_for('assistant.schedule', tid=t.id) }}" class="row" style="gap:4px">
+<input type="date" name="day" value="{{ today }}" style="width:150px"><button class="btn sm primary">Add to route</button>
+<button class="btn sm" name="done" value="1">Done</button></form></td></tr>
+{% else %}<tr><td class="empty" colspan="4">Nothing to schedule.</td></tr>{% endfor %}</table></div>
+
+{% elif tab == 'activity' %}
+<div class="tablewrap"><table><tr><th>When</th><th>From</th><th>What it was</th><th>What it did</th><th></th></tr>
+{% for l in log %}<tr><td class="small nowrap">{{ (l.ts or '')[:16] }}</td><td class="small">{{ l.sender_name or l.sender }}</td>
+<td><span class="tag">{{ l.category }}</span> {{ l.summary or l.subject }}</td>
+<td class="small">{{ l.action }}{% if l.order_ids %} · {% for o in l.order_ids.split(',') if o %}<a href="{{ url_for('orders.view', oid=o) }}">#{{ o }}</a> {% endfor %}{% endif %}</td>
+<td><span class="tag {{ 'ok' if l.status == 'done' else ('warn' if l.status in ('held','waiting') else '') }}">{{ l.status }}</span></td></tr>
+{% else %}<tr><td class="empty" colspan="5">Nothing yet.</td></tr>{% endfor %}</table></div>
+
+{% elif tab == 'outbox' %}
+{% for o in outbox %}{% if o.status in ('held','practice','failed') %}{{ mail(o) }}{% else %}
+<div class="card" style="margin:6px 0"><div class="small muted">{{ o.ts[:16] }} · {{ o.kind }} · <b>{{ o.status }}</b>{% if o.note %} · {{ o.note }}{% endif %}</div>
+<b>To {{ o.to_addr }}</b> - {{ o.subject }}<pre class="small" style="white-space:pre-wrap;margin:4px 0">{{ o.body }}</pre></div>{% endif %}
+{% else %}<div class="card muted">No emails yet.</div>{% endfor %}
+
+{% elif tab == 'summaries' %}
+{% for s in summ %}<div class="card" style="margin-bottom:10px"><b>{{ s.day }} · {{ s.period|capitalize }}</b>
+<pre style="white-space:pre-wrap;font-family:inherit;margin:6px 0 0">{{ s.body }}</pre></div>
+{% else %}<div class="card muted">No summaries yet - they're made at the times in Settings (or tap Summary now).</div>{% endfor %}
+{% endif %}
+{% endblock %}

@@ -20,7 +20,11 @@ EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", 
             "report_to", "report_cc", "ors_api_key", "route_start_address", "route_start_time",
             "route_visit_minutes", "route_return_to_start", "email_order_word", "email_auto_minutes",
             "email_lookback_days", "delivery_subject_word", "quote_valid_days", "quote_terms", "pdf_layout", "notice_subject_words",
-            "reply_confirm_words", "net_proxy"]
+            "reply_confirm_words", "net_proxy",
+            "ai_model_fast", "ai_model_smart", "ai_coworker_domain", "ai_coworkers", "ai_my_email", "ai_test_senders",
+            "ai_practice_to", "ai_catalog_path", "ai_signature", "ai_summary_morning", "ai_summary_evening",
+            "ai_month_limit"]
+AI_FLAGS = ["ai_auto_orders", "ai_auto_customer", "ai_auto_coworker"]
 
 
 @bp.route("/settings", methods=["GET", "POST"])
@@ -34,6 +38,14 @@ def index():
                         and not v.isdigit():
                     v = DEFAULT_SETTINGS[k]
                 set_setting(k, v)
+        if "ai_coworker_domain" in request.form:     # the AI Assistant section was on the page
+            for k in AI_FLAGS:
+                set_setting(k, "1" if request.form.get(k) else "0")
+            key = request.form.get("ai_api_key", "").strip()
+            if key and not key.startswith("•"):
+                set_setting("ai_api_key", key)
+            if request.form.get("ai_api_key_clear"):
+                set_setting("ai_api_key", "")
         if "email_order_word" in request.form and not request.form.get("email_order_word", "").strip():
             set_setting("email_order_word", "Order")
         if "delivery_subject_word" in request.form:

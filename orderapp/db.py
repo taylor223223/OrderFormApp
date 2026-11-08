@@ -116,6 +116,23 @@ DEFAULT_SETTINGS = {
     "reply_confirm_words": "got it, got this, received, recieved, will do, on it, entered, placed, confirmed, done, thanks, thank you, ok, okay, 10-4, sounds good",
     "delivery_subject_word": "Deliver",
     "delivery_auto": "1",
+    # AI email assistant (off until the API key is in; practice mode holds every email it would send)
+    "ai_enabled": "0",
+    "ai_mode": "practice",
+    "ai_model_fast": "claude-haiku-5-5",
+    "ai_model_smart": "claude-sonnet-5-5",
+    "ai_api_version": "2026-10-21",
+    "ai_auto_orders": "1",
+    "ai_auto_customer": "1",
+    "ai_auto_coworker": "1",
+    "ai_coworker_domain": "apartmentinterior.net",
+    "ai_coworkers": "Kelli - greatservice@apartmentinterior.net - HR, office manager, compliance, account setup\n"
+                    "Nicole - general orders and production\nMarty - general orders, production, warehouse, delivery\n"
+                    "Coleen - product and vendor questions\nJimmy / Sally - orders@apartmentinterior.net - order desk",
+    "ai_summary_morning": "07:00",
+    "ai_summary_evening": "17:00",
+    "ai_lookback_days": "3",
+    "ai_month_limit": "50",
 }
 
 STATUSES = ["Draft", "Ready", "Sent", "Confirmed", "Backordered", "Shipped", "Delivered",
@@ -191,6 +208,28 @@ CREATE INDEX IF NOT EXISTS ix_act_when ON activities(occurred_at);
 CREATE INDEX IF NOT EXISTS ix_stops_day ON route_stops(day);
 """
 
+# AI email assistant (v2.33.0): what it read, what it did, what it sent (or would have, in practice mode)
+AI_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ai_threads (
+    id INTEGER PRIMARY KEY, conv_key TEXT, sender TEXT, subject TEXT, customer_id INTEGER, category TEXT,
+    order_ids TEXT, status TEXT, reason TEXT, created TEXT, updated TEXT
+);
+CREATE TABLE IF NOT EXISTS ai_log (
+    id INTEGER PRIMARY KEY, ts TEXT, msg_id TEXT, email_id INTEGER, thread_id INTEGER, sender TEXT, sender_name TEXT,
+    subject TEXT, received TEXT, category TEXT, summary TEXT, action TEXT, status TEXT, reasons TEXT, detail TEXT,
+    order_ids TEXT, stop_id INTEGER, task_id INTEGER, customer_id INTEGER, reviewed INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS ai_outbox (
+    id INTEGER PRIMARY KEY, ts TEXT, log_id INTEGER, kind TEXT, to_addr TEXT, cc TEXT, subject TEXT, body TEXT,
+    attachments TEXT, status TEXT, note TEXT, order_id INTEGER, sent_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ai_summaries (id INTEGER PRIMARY KEY, day TEXT, period TEXT, body TEXT, created TEXT);
+CREATE TABLE IF NOT EXISTS ai_usage (id INTEGER PRIMARY KEY, ts TEXT, model TEXT, purpose TEXT, in_tok INTEGER,
+    out_tok INTEGER, cost REAL);
+CREATE INDEX IF NOT EXISTS ix_ai_log_msg ON ai_log(msg_id);
+CREATE INDEX IF NOT EXISTS ix_ai_threads_key ON ai_threads(conv_key);
+"""
+
 # columns added to existing tables after v1.1 (added in place, data kept)
 MIGRATIONS = {
     "customers": {"status": "TEXT", "tags": "TEXT", "lat": "REAL", "lon": "REAL", "geo_address": "TEXT",
@@ -238,6 +277,7 @@ def init_db(path=None):
     con.executescript(FOCUS_SCHEMA)
     from .order_trash import TRASH_SCHEMA
     con.executescript(TRASH_SCHEMA)
+    con.executescript(AI_SCHEMA)
     for table, cols in MIGRATIONS.items():
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
         for col, typ in cols.items():

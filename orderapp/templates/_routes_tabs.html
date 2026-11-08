@@ -13,3 +13,10 @@
   }));</script>
   <a class="btn sm" href="{{ url_for('plan.day', day=day_shift(day, 1)) }}" title="Next day">→</a></span>{% endif %}
 </div>
+
+{% set _ai_sched = ai_to_schedule() if ai_to_schedule is defined else [] %}
+{% if _ai_sched %}<div class="card" style="border-left:4px solid #6d28d9;margin-bottom:10px"><b>🤖 Visits to schedule ({{ _ai_sched|length }})</b>
+<span class="small muted">- from emails with no day given</span>
+{% for t in _ai_sched[:8] %}<form method="post" action="{{ url_for('assistant.schedule', tid=t.id) }}" class="row" style="gap:6px;margin-top:4px;align-items:center">
+<span style="flex:1">{{ t.title.replace('To schedule: ', '') }}</span><input type="date" name="day" value="{{ day if day is defined else '' }}" style="width:150px" required><button class="btn sm primary">Add to that day</button></form>{% endfor %}
+{% if _ai_sched|length > 8 %}<a class="small" href="{{ url_for('assistant.home', tab='schedule') }}">All {{ _ai_sched|length }}</a>{% endif %}</div>{% endif %}

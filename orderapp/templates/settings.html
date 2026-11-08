@@ -31,6 +31,44 @@
     </div>
     <div class="small muted">See README → "Microsoft 365 setup" for the 5-minute app registration.</div>
   </div>
+  <h3 id="ai">🤖 AI Assistant</h3>
+  <div class="card" style="background:#f8fafc">
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <b>{{ 'On' if v.ai_enabled == '1' else 'Off' }}</b> · {{ 'Practice mode' if v.ai_mode != 'live' else 'LIVE' }}
+      <button class="btn sm" formaction="{{ url_for('assistant.mode') }}" name="enabled" value="{{ '0' if v.ai_enabled == '1' else '1' }}">{{ 'Turn off' if v.ai_enabled == '1' else 'Turn on' }}</button>
+      <button class="btn sm" formaction="{{ url_for('assistant.mode') }}" name="mode" value="{{ 'live' if v.ai_mode != 'live' else 'practice' }}" {% if v.ai_mode != 'live' %}onclick="return confirm('Go live? Confident orders go to the order desk and replies go to customers without you clicking Send.')"{% endif %}>{{ 'Go live' if v.ai_mode != 'live' else 'Back to practice mode' }}</button>
+      <a class="btn sm" href="{{ url_for('assistant.home') }}">Open the Assistant</a>
+    </div>
+    <div class="small muted" style="margin-top:4px">Practice mode does everything in the app (orders, quotes, route stops, tasks) but holds every email - except replies to your test addresses, and order-desk emails go to your practice address instead of the order desk.</div>
+  </div>
+  <div class="grid g2">
+    <div><label>Anthropic API key</label><input name="ai_api_key" type="password" autocomplete="off" value="{{ '••••••••' + v.ai_api_key[-4:] if v.ai_api_key else '' }}" placeholder="sk-ant-...">
+      <div class="small muted">From console.anthropic.com → API keys. Stored only on this computer.{% if v.ai_api_key %} <label style="display:inline"><input type="checkbox" name="ai_api_key_clear" value="1" style="width:auto"> remove it</label>{% endif %}</div></div>
+    <div><label>Monthly spending limit ($)</label><input name="ai_month_limit" value="{{ v.ai_month_limit }}" inputmode="decimal">
+      <div class="small muted">The assistant stops for the month at this amount. Also set a limit on the Anthropic console.</div></div>
+    <div><label>Product catalog PDF (attached to every customer reply)</label><input name="ai_catalog_path" value="{{ v.ai_catalog_path or '' }}" placeholder="C:\Users\...\AIS Brochure.pdf">
+      <div class="small muted">Full path to the file. A smaller copy is made automatically for email if it's big.</div></div>
+    <div><label>Your name / sign-off</label><input name="ai_signature" value="{{ v.ai_signature or '' }}" placeholder="{{ v.sales_rep }}"></div>
+    <div><label>Your own email address(es)</label><input name="ai_my_email" value="{{ v.ai_my_email or '' }}" placeholder="you@company.com">
+      <div class="small muted">Emails from you are skipped.</div></div>
+    <div><label>Coworkers' email domain</label><input name="ai_coworker_domain" value="{{ v.ai_coworker_domain or '' }}" placeholder="company.com"></div>
+    <div style="grid-column:1/-1"><label>Coworkers (one per line: name - email - what they handle)</label><textarea name="ai_coworkers" rows="5">{{ v.ai_coworkers or '' }}</textarea></div>
+    <div><label>Practice mode: test addresses (replies to these really send)</label><input name="ai_test_senders" value="{{ v.ai_test_senders or '' }}" placeholder="your personal email">
+      <div class="small muted">Send yourself fake orders from these addresses to see how it replies.</div></div>
+    <div><label>Practice mode: send order-desk emails here instead</label><input name="ai_practice_to" value="{{ v.ai_practice_to or '' }}" placeholder="your own email (blank = hold them)"></div>
+    <div><label class="row" style="gap:6px"><input type="checkbox" name="ai_auto_orders" value="1" style="width:auto" {{ 'checked' if v.ai_auto_orders != '0' }}> Send confident orders / quote requests to the order desk</label>
+      <label class="row" style="gap:6px"><input type="checkbox" name="ai_auto_customer" value="1" style="width:auto" {{ 'checked' if v.ai_auto_customer != '0' }}> Send replies to customers (questions for missing info, confirmations)</label>
+      <label class="row" style="gap:6px"><input type="checkbox" name="ai_auto_coworker" value="1" style="width:auto" {{ 'checked' if v.ai_auto_coworker != '0' }}> Reply to coworker requests ("Got it")</label>
+      <div class="small muted">Unchecked = it writes the email and holds it for you.</div></div>
+    <div><label>Morning summary at</label><input name="ai_summary_morning" value="{{ v.ai_summary_morning or '' }}" placeholder="07:00">
+      <label>End-of-day summary at</label><input name="ai_summary_evening" value="{{ v.ai_summary_evening or '' }}" placeholder="17:00"></div>
+    <div><label>Fast model (sorting, cross-check)</label><input name="ai_model_fast" value="{{ v.ai_model_fast }}">
+      <label>Careful model (reading orders, drafting)</label><input name="ai_model_smart" value="{{ v.ai_model_smart }}"></div>
+  </div>
+  <div class="row" style="gap:6px;margin:8px 0 16px"><input name="send_to" placeholder="(optional) send a test email to…" style="max-width:280px" form="aiTest">
+    <button class="btn" form="aiTest">Test the connection</button>
+    <span class="small muted">Checks the API key, reads your inbox, and sends a test email if you fill in an address.</span></div>
+
   <h3>Order emails</h3>
   <div class="grid g2">
     <div><label>Only read emails with this word in the subject</label><input name="email_order_word" value="{{ v.email_order_word }}" placeholder="Order">
@@ -112,6 +150,7 @@
   <p style="margin-top:12px"><a class="btn" href="{{ url_for('settings.product_photos') }}">🖼️ Product photos</a> <span class="small muted">Pictures shown on order forms for door types, trim, hardware and cabinet styles.</span></p>
   <p class="small muted">Version {{ app_version }}</p></div>
 </div>
+<form id="aiTest" method="post" action="{{ url_for('assistant.test') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
 {% endblock %}
 {% block scripts %}<script>
 const help = {outlook_desktop:'Reads and sends through the Outlook app installed on this computer. Works with classic Outlook (not the "new Outlook" toggle).',

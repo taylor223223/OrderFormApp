@@ -15,6 +15,8 @@
   <a class="stat" href="{{ url_for('plan.day', day=today) }}"><div class="n">{% if stats.stops_today %}{{ stats.stops_left }}<span class="of"> of {{ stats.stops_today }}</span>{% else %}0{% endif %}</div><div class="l">{{ 'Stops left today' if stats.stops_today else "Today's stops" }}</div></a>
   <a class="stat" href="{{ url_for('orders.tracking', month=stats.month) }}"><div class="n">{{ stats.orders_month }}</div><div class="l">Orders this month{% if stats.orders_month_total %} · ${{ '{:,.0f}'.format(stats.orders_month_total) }}{% endif %}</div></a>
 </div>
+{% if ai_summary %}<details class="card" style="border-left:4px solid #6d28d9" open><summary><b>🤖 {{ ai_summary.period|capitalize }} summary</b> <span class="small muted">{{ ai_summary.created[11:16] }}</span> · <a class="small" href="{{ url_for('assistant.home') }}">Assistant</a></summary>
+<pre style="white-space:pre-wrap;font-family:inherit;margin:6px 0 0">{{ ai_summary.body }}</pre></details>{% endif %}
 {% if today_note %}<div class="card daynote-today"><div class="row" style="justify-content:space-between"><b>📝 Notes for today</b><a class="small" href="{{ url_for('plan.day', day=today) }}">edit</a></div>
 <div style="white-space:pre-wrap;margin-top:4px">{{ today_note }}</div></div>{% endif %}
 <div class="grid g2 previews">

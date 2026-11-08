@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.32.1"
+__version__ = "2.33.0"
 
 
 def _secret_key():
@@ -163,11 +163,21 @@ def create_app(db_path=None, testing=False, demo=None):
         from flask import send_from_directory
         return send_from_directory(app.static_folder, "manifest.webmanifest", mimetype="application/manifest+json")
 
+    def _ai_to_schedule():
+        try:
+            return db.q("SELECT * FROM tasks WHERE done=0 AND owner='ai-schedule' ORDER BY id")
+        except Exception:  # noqa: BLE001
+            return []
+
     @app.context_processor
     def _ctx():
         from .changes import pending_count
-        pc = ed = 0
+        pc = ed = ai_held = 0
         if session.get("uid"):
+            try:
+                ai_held = db.q("SELECT COUNT(*) n FROM ai_log WHERE status='held' AND reviewed=0", one=True)["n"]
+            except Exception:  # noqa: BLE001
+                ai_held = 0
             try:
                 pc = pending_count()
                 ed = db.q("""SELECT COUNT(*) n FROM orders WHERE source='email' AND status='Draft'
@@ -180,11 +190,12 @@ def create_app(db_path=None, testing=False, demo=None):
         return {"positions": _positions, "status_label": _ok.status_label, "tap_labels": _ok.TAP_LABELS, "tap_grid": _ok.TAP_GRID, "tap_grid_for": _ok.tap_grid_for,
                 "tap_for": _ok.tap_for, "back_link": _back_link(), "demo": app.config["DEMO"], "csrf_token": csrf_token, "pending_reviews": pc, "email_drafts": ed, "app_version": __version__, "cloud": app.config["CLOUD"],
                 "username": session.get("username"), "hold_for": _holds.hold_for,
-                "holds_count": _holds.count() if session.get("uid") else 0}
+                "holds_count": _holds.count() if session.get("uid") else 0, "ai_held": ai_held,
+                "ai_on": session.get("uid") and db.setting("ai_enabled") == "1", "ai_to_schedule": _ai_to_schedule}
 
     from .routes import (auth, crm, customers, emails, forms_lib, holds, imports, main, orders, photos, routes_plan,
-                         quotes, sales, settings, company, kitchen, exports)
-    for bp in (auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
+                         quotes, sales, settings, company, kitchen, exports, assistant)
+    for bp in (assistant.bp, auth.bp, main.bp, customers.bp, orders.bp, imports.bp, emails.bp, settings.bp, photos.bp, crm.bp, routes_plan.bp,
                holds.bp, forms_lib.bp, sales.bp, quotes.bp, company.bp, kitchen.bp, exports.bp):
         app.register_blueprint(bp)
     if not testing and not app.config["DEMO"]:
@@ -214,14 +225,25 @@ def _start_email_watcher(app):
                     mins = int(db.setting("email_auto_minutes") or 0)
                     if mins > 0 and (db.setting("email_provider") or "eml") != "eml" and \
                             db.q("SELECT 1 FROM users LIMIT 1", one=True):
-                        from .routes.emails import auto_check
-                        auto_check()
+                        if db.setting("ai_enabled") == "1":     # the AI assistant reads the whole inbox
+                            from .ai.assistant import run as ai_run
+                            ai_run()
+                        else:
+                            from .routes.emails import auto_check
+                            auto_check()
                         if (db.setting("delivery_subject_word") or "").strip():
                             from .deliveries import check_email
                             check_email()
                         from .order_notices import check_email as check_notices
                         check_notices()
             except Exception:  # noqa: BLE001 - never let a mail hiccup stop the app
+                pass
+            try:
+                with app.app_context():
+                    if db.setting("ai_enabled") == "1" and db.q("SELECT 1 FROM users LIMIT 1", one=True):
+                        from .ai.assistant import due_summaries
+                        due_summaries()
+            except Exception:  # noqa: BLE001
                 pass
             time.sleep(max(mins, 1) * 60 if mins > 0 else 120)
         if com:

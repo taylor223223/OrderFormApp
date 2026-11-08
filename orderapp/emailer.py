@@ -123,9 +123,11 @@ class OutlookDesktop:
         atts = []
         tmp = os.path.join(data_dir(), "tmp")
         os.makedirs(tmp, exist_ok=True)
+        names = []
         for i in range(1, it.Attachments.Count + 1):
             a = it.Attachments.Item(i)
             fn = a.FileName or f"attachment{i}"
+            names.append(fn)
             if fn.lower().endswith((".pdf", ".csv", ".xlsx")):
                 p = os.path.join(tmp, f"att_{i}_{fn}")
                 a.SaveAsFile(p)
@@ -134,7 +136,7 @@ class OutlookDesktop:
                 os.remove(p)
         return {"msg_id": msg_id, "subject": it.Subject or "", "sender": self._sender(it),
                 "sender_name": it.SenderName or "", "received": str(it.ReceivedTime)[:16],
-                "body": it.Body or "", "attachments": atts}
+                "body": it.Body or "", "attachments": atts, "attachment_names": names}
 
     def send(self, to, cc, subject, body, attachments, review=True):
         app, _ = self._ns()
@@ -280,16 +282,18 @@ class GraphMail:
         if (m.get("body") or {}).get("contentType") == "html":
             body = re.sub(r"<(br|/p|/div|/tr)[^>]*>", "\n", body, flags=re.I)
             body = _html.unescape(re.sub(r"<[^>]+>", "", body))
-        atts = []
+        atts, names = [], []
         if m.get("hasAttachments"):
             for a in self._req("GET", f"/me/messages/{msg_id}/attachments").get("value", []):
                 fn = a.get("name", "")
+                if not a.get("isInline"):
+                    names.append(fn)
                 if a.get("contentBytes") and fn.lower().endswith((".pdf", ".csv", ".xlsx")):
                     atts.append((fn, base64.b64decode(a["contentBytes"])))
         fr = (m.get("from") or {}).get("emailAddress", {})
         return {"msg_id": msg_id, "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                 "sender_name": fr.get("name", ""), "received": (m.get("receivedDateTime") or "")[:16],
-                "body": body, "attachments": atts}
+                "body": body, "attachments": atts, "attachment_names": names}
 
     def send(self, to, cc, subject, body, attachments, review=True):
         def rcpts(s):
