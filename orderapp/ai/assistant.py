@@ -1057,6 +1057,9 @@ def _run(prov, res, limit):
             todo.append(mm)
     todo.sort(key=lambda mm: mm.get("received") or "")
     res["read"] = len(msgs)
+    errs = getattr(type(prov), "errors", None)
+    if not msgs and errs:
+        res["error"] = "Outlook wouldn't let the app read the emails: " + errs[0]
     from ..routes.emails import _store
     for mm in todo[:limit]:
         try:

@@ -89,6 +89,9 @@ def test():
     if prov.name == "eml":
         flash("✘ Email: not connected - pick Outlook or Microsoft 365 in Settings -> Email.", "error")
     else:
+        if hasattr(prov, "diagnose"):
+            for line in prov.diagnose():
+                flash("Outlook: " + line, "info")
         try:
             msgs = prov.list_messages(days=2, limit=5)
             flash(f"✔ Email: read your inbox - {len(msgs)} email(s) in the last 2 days"

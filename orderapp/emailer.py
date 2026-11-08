@@ -121,10 +121,47 @@ class OutlookDesktop:
             pass
         return out
 
+    def diagnose(self):
+        """Plain-English lines about what the app can see in Outlook (Settings -> Test the connection)."""
+        lines = []
+        try:
+            app, ns = self._ns()
+        except Exception as e:  # noqa: BLE001
+            return [f"Couldn't open Outlook: {e}"]
+        try:
+            lines.append(f"Outlook version {app.Version}, profile '{ns.CurrentProfileName}'")
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"Outlook opened (version unknown: {e})")
+        try:
+            lines.append(f"{ns.Stores.Count} mailbox/data file(s) in this profile")
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"Couldn't list mailboxes: {e}")
+        for inbox, sid in self._inboxes(ns):
+            try:
+                items = inbox.Items
+                n = items.Count
+                items.Sort("[ReceivedTime]", True)
+                first = items.GetFirst()
+                newest = ""
+                if first is not None:
+                    try:
+                        newest = f" - newest: {str(first.ReceivedTime)[:16]} '{(first.Subject or '')[:50]}' (type {first.Class})"
+                    except Exception as e:  # noqa: BLE001
+                        newest = f" - newest can't be read: {e}"
+                lines.append(f"Inbox in '{inbox.Parent.Name if hasattr(inbox, 'Parent') else '?'}': {n} item(s){newest}")
+            except Exception as e:  # noqa: BLE001
+                lines.append(f"An inbox couldn't be read: {e}")
+        if self.errors:
+            lines.append("Errors while reading: " + " | ".join(self.errors[:3]))
+        return lines
+
+    errors = []
+
     def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
         """Newest first from every inbox, walking back until older than `days` (no date-filter strings -
         those depend on Windows' date format and silently match nothing)."""
         _, ns = self._ns()
+        OutlookDesktop.errors = []
         since = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d %H:%M")
         s = (search or "").lower()
         sw = (subject_word or "").strip().lower()
@@ -155,8 +192,9 @@ class OutlookDesktop:
                                 "preview": " ".join(body.split())[:180], "has_attachments": it.Attachments.Count > 0,
                             })
                             n += 1
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    if len(OutlookDesktop.errors) < 20:
+                        OutlookDesktop.errors.append(str(e)[:200])
                 it = items.GetNext()
         out.sort(key=lambda m: m["received"], reverse=True)
         return out[:int(limit)]
