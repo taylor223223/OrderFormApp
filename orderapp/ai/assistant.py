@@ -27,7 +27,7 @@ PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic", ".heif", ".gif", ".bmp", ".tif", 
 
 CUSTOMER_CATS = {"order", "quote", "order_or_quote", "reorder", "measure_request", "walk_request", "question",
                  "quote_approval", "quote_declined", "other"}
-COWORKER_CATS = {"coworker_task", "visit_request", "quote_returned", "order_confirmation", "delivery_notice", "fyi"}
+COWORKER_CATS = {"coworker_task", "coworker_question", "visit_request", "quote_returned", "order_confirmation", "delivery_notice", "fyi"}
 ORDERISH = {"order", "quote", "order_or_quote", "reorder"}
 
 
@@ -220,7 +220,8 @@ Coworkers (internal staff):
 Categories - customers: order, quote, order_or_quote (wants product but unclear if order or quote), reorder
 (same as / repeat of a past order), measure_request (wants the rep to come measure), walk_request (wants the rep
 to walk the property / come by / meet), question, quote_approval (approves a quote we sent), quote_declined, other.
-Coworkers: coworker_task (asks the rep to do something), visit_request (asks the rep to visit a property, e.g. to
+Coworkers: coworker_task (asks the rep to do something), coworker_question (asks the rep a question he has to
+answer, e.g. "is this built-in glass?", "who is closest to X?"), visit_request (asks the rep to visit a property, e.g. to
 fill out a document), quote_returned (the office sends back pricing for a quote request), order_confirmation,
 delivery_notice, fyi. Anyone: junk (ads, newsletters, automated).
 
@@ -416,8 +417,11 @@ def send_outbox(out_id, prov=None):
     if o["order_id"] and o["kind"] == "order":
         _mark_sent(o["order_id"], o["to_addr"])
     if o["order_id"] and o["kind"] == "quote":      # the priced quote went to the customer: Quote sent
-        x("UPDATE orders SET status='Quoted', updated=? WHERE id=?", (now(), o["order_id"]))
-        add_status(o["order_id"], "Quoted", f"AI assistant: quote emailed to {o['to_addr']}")
+        first = q("SELECT * FROM orders WHERE id=?", (o["order_id"],), one=True)
+        for mbr in (quote_group(first) if first else []):
+            if mbr["status"] == "Confirmed":
+                x("UPDATE orders SET status='Quoted', updated=? WHERE id=?", (now(), mbr["id"]))
+                add_status(mbr["id"], "Quoted", f"AI assistant: quote emailed to {o['to_addr']}")
     return "sent"
 
 
@@ -564,6 +568,9 @@ def handle_order(m, email_id, cls, c, tid, prior):
             if o.isdigit() and q("SELECT 1 FROM orders WHERE id=? AND status IN ('Draft','Ready')", (int(o),), one=True):
                 order_trash.delete(int(o))
     oids = [make_order(a, f, c, m, kind, "AI assistant: made from the customer's email") for f in a["forms"]]
+    if kind == "quote" and len(oids) > 1:     # one project, several forms: the quotes go back as ONE document
+        for oid in oids:
+            x("UPDATE orders SET quote_group=? WHERE id=?", (f"t{tid}", oid))
     lid = log(m, email_id, tid, cls, f"{'Quote request' if kind == 'quote' else 'Order'} made and sent to the order desk",
               "done", [], detail=json.dumps(a)[:20000], order_ids=oids, customer_id=cid)
     desk = (setting("order_to") or "").strip()
@@ -649,36 +656,127 @@ def _open_quote(c, status, po=""):
     return None
 
 
+def quote_group(o):
+    """Every quote request of the same project: same group (made together from one email), else same customer + PO."""
+    if o["quote_group"]:
+        return q("SELECT * FROM orders WHERE quote_group=? AND kind='quote' AND status<>'Cancelled' ORDER BY id",
+                 (o["quote_group"],))
+    if (o["po"] or "").strip() and o["customer_id"]:
+        return q("""SELECT * FROM orders WHERE kind='quote' AND status<>'Cancelled' AND customer_id=? AND po=?
+                    ORDER BY id""", (o["customer_id"], o["po"]))
+    return [o]
+
+
+def _returned_matches(c, cls, n_pdfs):
+    """Which open quote request(s) (status Request sent) this returned quote is for."""
+    po = (cls.get("po") or "").strip()
+    rows = []
+    if po:
+        rows = q("SELECT * FROM orders WHERE kind='quote' AND status='Sent' AND po=? ORDER BY id", (po,))
+    if not rows and c:
+        rows = q("SELECT * FROM orders WHERE kind='quote' AND status='Sent' AND customer_id=? ORDER BY id", (c["id"],))
+    if len(rows) > 1 and cls.get("forms"):           # "countertop quote" -> the countertop request
+        narrowed = [r for r in rows if r["form_key"] in cls["forms"]]
+        rows = narrowed or rows
+    if len(rows) <= 1:
+        return rows
+    groups = {tuple(sorted(g["id"] for g in quote_group(r))) for r in rows}
+    if len(groups) == 1 and n_pdfs >= len(rows):     # one email carrying the whole project's quotes
+        return rows
+    return []
+
+
+def combine_quotes(members, folder):
+    """One PDF: a cover page listing the parts, then every returned quote, in order."""
+    import pymupdf as fitz
+    files = []
+    for mbr in members:
+        for f in json.loads(mbr["quote_file"] or "[]"):
+            if f not in files and os.path.exists(f):
+                files.append(f)
+    if len(files) == 1:
+        return files[0]
+    out = fitz.open()
+    cover = out.new_page()
+    first = members[0]
+    h = (loads(first["data"]) or {}).get("header", {})
+    lines = [f"Quote - {h.get('name') or ''}", f"{(' PO ' + first['po']) if first['po'] else ''}".strip(), "",
+             "This quote includes:"] + [f"  - {mbr['title']}" for mbr in members] + \
+            ["", f"Prepared by {signature()}", date.today().strftime("%m/%d/%Y")]
+    y = 90
+    for i, ln in enumerate(lines):
+        cover.insert_text((72, y), ln, fontsize=20 if i == 0 else 12)
+        y += 30 if i == 0 else 18
+    for f in files:
+        try:
+            src = fitz.open(f)
+            out.insert_pdf(src)
+            src.close()
+        except Exception:  # noqa: BLE001 - a bad file: skip it, the rest still go
+            pass
+    path = os.path.join(folder, f"Combined quote - #{first['id']}{(' - PO ' + first['po']) if first['po'] else ''}.pdf")
+    out.save(path, garbage=3, deflate=True)
+    return path
+
+
 def handle_quote_returned(m, email_id, cls, c, tid):
-    o = _open_quote(c, "Sent", cls.get("po") or "")
-    if not o:
+    pdfs = [(fn, raw) for fn, raw in m.get("attachments") or [] if fn.lower().endswith(".pdf")]
+    rows = _returned_matches(c, cls, len(pdfs))
+    if not rows:
         log(m, email_id, tid, cls, "Quote came back - couldn't tell which quote request it's for", "held",
             ["Match it to the quote yourself (Quotes tab -> Quote received)."], customer_id=c["id"] if c else None)
         return _set_thread(tid, "held")
-    x("UPDATE orders SET status='Confirmed', updated=? WHERE id=?", (now(), o["id"]))
-    add_status(o["id"], "Confirmed", f"AI assistant: quote received from {m.get('sender')}")
+    folder = os.path.dirname(rows[0]["pdf_path"] or "") or None
+    if folder:
+        os.makedirs(folder, exist_ok=True)
     saved = []
-    for fn, raw in m.get("attachments") or []:
-        if fn.lower().endswith(".pdf"):
-            folder = os.path.dirname(o["pdf_path"] or "") or None
-            if folder:
-                p = os.path.join(folder, f"Quote received - #{o['id']} - {os.path.basename(fn)}")
-                with open(p, "wb") as fh:
-                    fh.write(raw)
-                saved.append(p)
+    for fn, raw in pdfs:
+        if folder:
+            p = os.path.join(folder, f"Quote received - #{rows[0]['id']} - {os.path.basename(fn)}")
+            with open(p, "wb") as fh:
+                fh.write(raw)
+            saved.append(p)
+    for i, o in enumerate(rows):
+        mine = saved if len(rows) == 1 or len(saved) != len(rows) else [saved[i]]
+        if len(rows) > 1 and len(saved) != len(rows):
+            mine = saved if i == 0 else []
+        x("UPDATE orders SET status='Confirmed', quote_file=?, updated=? WHERE id=?", (json.dumps(mine), now(), o["id"]))
+        add_status(o["id"], "Confirmed", f"AI assistant: quote received from {m.get('sender')}")
+    o = q("SELECT * FROM orders WHERE id=?", (rows[0]["id"],), one=True)
+    members = quote_group(o)
+    waiting = [mbr for mbr in members if mbr["status"] in ("Draft", "Ready", "Sent")]
+    ids = [mbr["id"] for mbr in members]
+    if waiting:      # a big project: wait for every part, then send them as one quote
+        log(m, email_id, tid, cls, f"Quote #{o['id']} received - waiting on {len(waiting)} more quote(s) for this "
+            f"project ({', '.join('#' + str(w['id']) for w in waiting)}), then it goes out as one combined quote",
+            "done", [], order_ids=[r["id"] for r in rows], customer_id=o["customer_id"])
+        return _set_thread(tid, "done")
     h = (loads(o["data"]) or {}).get("header", {})
     to = h.get("quote_email") or h.get("contact_email") or ""
+    files = [f for mbr in members for f in json.loads(mbr["quote_file"] or "[]")]
     hold = ([] if to else ["No email on the quote for the customer - add it, then send."]) + \
-        ([] if saved else ["The office's email had no PDF quote attached - check it, then send."])
-    lid = log(m, email_id, tid, cls, f"Quote #{o['id']} received" + (" - held" if hold else " - sending it to the customer"),
-              "held" if hold else "done", hold, order_ids=[o["id"]], customer_id=o["customer_id"])
-    body = (f"Hello {h.get('quote_to') or h.get('contact') or ''},\n\nHere is the quote you asked for"
-            f"{(' (PO ' + o['po'] + ')') if o['po'] else ''}. The product catalog is attached too. Just reply to let "
-            f"me know if you'd like to go ahead.\n\nThank you,\n{signature()}")
-    st = queue_email("quote", to, f"Your quote - {o['title']}", body, saved + [catalog_file()], lid, o["id"],
-                     hold_reason="; ".join(hold))
+        ([] if files else ["The office's email had no PDF quote attached - check it, then send."])
+    doc = None
+    if files and folder:
+        try:
+            doc = combine_quotes(members, folder)
+        except Exception as e:  # noqa: BLE001
+            hold.append(f"Couldn't combine the quotes into one PDF ({e}).")
+    many = len(members) > 1
+    lid = log(m, email_id, tid, cls,
+              (f"All {len(members)} quotes for this project received" if many else f"Quote #{o['id']} received")
+              + (" - held" if hold else " - sending " + ("one combined quote" if many else "it") + " to the customer"),
+              "held" if hold else "done", hold, order_ids=ids, customer_id=o["customer_id"])
+    what = ("the quote for " + ", ".join(mbr["title"].replace(" Quote Request", "") for mbr in members)) if many \
+        else "the quote you asked for"
+    body = (f"Hello {h.get('quote_to') or h.get('contact') or ''},\n\nHere is {what}"
+            f"{(' (PO ' + o['po'] + ')') if o['po'] else ''}{', all in one document' if many else ''}. The product "
+            f"catalog is attached too. Just reply to let me know if you'd like to go ahead.\n\nThank you,\n{signature()}")
+    st = queue_email("quote", to, f"Your quote - {h.get('name') or o['title']}" if many else f"Your quote - {o['title']}",
+                     body, ([doc] if doc else files) + [catalog_file()], lid, o["id"], hold_reason="; ".join(hold))
     if st != "sent":
-        add_status(o["id"], "Confirmed", f"AI assistant: quote email to the customer {st} (Assistant -> Emails)")
+        for i in ids:
+            add_status(i, "Confirmed", f"AI assistant: quote email to the customer {st} (Assistant -> Emails)")
     _set_thread(tid, "held" if hold else "done")
 
 
@@ -708,7 +806,7 @@ def handle_quote_approval(m, email_id, cls, c, tid):
     _set_thread(tid, "done", "", [o["id"]])
 
 
-def handle_question(m, email_id, cls, c, tid):
+def handle_question(m, email_id, cls, c, tid, coworker=False):
     lid = log(m, email_id, tid, cls, "Question - reply drafted for you", "held", ["Questions wait for your answer."],
               customer_id=c["id"] if c else None)
     try:
@@ -719,7 +817,10 @@ def handle_question(m, email_id, cls, c, tid):
                    f"{(m.get('body') or '')[:5000]}", max_tokens=700, purpose="draft reply")
     except AIError:
         body = ""
-    if body.strip():
+    if body.strip() and coworker:
+        queue_email("coworker", m.get("sender"), reply_subject(m.get("subject")), body.strip(), [], lid,
+                    hold_reason="Questions wait for you - edit and send.")
+    elif body.strip():
         customer_reply(m.get("sender"), m.get("subject"), body.strip(), lid,
                        hold_reason="Questions wait for you - edit and send.")
     _set_thread(tid, "held")
@@ -755,6 +856,8 @@ def process(m, email_id=None):
                     handle_visit(m, email_id, cls, c, tid, coworker=True)
             if cat == "quote_returned":
                 return handle_quote_returned(m, email_id, cls, c, tid)
+            if cat == "coworker_question":
+                return handle_question(m, email_id, cls, c, tid, coworker=True)
             log(m, email_id, tid, cls, "Noted for your summary", "info", customer_id=c["id"] if c else None)
             return _set_thread(tid, "done")
         if cat in ORDERISH:

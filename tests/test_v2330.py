@@ -299,6 +299,8 @@ def test_api_key_box_ignores_autofill(app):
         from orderapp.db import set_setting, setting
         assert setting("ai_api_key") == "sk-ant-abc123"
         set_setting("ai_api_key", "sk-test")
+        for k in ("ai_auto_orders", "ai_auto_customer", "ai_auto_coworker"):   # the bare posts above unticked them
+            set_setting(k, "1")
 
 
 def test_settings_shows_the_saved_key_and_switches(app):
@@ -308,3 +310,58 @@ def test_settings_shows_the_saved_key_and_switches(app):
     c.post("/login", data={"username": "tester", "password": "pw-123456", "csrf_token": tok})
     html = c.get("/settings").get_data(as_text=True)
     assert "saved: ••••test" in html and "<b>On</b>" in html and "Practice mode" in html
+
+
+def _pdf_bytes(text):
+    import pymupdf
+    d = pymupdf.open()
+    d.new_page().insert_text((72, 72), text)
+    return d.tobytes()
+
+
+def test_project_quotes_come_back_as_one(env):
+    """2.33.4: a project quoted on several forms waits for every returned quote, then sends ONE combined PDF."""
+    app, A, mail, claude = env
+    with app.app_context():
+        from orderapp.db import set_setting
+        set_setting("ai_mode", "live")
+    try:
+        claude.cls = {"category": "quote", "summary": "quote whole floor plan", "forms": ["countertop", "trim"]}
+        claude.read = dict(ORDER_READ, kind="quote", po="PROJ-1", contact_email="tester@example.test", forms=[
+            {"form_key": "countertop", "lines": [{"qty": "1", "length": "96", "depth": "25-1/2"}]},
+            {"form_key": "trim", "lines": [{"qty": "10", "length": "96"}]},
+            {"form_key": "window_screen", "lines": [{"qty": "4", "width": "35", "height": "48"}]}])
+        mail.inbox = [_msg("p1", "tester@example.test", "Quote floor plan B", "please quote countertop, trim, screens")]
+        with app.app_context():
+            A.run(prov=mail)
+        qs = _q(app, "SELECT * FROM orders WHERE po='PROJ-1' ORDER BY id")
+        assert len(qs) == 3 and len({o["quote_group"] for o in qs}) == 1 and all(o["status"] == "Sent" for o in qs), [(o["status"], o["form_key"]) for o in qs]
+        # the office sends the countertop quote alone -> waits
+        claude.cls = {"category": "quote_returned", "po": "PROJ-1", "forms": ["countertop"], "summary": "ct quote"}
+        m = _msg("p2", "sally@company.test", "PROJ-1 countertop", "ct quote attached")
+        m["attachments"], m["attachment_names"] = [("ct.pdf", _pdf_bytes("Countertop $500"))], ["ct.pdf"]
+        n_sent = len(mail.sent)
+        mail.inbox = [m]
+        with app.app_context():
+            A.run(prov=mail)
+        assert len(mail.sent) == n_sent                                   # nothing to the customer yet
+        assert "waiting on 2 more" in _q(app, "SELECT action FROM ai_log WHERE msg_id='p2'")[0]["action"]
+        # then the other two in one email -> one combined quote goes out, all three Quoted
+        claude.cls = {"category": "quote_returned", "po": "PROJ-1", "forms": [], "summary": "rest of quotes"}
+        m = _msg("p3", "sally@company.test", "PROJ-1 trim + screens", "attached")
+        m["attachments"] = [("trim.pdf", _pdf_bytes("Trim $90")), ("scr.pdf", _pdf_bytes("Screens $120"))]
+        m["attachment_names"] = ["trim.pdf", "scr.pdf"]
+        mail.inbox = [m]
+        with app.app_context():
+            A.run(prov=mail)
+        sent = mail.sent[-1]
+        assert sent["to"] == "tester@example.test" and "all in one document" in sent["body"]
+        combined = [p for p in sent["attachments"] if "Combined quote" in p]
+        assert len(combined) == 1
+        import pymupdf
+        txt = "".join(pg.get_text() for pg in pymupdf.open(combined[0]))
+        assert all(s in txt for s in ("This quote includes", "Countertop $500", "Trim $90", "Screens $120"))
+        assert {o["status"] for o in _q(app, "SELECT status FROM orders WHERE po='PROJ-1'")} == {"Quoted"}
+    finally:
+        with app.app_context():
+            set_setting("ai_mode", "practice")

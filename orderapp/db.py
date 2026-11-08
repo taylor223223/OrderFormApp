@@ -242,7 +242,7 @@ MIGRATIONS = {
     "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
     "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT", "kind": "TEXT",
-               "quote_approved_at": "TEXT"},
+               "quote_approved_at": "TEXT", "quote_group": "TEXT", "quote_file": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
     "activities": {"order_id": "INTEGER", "temp": "TEXT", "ordered": "TEXT", "order_what": "TEXT"},
 }
