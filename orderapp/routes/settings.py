@@ -66,6 +66,8 @@ def index():
     vals["delivery_auto"] = setting("delivery_auto")
     vals["notice_auto"] = setting("notice_auto")
     vals["reply_confirm"] = setting("reply_confirm")
+    for k in ["ai_api_key", "ai_enabled", "ai_mode"] + AI_FLAGS:     # shown in the AI Assistant section
+        vals[k] = setting(k)
     od_ok, od_why = OutlookDesktop.available()
     g = GraphMail(vals["graph_client_id"], vals["graph_tenant"])
     graph_user = None

@@ -299,3 +299,12 @@ def test_api_key_box_ignores_autofill(app):
         from orderapp.db import set_setting, setting
         assert setting("ai_api_key") == "sk-ant-abc123"
         set_setting("ai_api_key", "sk-test")
+
+
+def test_settings_shows_the_saved_key_and_switches(app):
+    """2.33.3: the AI section shows what's really saved (key hint, on/off, practice/live)."""
+    c = app.test_client()
+    tok = re.search(r'name="csrf-token" content="([^"]+)"', c.get("/login").get_data(as_text=True)).group(1)
+    c.post("/login", data={"username": "tester", "password": "pw-123456", "csrf_token": tok})
+    html = c.get("/settings").get_data(as_text=True)
+    assert "saved: ••••test" in html and "<b>On</b>" in html and "Practice mode" in html
