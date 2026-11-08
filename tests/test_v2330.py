@@ -242,13 +242,6 @@ def test_live_mode_sends_to_the_order_desk(env):
     assert h["quote_email"] == "pat@samplepalms.test" and h["contact"] == "Pat Sample"
 
 
-def test_summary(env):
-    app, A, mail, claude = env
-    with app.app_context():
-        body = A.build_summary("evening")
-    assert "End of day" in body and "Needs you" in body and "Done for you" in body
-
-
 def test_quote_back_from_office_goes_to_customer(env):
     """2.33.1: a priced quote from the office is sent straight to the customer (no hold) -> Quote sent."""
     app, A, mail, claude = env
@@ -392,3 +385,13 @@ def test_ai_saves_contacts_and_sizes_to_the_app(env):
     assert _q(app, "SELECT phone FROM contacts WHERE email='pat@samplepalms.test'")[0]["phone"] == "602-555-0100"
     ch = _q(app, "SELECT * FROM changes WHERE kind='new_contact' AND status='pending'")
     assert ch and "623-555-0177" in ch[-1]["new_value"]
+
+
+
+def test_summary(env):
+    app, A, mail, claude = env
+    with app.app_context():
+        body = A.build_summary("evening")
+    assert "End of day" in body and "Needs you" in body and "At a glance" in body
+    assert "Who reached out and what your assistant did" in body and "kelli" in body and "Emails sent for you" in body
+    assert "Orders and quotes it made" in body and "Saved to the app" in body and "added Jo Newperson" in body

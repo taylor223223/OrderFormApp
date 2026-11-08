@@ -1004,7 +1004,12 @@ def _run(prov, res, limit):
 
 
 # ------------------------------------------------------------------ morning / end-of-day summary
+STATUS_WORD = {"done": "done", "held": "HELD for you", "waiting": "waiting on them", "info": "noted",
+               "error": "ERROR - check it"}
+
+
 def build_summary(period, day=None):
+    """The morning / end-of-day report: what came in, who reached out, everything the assistant did, what's open."""
     day = day or date.today().isoformat()
     since = (date.fromisoformat(day) - timedelta(days=1)).isoformat() + " " + \
         (setting("ai_summary_evening") or "17:00") if period == "morning" else day + " 00:00"
@@ -1014,32 +1019,61 @@ def build_summary(period, day=None):
         if rows:
             L.append(f"{title}\n" + "\n".join(f"  - {r}" for r in rows))
 
-    held = q("SELECT * FROM ai_log WHERE status='held' AND reviewed=0 ORDER BY id")
-    sect(f"Needs you ({len(held)})", [f"{h['sender_name'] or h['sender']}: {h['summary'] or h['subject']} -> "
-                                      f"{'; '.join(json.loads(h['reasons'] or '[]'))[:160]}" for h in held])
-    done = q("SELECT * FROM ai_log WHERE ts>=? AND status='done' ORDER BY id", (since,))
-    sect("Done for you", [f"{d['action']} - {d['sender_name'] or d['sender']}: {d['summary'] or d['subject']}"
-                          for d in done])
+    logs = q("SELECT * FROM ai_log WHERE ts>=? ORDER BY id", (since,))
+    real = [g for g in logs if g["category"] != "junk"]
+    junk = len(logs) - len(real)
+    outbox = q("SELECT * FROM ai_outbox WHERE ts>=? ORDER BY id", (since,))
+    sent = [o for o in outbox if o["status"] in ("sent", "practice")]
+    orders = q("SELECT * FROM orders WHERE source='ai' AND created>=? ORDER BY id", (since,))
+    stops = q("SELECT * FROM route_stops WHERE source='ai-email' AND created>=? ORDER BY day", (since,))
+    new_tasks = q("SELECT * FROM tasks WHERE owner LIKE 'ai%' AND created>=?", (since,))
+    held = q("SELECT * FROM ai_log WHERE status IN ('held','error') AND reviewed=0 ORDER BY id")
     waiting = q("SELECT * FROM ai_log WHERE status='waiting' AND id IN (SELECT MAX(l.id) FROM ai_log l JOIN ai_threads t "
                 "ON t.id=l.thread_id WHERE t.status='waiting' GROUP BY l.thread_id)")
+    people = {}
+    for g in real:
+        people.setdefault(g["sender_name"] or g["sender"] or "?", []).append(g)
+    tag = " (practice - not really sent)" if practice() else ""
+
+    # at a glance
+    glance = [f"{len(logs)} email(s) read from {len(people)} people" + (f" (+{junk} junk ignored)" if junk else ""),
+              f"{sum(1 for o in orders if (o['kind'] or 'order') == 'order')} order(s) and "
+              f"{sum(1 for o in orders if o['kind'] == 'quote')} quote request(s) made",
+              f"{len(sent)} email(s) sent for you{tag}",
+              f"{len(held)} waiting for you, {len(waiting)} waiting on customers",
+              f"{len(stops)} route stop(s) and {len(new_tasks)} task(s) added"]
+    sect("At a glance", glance)
+    sect(f"Needs you ({len(held)})", [f"{h['sender_name'] or h['sender']}: {h['summary'] or h['subject']} -> "
+                                      f"{'; '.join(json.loads(h['reasons'] or '[]'))[:160]}" for h in held])
+    # every person who reached out, and what the assistant did with each email
+    rows = []
+    for who, items in people.items():
+        for g in items:
+            rows.append(f"{who} ({(g['received'] or g['ts'] or '')[11:16]}): {g['summary'] or g['subject'] or ''}"
+                        f" -> {g['action'] or ''} [{STATUS_WORD.get(g['status'], g['status'])}]")
+    sect("Who reached out and what your assistant did", rows)
+    sect("Emails sent for you" + tag,
+         [f"{'[practice] ' if s['status'] == 'practice' else ''}{ {'customer': 'Customer', 'quote': 'Quote to customer', 'order': 'Order desk', 'coworker': 'Coworker'}.get(s['kind'], s['kind'])}"
+          f" - {s['to_addr']}: {s['subject']}" for s in sent])
+    unsent = [o for o in outbox if o["status"] in ("held", "failed")]
+    sect("Emails written but NOT sent (held / failed)", [f"{o['to_addr']}: {o['subject']} ({o['note'] or o['status']})"
+                                                       for o in unsent])
+    sect("Orders and quotes it made", [f"#{o['id']} {o['title']} PO {o['po'] or '-'} - now {o['status']}" for o in orders])
+    saved = [g for g in logs if "saved to the app:" in (g["action"] or "")]
+    sect("Saved to the app", [f"{g['sender_name'] or g['sender']}: {g['action'].split('saved to the app:', 1)[1].strip()}"
+                              for g in saved])
     sect("Waiting on customers", [f"{w['sender_name'] or w['sender']}: {w['action']}" for w in waiting])
-    sent = q("SELECT * FROM ai_outbox WHERE ts>=? AND status IN ('sent','practice') ORDER BY id", (since,))
-    sect("Emails sent" + (" (practice - not really sent)" if practice() else ""),
-         [f"{'[practice] ' if s['status'] == 'practice' else ''}{s['kind']} to {s['to_addr']}: {s['subject']}"
-          for s in sent])
-    stops = q("SELECT * FROM route_stops WHERE source='ai-email' AND created>=? ORDER BY day", (since,))
     sect("New route stops", [f"{s['day']}: {s['label'] or ''} - {s['purpose'] or ''}" for s in stops])
     tasks = q("SELECT * FROM tasks WHERE done=0 AND (owner LIKE 'ai%' OR due_date<=?) ORDER BY due_date", (day,))
     sect("Open tasks / to schedule", [f"{t['title']}{(' (due ' + t['due_date'] + ')') if t['due_date'] else ''}"
                                       for t in tasks])
-    fyi = q("SELECT * FROM ai_log WHERE ts>=? AND status='info' AND category<>'junk' ORDER BY id", (since,))
-    sect("FYI", [f"{f['sender_name'] or f['sender']}: {f['summary'] or f['subject']}" for f in fyi])
     today_stops = q("SELECT label, purpose FROM route_stops WHERE day=? ORDER BY position", (day,))
     if period == "morning" and today_stops:
         sect("Today's route", [f"{s['label'] or ''}{(' - ' + s['purpose']) if s['purpose'] else ''}" for s in today_stops])
     body = "\n\n".join(L) or "Nothing new."
-    head = ("Good morning - here's what came in overnight and what's on today." if period == "morning"
-            else "End of day - here's what happened today and what's still open.")
+    head = ("Good morning - here's what came in overnight, what your assistant did, and what's on today."
+            if period == "morning" else "End of day - everyone who reached out, everything your assistant did, "
+                                         "and what's still open.")
     body = head + "\n\n" + body
     x("INSERT INTO ai_summaries(day, period, body, created) VALUES (?,?,?,?)", (day, period, body, now()))
     return body
