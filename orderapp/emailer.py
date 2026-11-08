@@ -76,6 +76,10 @@ class OutlookDesktop:
             raise MailError(why)
         import pythoncom
         import win32com.client
+        try:
+            import win32timezone  # noqa: F401 - pywin32 needs it to read Outlook dates (bundled in the .exe)
+        except ImportError:
+            pass
         pythoncom.CoInitialize()
         try:
             app = win32com.client.Dispatch("Outlook.Application")
