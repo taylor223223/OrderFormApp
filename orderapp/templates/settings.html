@@ -42,7 +42,7 @@
     <div class="small muted" style="margin-top:4px">Practice mode does everything in the app (orders, quotes, route stops, tasks) but holds every email - except replies to your test addresses, and order-desk emails go to your practice address instead of the order desk.</div>
   </div>
   <div class="grid g2">
-    <div><label>Anthropic API key</label><input name="ai_api_key" type="password" autocomplete="off" value="{{ '••••••••' + v.ai_api_key[-4:] if v.ai_api_key else '' }}" placeholder="sk-ant-...">
+    <div><label>Anthropic API key</label><input name="ai_api_key" type="text" autocomplete="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" style="-webkit-text-security:disc" value="" placeholder="{{ ('saved: ••••' + v.ai_api_key[-4:] + ' - paste a new key to replace it') if v.ai_api_key else 'sk-ant-...' }}">
       <div class="small muted">From console.anthropic.com → API keys. Stored only on this computer.{% if v.ai_api_key %} <label style="display:inline"><input type="checkbox" name="ai_api_key_clear" value="1" style="width:auto"> remove it</label>{% endif %}</div></div>
     <div><label>Monthly spending limit ($)</label><input name="ai_month_limit" value="{{ v.ai_month_limit }}" inputmode="decimal">
       <div class="small muted">The assistant stops for the month at this amount. Also set a limit on the Anthropic console.</div></div>

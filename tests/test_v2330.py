@@ -277,3 +277,25 @@ def test_reorder_prompt_matches_on_sizes_not_latest(app):
     with app.app_context():
         from orderapp.db import setting
         assert "Nicolette - collections" in setting("ai_coworkers")
+
+
+def test_api_key_box_ignores_autofill(app):
+    """2.33.2: a browser-filled password never replaces the API key; the box is never pre-filled."""
+    c = app.test_client()
+    page = c.get("/settings")
+    if page.status_code != 200:
+        tok = re.search(r'name="csrf-token" content="([^"]+)"', c.get("/login").get_data(as_text=True)).group(1)
+        c.post("/login", data={"username": "tester", "password": "pw-123456", "csrf_token": tok})
+    html = c.get("/settings").get_data(as_text=True)
+    box = re.search(r'<input name="ai_api_key"[^>]*>', html).group(0)
+    assert 'type="text"' in box and 'value=""' in box and "sk-test" not in html
+    tok = re.search(r'name="csrf-token" content="([^"]+)"', html).group(1)
+    c.post("/settings", data={"csrf_token": tok, "ai_coworker_domain": "company.test", "ai_api_key": "MyWindowsPassw0rd"})
+    with app.app_context():
+        from orderapp.db import setting
+        assert setting("ai_api_key") == "sk-test"
+    c.post("/settings", data={"csrf_token": tok, "ai_coworker_domain": "company.test", "ai_api_key": " sk-ant-abc123 "})
+    with app.app_context():
+        from orderapp.db import set_setting, setting
+        assert setting("ai_api_key") == "sk-ant-abc123"
+        set_setting("ai_api_key", "sk-test")

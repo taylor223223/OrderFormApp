@@ -83,8 +83,9 @@ DEFAULT_SETTINGS = {
     "order_cc": "",
     "email_provider": "outlook_desktop",
     "send_mode": "review",
-    "graph_client_id": "",
-    "graph_tenant": "common",
+    # the company's own Microsoft 365 app registration ("AIS Sales Support", made 11/07 - not a secret)
+    "graph_client_id": "89f24f4e-a9a9-4611-8693-dcf1c200907c",
+    "graph_tenant": "86fb3ada-89fc-411b-a8cc-42acc9ebbdc5",
     "subject_template": "{title} - {customer} - PO {po}",
     "body_template": "Hello,\n\nPlease see the attached {title} for {customer} (PO {po}).\n\nThank you,\n{sales_rep}",
     "output_dir": "",
@@ -388,6 +389,14 @@ def _data_migrations(con):
     """One-time fixes to saved data when a field changes shape. Each runs once (flag in settings)."""
     import json
     done = {r[0] for r in con.execute("SELECT key FROM settings WHERE key LIKE 'dm_%'")}
+    r = con.execute("SELECT value FROM settings WHERE key='ai_api_key'").fetchone()
+    if r and r[0] and not r[0].strip().startswith("sk-ant-"):   # a browser autofilled a password in there - drop it
+        con.execute("UPDATE settings SET value='' WHERE key='ai_api_key'")
+    if "dm_graph_app" not in done:      # 2.33.1: fill in the company's Microsoft 365 app if it was blank
+        r = con.execute("SELECT value FROM settings WHERE key='graph_client_id'").fetchone()
+        if r is not None and not (r[0] or "").strip():
+            con.execute("DELETE FROM settings WHERE key IN ('graph_client_id', 'graph_tenant')")
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_graph_app', '1')")
     if "dm_ai_coworkers2" not in done:   # 2.33.1: Nicolette (collections), Mike added to the starting coworker list
         r = con.execute("SELECT value FROM settings WHERE key='ai_coworkers'").fetchone()
         if r and r[0] and "Nicolette" not in r[0] and r[0].startswith("Kelli - greatservice"):

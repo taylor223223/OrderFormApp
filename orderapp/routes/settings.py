@@ -41,9 +41,12 @@ def index():
         if "ai_coworker_domain" in request.form:     # the AI Assistant section was on the page
             for k in AI_FLAGS:
                 set_setting(k, "1" if request.form.get(k) else "0")
-            key = request.form.get("ai_api_key", "").strip()
-            if key and not key.startswith("•"):
+            key = "".join(request.form.get("ai_api_key", "").split())
+            if key.startswith("sk-ant-"):       # only a real Anthropic key - never a browser-filled password
                 set_setting("ai_api_key", key)
+            elif key:
+                flash("That isn't an Anthropic API key (they start with sk-ant-) - the saved key wasn't changed.",
+                      "error")
             if request.form.get("ai_api_key_clear"):
                 set_setting("ai_api_key", "")
         if "email_order_word" in request.form and not request.form.get("email_order_word", "").strip():
