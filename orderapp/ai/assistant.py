@@ -164,6 +164,29 @@ def measure_keys(form_key):
     return sorted({k for g in required_groups(form_key) for k in g})
 
 
+# how Taylor's customers write sizes for a product, and what's assumed unless they say otherwise
+FORM_NOTES = {
+    "drawer_box": ('"A x B" = width (side to side) x depth (front to back): "11x18" = width 11, depth 18. "3 deep", '
+                   '"3 tall", "3 high" or a third number = the box height (side height). Sizes are the box size as '
+                   'given (Box outside size) - never sized to fit an opening. Slides are Side mount unless they say '
+                   'otherwise. Never ask about side thickness, corners, bottom, slide length, soft close or notch & '
+                   'bore - leave them blank unless the customer says.'),
+    "roller_shade": '"A x B" = width x length.',
+    "countertop": '"A x B" = length x depth.',
+}
+FORM_DEFAULTS = {"drawer_box": {"db_measure": "Box outside size", "db_slide": "Side mount"}}
+
+
+def apply_defaults(r):
+    """Fill the assumed values (FORM_DEFAULTS) on every line that left them blank."""
+    for f in r.get("forms") or []:
+        for ln in f.get("lines") or []:
+            for k, v in FORM_DEFAULTS.get(f.get("form_key"), {}).items():
+                if not str(ln.get(k) or "").strip():
+                    ln[k] = v
+    return r
+
+
 def form_spec_text(form_key):
     out = [f"FORM {form_key} - {FORMS[form_key]['title']}", "Line fields (key | label | type | choices):"]
     for fd in editor_fields(form_key):
@@ -175,6 +198,8 @@ def form_spec_text(form_key):
         req = " | REQUIRED" if fd["key"] in measure_keys(form_key) or fd["key"] == "qty" else ""
         cond = f" | only when {fd['show_if'][0]} is {'/'.join(map(str, fd['show_if'][1]))}" if fd.get("show_if") else ""
         out.append(f"  {fd['key']} | {fd['label']} | {fd['kind']}{opts}{req}{cond}")
+    if FORM_NOTES.get(form_key):
+        out.append("  NOTES: " + FORM_NOTES[form_key])
     if ORDER_SETTINGS.get(form_key):
         out.append(f"  (usually the same for every line at a property: {', '.join(ORDER_SETTINGS[form_key])})")
     return "\n".join(out)
@@ -263,7 +288,11 @@ the customer wrote or what the app's records clearly confirm. Never invent sizes
 JSON object only.
 
 Rules:
-- Sizes are inches (convert feet: 6' = 72). Width first, then height/length.
+- Sizes are inches (convert feet: 6' = 72). "A x B" is ALWAYS width first, then height (or length / depth - see the
+  form's notes). Never ask the customer which number is which.
+- ONLY ask for: order or quote (if not said), a contact name and phone (if not given and not on file), and the
+  quantity and REQUIRED sizes. NEVER ask about optional choices (thickness, corners, bottom, hardware, finishes the
+  form doesn't mark REQUIRED, etc.) - leave them blank or use the defaults in the form's notes. Ask each thing ONCE.
 - If the customer refers to a past order ("same as last time", "reorder", "like unit 204", "the 34 and 36 inch
   screens we got before"), search ALL the app records below for the order / invoice lines that match what they
   describe - the product AND any sizes, unit, color or date they mention. Never just take the most recent order:
@@ -275,8 +304,8 @@ Rules:
 - Contact: we need a contact name AND phone number for every order and quote. Use the email/signature, else a
   contact on file. For a quote we also need an email for the quote (use the sender or one on file). Only ask for
   what is still missing.
-- missing: every REQUIRED field (and any choice the form needs that the customer didn't give) as a short question
-  for the customer. Don't ask for things that are on file or in the email.
+- missing: only the REQUIRED things above that are still missing, one short question each, no repeats. Don't ask
+  for things that are on file or in the email.
 - reply_to_customer: the email body to send the customer, from {me}, friendly and short. If anything is missing
   or unclear, ask for exactly that (and ask order or quote if unknown). If nothing is missing, confirm what will be
   ordered/quoted (list the lines). Plain text, end with "Thank you," and the name {me}. Mention that the product
@@ -312,7 +341,7 @@ def extract(model, m, c, form_keys, thread_id, purpose):
     r = ask_json(model, EXTRACT_SYSTEM.format(me=me) + rules_text(), prompt, max_tokens=4000, purpose=purpose)
     r["forms"] = [f for f in (r.get("forms") or []) if isinstance(f, dict) and f.get("form_key") in FORMS]
     r["kind"] = str(r.get("kind") or "unknown").lower()
-    return r
+    return apply_defaults(r)
 
 
 def compare(a, b):
@@ -345,22 +374,27 @@ def compare(a, b):
 def app_checks(r, c, m):
     """The app's own checks on the (Sonnet) read. Returns (ask_customer, hold_reasons)."""
     ask_customer, hold = [], []
+    asked = " ".join(str(s) for s in r.get("missing") or []).lower()
+
+    def need(item, *words):          # the app's own item, unless the AI's questions already cover it
+        if not any(w in asked for w in words):
+            ask_customer.append(item)
     if photo_names(m.get("attachment_names")):
         hold.append("Photos attached - check them yourself.")
     if not c:
         hold.append("Customer isn't in the app (new account? they'll need the New Account Set-Up form).")
     if r.get("kind") not in ("order", "quote"):
-        ask_customer.append("Order or quote?")
+        need("Order or quote?", "quote")
     if r.get("is_reorder") and not r.get("reorder_confirmed"):
-        ask_customer.append("Confirm the past order / product they mean.")
+        need("Confirm the past order / product they mean.", "is this", "confirm", "which one", "the one")
     if not str(r.get("contact_name") or "").strip():
-        ask_customer.append("Contact name")
+        need("Contact name", "name")
     if not str(r.get("contact_phone") or "").strip():
-        ask_customer.append("Contact phone number")
+        need("Contact phone number", "phone", "number to reach", "call")
     if r.get("kind") == "quote" and not str(r.get("contact_email") or m.get("sender") or "").strip():
-        ask_customer.append("Email for the quote")
+        need("Email for the quote", "email")
     if not r.get("forms"):
-        ask_customer.append("Which product they need")
+        need("Which product they need", "product", "what ")
     for f in r.get("forms") or []:
         k = f["form_key"]
         if not f.get("lines"):
@@ -370,7 +404,8 @@ def app_checks(r, c, m):
         for i, ln in enumerate(f.get("lines") or [], 1):
             gone = ([] if str(ln.get("qty") or "").strip() else ["qty"]) + missing_sizes(k, ln)
             if gone:
-                ask_customer.append(f"{FORMS[k]['title']} line {i}: {', '.join(gone)}")
+                need(f"{FORMS[k]['title']} line {i}: {', '.join(gone)}", "size", "width", "height", "depth",
+                     "length", "dimension", "how many", "quantity", "qty")
     for s in r.get("missing") or []:
         ask_customer.append(str(s))
     return ask_customer, hold
@@ -609,8 +644,7 @@ def handle_order(m, email_id, cls, c, tid, prior):
     ask_customer, hold = app_checks(a, c, m)
     if diffs:
         hold.append("The two AI reads disagree: " + " ".join(diffs[:6]))
-    if a.get("notes_for_rep") and not a.get("certain"):
-        hold.append(f"AI note: {a['notes_for_rep']}")
+
     cid = c["id"] if c else None
     to = m.get("sender")
     kind = a.get("kind") if a.get("kind") in ("order", "quote") else "order"
@@ -630,7 +664,9 @@ def handle_order(m, email_id, cls, c, tid, prior):
     if ask_customer:
         oids = [make_order(a, f, c, m, kind, "AI assistant: waiting on the customer for: " + "; ".join(ask_customer))
                 for f in a.get("forms") or [] if f.get("lines")]
-        saved = save_to_app(dict(a, contact_name=a.get("contact_name") or m.get("sender_name")), c, m, [])
+        is_note = str(m.get("msg_id") or "").startswith("note-")
+        saved = save_to_app(dict(a, contact_name=a.get("contact_name") or ("" if is_note else m.get("sender_name"))),
+                            c, m, [])
         lid = log(m, email_id, tid, cls, "Asked the customer for: " + "; ".join(ask_customer)[:300]
                   + (f" - saved to the app: {saved}" if saved else ""), "waiting",
                   ask_customer, detail=json.dumps(a)[:20000], order_ids=oids, customer_id=cid)
@@ -921,12 +957,14 @@ def note(text, customer_id=None, contact_email="", email_customer=False):
         k = q("SELECT email FROM contacts WHERE customer_id=? AND coalesce(email,'')<>'' LIMIT 1", (c["id"],), one=True)
         to = k["email"] if k else ""
     me = signature() or "the rep"
-    first = " ".join((text or "").split())[:60]
+    first = " ".join((text or "").split())
+    first = first if len(first) <= 70 else first[:70].rsplit(" ", 1)[0] + "…"
     m = {"msg_id": f"note-{datetime.now():%Y%m%d%H%M%S%f}", "sender": to, "sender_name": f"{me} (phone / text note)",
          "subject": f"Phone/text: {first}", "received": now()[:16], "attachments": [], "attachment_names": [],
          "body": (f"NOTE TYPED BY {me.upper()} about a phone call or text from the customer"
                   f"{(' at ' + c['name']) if c else ''}. Everything in it was told to {me} by the customer; if it says "
-                  f"reorder / same as before, {me} still wants to see the matched past order before it is placed.\n\n"
+                  f"reorder / same as before, {me} still wants to see the matched past order before it is placed. The subject "
+                  f"line is just a short label - the full note is below.\n\n"
                   f"{text}")}
     _NOTE.update(on=True, email_customer=bool(email_customer))
     try:

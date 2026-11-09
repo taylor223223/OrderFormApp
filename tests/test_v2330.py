@@ -454,15 +454,6 @@ def test_graph_time_is_local():
 
 
 
-def test_summary(env):
-    app, A, mail, claude = env
-    with app.app_context():
-        body = A.build_summary("evening")
-    assert "End of day" in body and "Needs you" in body and "At a glance" in body
-    assert "Who reached out and what your assistant did" in body and "kelli" in body and "Emails sent for you" in body
-    assert "Orders and quotes it made" in body and "Saved to the app" in body and "added Jo Newperson" in body
-
-
 def test_outlook_reads_every_inbox_newest_first(monkeypatch):
     """2.34.3: classic Outlook - every account's inbox, walked newest first, no date-filter string."""
     from datetime import datetime as dt, timedelta as td
@@ -527,3 +518,37 @@ def test_outlook_reads_every_inbox_newest_first(monkeypatch):
     monkeypatch.setattr(OutlookDesktop, "_ns", lambda self: (None, NS()))
     msgs = OutlookDesktop().list_messages(days=2)
     assert [m["subject"] for m in msgs] == ["new order"] and msgs[0]["msg_id"] == "a|S2"
+
+
+def test_drawer_box_defaults_and_no_duplicate_questions(env):
+    """2.34.6: drawer boxes - side mount + box size assumed, optional options never asked; each question once."""
+    app, A, mail, claude = env
+    claude.cls = {"category": "order_or_quote", "summary": "Jay: 2 drawer boxes", "forms": ["drawer_box"]}
+    claude.read = dict(ORDER_READ, kind="unknown", contact_phone="", po="",
+                       forms=[{"form_key": "drawer_box", "lines": [{"qty": "2", "width": "11", "depth": "18",
+                                                                    "height": "3", "db_material": "White Melamine"}]}],
+                       missing=["Is this an order or a quote?", "Best phone number for Jay?"],
+                       reply_to_customer="Order or quote? And a good phone number?", certain=False,
+                       notes_for_rep="no phone on file")
+    with app.app_context():
+        row = A.note("Jay at Sample Palms wants 2 drawer boxes in white melamine, 11x18 and 3 inch deep",
+                     customer_id=app.cid)
+    reasons = json.loads(row["reasons"])
+    assert row["status"] == "waiting" and len(reasons) == 2 and not any("AI note" in r for r in reasons)
+    assert "…" in row["subject"] or len(row["subject"]) < 90
+    o = _q(app, "SELECT * FROM orders WHERE form_key='drawer_box' ORDER BY id DESC LIMIT 1")[0]
+    ln = json.loads(o["data"])["blocks"][0]
+    assert (ln["db_slide"], ln["db_measure"], ln["width"], ln["depth"], ln["height"]) == \
+        ("Side mount", "Box outside size", "11", "18", "3")
+    assert not _q(app, "SELECT 1 FROM contacts WHERE name LIKE '%phone / text note%'")
+    assert "Never ask about side thickness" in A.form_spec_text("drawer_box")
+
+
+
+def test_summary(env):
+    app, A, mail, claude = env
+    with app.app_context():
+        body = A.build_summary("evening")
+    assert "End of day" in body and "Needs you" in body and "At a glance" in body
+    assert "Who reached out and what your assistant did" in body and "kelli" in body and "Emails sent for you" in body
+    assert "Orders and quotes it made" in body and "Saved to the app" in body and "added Jo Newperson" in body
