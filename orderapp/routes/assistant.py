@@ -36,7 +36,9 @@ def home():
                            last=setting("ai_last_check") or "", running=_running["on"], loads=json.loads,
                            today=date.today().isoformat(), customers=customers, rules=setting("ai_rules") or "",
                            last_note=request.args.get("note", type=int),
-                           last_result=json.loads(setting("ai_last_result") or "{}"))
+                           last_result=json.loads(setting("ai_last_result") or "{}"),
+                           chat=[dict(r, actions=json.loads(r["actions"] or "[]")) for r in
+                                 reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 12"))])
 
 
 def _bg(fn):
@@ -176,26 +178,28 @@ def mode():
 @bp.route("/assistant/note", methods=["POST"])
 @login_required
 def note():
-    """A phone call or text, typed in: the assistant handles it like an email from that customer."""
-    from ..ai.assistant import note as ai_note
+    """Talk to the assistant: commands ("add Sample Palms to Wednesday"), questions, and calls / texts to process."""
     from ..ai.client import AIError
+    from ..ai.commands import ask
     text = (request.form.get("text") or "").strip()
     if not text:
-        flash("Type what the customer said first.", "error")
+        flash("Type something for the assistant first.", "error")
         return redirect(url_for("assistant.home"))
     if setting("ai_enabled") != "1":
         flash("Turn the assistant on first (Settings -> AI Assistant).", "error")
         return redirect(url_for("assistant.home"))
+    cid = request.form.get("customer_id", type=int)
+    if cid:
+        c = q("SELECT name FROM customers WHERE id=?", (cid,), one=True)
+        if c:
+            text = f"[Customer: {c['name']} (customer_id {cid})] {text}"
+    if request.form.get("email", "").strip():
+        text += f" [Customer's email: {request.form['email'].strip()}]"
     try:
-        row = ai_note(text, request.form.get("customer_id", type=int), request.form.get("email", ""),
-                      bool(request.form.get("email_customer")))
+        ask(text, bool(request.form.get("email_customer")))
     except AIError as e:
         flash(f"The assistant couldn't do it: {e}", "error")
-        return redirect(url_for("assistant.home"))
-    if row:
-        flash(f"🤖 {row['action']}", "ok" if row["status"] in ("done", "waiting", "info") else "info")
-    return redirect(url_for("assistant.home", tab="review" if row and row["status"] == "held" else "activity",
-                            note=row["id"] if row else None))
+    return redirect(url_for("assistant.home", tab=request.form.get("tab") or "review") + "#chat")
 
 
 @bp.route("/assistant/rules", methods=["POST"])

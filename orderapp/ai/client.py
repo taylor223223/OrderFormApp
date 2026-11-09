@@ -72,6 +72,34 @@ def ask(model, system, prompt, max_tokens=2000, purpose=""):
     return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
 
 
+def call(model, system, messages, tools=None, max_tokens=2000, purpose=""):
+    """One Messages API call with a full message list (and tools). Returns the response dict."""
+    key = (setting("ai_api_key") or "").strip()
+    if not key:
+        raise AIError("No Anthropic API key - add it in Settings -> AI Assistant.")
+    if over_limit():
+        raise AIError("This month's AI spending limit is reached (Settings -> AI Assistant).")
+    body = {"model": model, "max_tokens": max_tokens, "system": system, "messages": messages}
+    if tools:
+        body["tools"] = tools
+    version = setting("ai_api_version") or "2026-10-21"
+    try:
+        r = _post(body, key, version)
+        if r.status_code == 400 and "version" in r.text.lower() and version != "2023-06-01":
+            r = _post(body, key, "2023-06-01")
+    except Exception as e:  # noqa: BLE001
+        raise AIError(f"Couldn't reach Claude: {e}") from e
+    if r.status_code >= 400:
+        raise AIError(f"Claude API error {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    u = data.get("usage") or {}
+    pin, pout = _price(model)
+    tin, tout = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
+    x("INSERT INTO ai_usage(ts, model, purpose, in_tok, out_tok, cost) VALUES (?,?,?,?,?,?)",
+      (now(), model, purpose, tin, tout, (tin * pin + tout * pout) / 1e6))
+    return data
+
+
 def parse_json(text):
     """The JSON object in a reply (tolerates ```json fences and a sentence around it)."""
     t = (text or "").strip()

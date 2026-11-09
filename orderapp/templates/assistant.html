@@ -19,16 +19,24 @@ tasks, and holds anything it isn't sure about for you.
   {% if r.seen %} · {{ r.seen }} already done{% endif %}{% if r.skipped_me %} · {{ r.skipped_me }} from your own address (skipped){% endif %}
   {% if r.skipped_old %} · {{ r.skipped_old }} from before you turned it on (skipped){% endif %}</span>{% endif %}
 </div>{% endif %}
-<form method="post" action="{{ url_for('assistant.note') }}" class="card" style="border-left:4px solid #6d28d9;margin-bottom:12px" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='⏳ Working on it… (about 30 seconds)'">
-  <b>📞 Tell your assistant</b> <span class="small muted">- a phone call, text or voicemail. Type it like you'd tell a coworker; it's handled like an email from that customer.</span>
-  <textarea name="text" rows="3" style="margin-top:6px" placeholder="e.g. Pat at Sample Palms called - reorder the 34 x 80 bronze screen doors from last month for units 204 and 210, PO 5512"></textarea>
+<div class="card" id="chat" style="border-left:4px solid #6d28d9;margin-bottom:12px">
+  <b>💬 Talk to your assistant</b> <span class="small muted">- ask it anything you'd do in the app, or pass on a customer's call / text. It can look things up, add or move route stops, write day notes, add tasks, log visits, update customers, reorder, move orders along, send emails - and run orders and quotes through the normal process.</span>
+  {% if chat %}<div style="max-height:340px;overflow:auto;margin:8px 0;padding:6px;background:#fafafa;border-radius:8px" id="chatlog">
+  {% for m in chat %}<div style="margin:6px 0;{{ 'text-align:right' if m.role == 'me' }}">
+    <div style="display:inline-block;max-width:85%;padding:6px 10px;border-radius:10px;white-space:pre-wrap;text-align:left;{{ 'background:#ede9fe' if m.role == 'me' else 'background:#fff;border:1px solid #e5e7eb' }}">{{ m.text }}</div>
+    {% if m.actions %}<div class="small muted">{% for a in m.actions %}{{ a.tool.replace('_', ' ') }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+    <div class="small muted">{{ (m.ts or '')[11:16] }}</div></div>{% endfor %}</div>
+  <script>const cl=document.getElementById('chatlog'); if(cl) cl.scrollTop=cl.scrollHeight;</script>{% endif %}
+<form method="post" action="{{ url_for('assistant.note') }}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='⏳ Working on it… (up to a minute)'">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <textarea name="text" rows="3" style="margin-top:6px" placeholder="e.g. Add Sample Palms to Wednesday's route to drop off samples&#10;e.g. What did Riverwalk order last month?&#10;e.g. Pat at Sample Palms called - reorder the 34 x 80 screen doors for 204 and 210, PO 5512"></textarea>
   <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center">
     <select name="customer_id" style="max-width:280px"><option value="">Customer: let it figure it out</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>
     <input name="email" placeholder="Customer's email (optional)" style="max-width:240px" inputmode="email">
     <label class="row" style="gap:4px"><input type="checkbox" name="email_customer" value="1" style="width:auto"> Email the customer its questions / confirmation</label>
     <button class="btn primary" {{ 'disabled' if not enabled }}>Send to assistant</button></div>
-  <div class="small muted">Unchecked: anything it would say to the customer is held for you here instead. Confident orders still go to the order desk like an email would.</div>
-</form>
+  <div class="small muted">The customer box and checkbox only matter for customer calls / texts. Unchecked: anything it would say to the customer is held for you here instead. Confident orders still go to the order desk like an email would.</div>
+</form></div>
 
 <div class="row subtabs" style="gap:6px;margin-bottom:12px">
 {% for k, lab in [('review','Needs you'),('schedule','To schedule'),('activity','Everything it did'),('outbox','Emails'),('summaries','Daily summaries'),('rules','Rules')] %}

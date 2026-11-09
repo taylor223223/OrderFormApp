@@ -422,7 +422,7 @@ def test_phone_note_and_rules(env):
     tok = re.search(r'name="csrf-token" content="([^"]+)"', c.get("/login").get_data(as_text=True)).group(1)
     c.post("/login", data={"username": "tester", "password": "pw-123456", "csrf_token": tok})
     page = c.get("/assistant").get_data(as_text=True)
-    assert "Tell your assistant" in page and "tab=rules" in page
+    assert "Talk to your assistant" in page and "tab=rules" in page
     assert "Your rules for the assistant" in c.get("/assistant?tab=rules").get_data(as_text=True)
 
 
@@ -542,6 +542,63 @@ def test_drawer_box_defaults_and_no_duplicate_questions(env):
         ("Side mount", "Box outside size", "11", "18", "3")
     assert not _q(app, "SELECT 1 FROM contacts WHERE name LIKE '%phone / text note%'")
     assert "Never ask about side thickness" in A.form_spec_text("drawer_box")
+
+
+
+def test_talk_to_the_assistant_uses_app_tools(env, monkeypatch):
+    """2.35.0: commands go through Claude with tools - here: find the customer, add a Wednesday stop, write the note,
+    and pass a customer's call to the order process - all from one message."""
+    app, A, mail, claude = env
+    from orderapp.ai import commands as C
+    wed = (date.today() + timedelta(days=(2 - date.today().weekday()) % 7 or 7)).isoformat()
+    script = [
+        [{"type": "tool_use", "id": "t1", "name": "find_customers", "input": {"query": "Sample Palms"}}],
+        [{"type": "tool_use", "id": "t2", "name": "add_route_stop",
+          "input": {"day": wed, "customer_id": app.cid, "purpose": "Drop off samples"}},
+         {"type": "tool_use", "id": "t3", "name": "set_day_note", "input": {"day": wed, "note": "Bring screen samples"}},
+         {"type": "tool_use", "id": "t4", "name": "process_customer_message",
+          "input": {"text": "Pat at Sample Palms: 2 bronze screens 35x48 unit 204, PO CHAT-1", "customer_id": app.cid}}],
+        [{"type": "text", "text": "Added Sample Palms to Wednesday and sent Pat's screen order in."}],
+    ]
+    seen = []
+
+    def fake_call(model, system, messages, tools=None, max_tokens=0, purpose=""):
+        seen.append((system, [t["name"] for t in tools or []]))
+        return {"content": script[len(seen) - 1], "usage": {}}
+    monkeypatch.setattr(C, "call", fake_call)
+    claude.cls = {"category": "order", "summary": "Pat: screens", "forms": ["window_screen"]}
+    claude.read = dict(ORDER_READ, po="CHAT-1")
+    A._PROV["p"] = mail
+    with app.test_request_context():
+        reply, actions = C.ask("add Sample Palms to wednesday to drop off samples, note to bring screen samples. "
+                               "also Pat called - 2 bronze screens 35x48 for 204 PO CHAT-1")
+    A._PROV["p"] = None
+    assert reply.startswith("Added Sample Palms") and [a["tool"] for a in actions] == [
+        "find_customers", "add_route_stop", "set_day_note", "process_customer_message"]
+    assert {"add_route_stop", "process_customer_message", "send_order_to_desk", "log_activity"} <= set(seen[0][1])
+    assert _q(app, "SELECT 1 FROM route_stops WHERE day=? AND customer_id=? AND source='ai-chat'", (wed, app.cid))
+    with app.app_context():
+        from orderapp.routes.routes_plan import day_note
+        assert day_note(wed) == "Bring screen samples"
+    assert _q(app, "SELECT 1 FROM orders WHERE po='CHAT-1'")
+    assert [r["role"] for r in _q(app, "SELECT role FROM ai_chat ORDER BY id")][-2:] == ["me", "assistant"]
+    assert _q(app, "SELECT 1 FROM ai_log WHERE category='command'")
+
+
+def test_tools_directly(app):
+    from orderapp.ai import commands as C
+    with app.test_request_context():
+        assert C.t_find_customers("Sample Palms")[0]["id"] == app.cid
+        assert "facts" in C.t_customer_details(app.cid)
+        t = C.t_add_task("Call Pat back", "2030-01-02", app.cid)
+        assert any(x["task_id"] == t["task_id"] for x in C.t_list_tasks())
+        C.t_complete_task(t["task_id"])
+        assert "error" in C.t_set_order_step(1, "Bogus")
+        oid = _q(app, "SELECT id FROM orders WHERE form_key='window_screen' ORDER BY id LIMIT 1")[0]["id"]
+        assert C.t_set_order_step(oid, "Delivered")["status"] == "Delivered"
+        assert C.t_reorder(oid, "RE-9")["new_draft_order_id"]
+        assert C.t_log_activity(app.cid, "Call", "talked to Pat")["activity_id"]
+        assert C.t_order_details(oid)["order_id"] == oid
 
 
 

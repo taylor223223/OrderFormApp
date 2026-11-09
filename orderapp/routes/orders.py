@@ -516,10 +516,22 @@ def reorder(oid):
     if o["form_key"] not in FORMS:
         flash("That order has no order form to copy.", "error")
         return redirect(url_for("orders.view", oid=oid))
+    nid = make_reorder(oid)
+    from ..holds import hold_for, hold_message
+    hd = hold_for(o["customer_id"])
+    if hd:
+        flash(hold_message(hd), "error")
+    flash(f"Reorder ready as draft #{nid} - same items as #{oid}. Add the PO, check quantities, then send.", "ok")
+    return redirect(url_for("orders.editor", order=nid))
+
+
+def make_reorder(oid, po=""):
+    """A new draft with the same items as order #oid, today's date. Returns the new order id."""
+    o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
     from ..order_kind import kind_title
     data = loads(o["data"]) or {}
     h = data.setdefault("header", {})
-    h["po"] = ""
+    h["po"] = po or ""
     h["date"] = today()
     if o["customer_id"]:      # who to talk to: the same person a new order starts with (Maint. Super, else PM)
         c = q("SELECT * FROM customers WHERE id=?", (o["customer_id"],), one=True)
@@ -530,25 +542,20 @@ def reorder(oid):
                     h[k] = ch[k]
     nid = x("""INSERT INTO orders(customer_id, form_key, title, po, order_date, status, data, source, notes, created,
                updated) VALUES (?,?,?,?,?,'Draft',?,?,?,?,?)""",
-            (o["customer_id"], o["form_key"], kind_title(o["title"], "order"), "", date.today().isoformat(), dumps(data),
+            (o["customer_id"], o["form_key"], kind_title(o["title"], "order"), po or "", date.today().isoformat(), dumps(data),
              "reorder", f"Reorder of #{oid}", now(), now()))
     add_status(nid, "Draft", f"Reorder of #{oid}")
-    from ..holds import hold_for, hold_message
-    hd = hold_for(o["customer_id"])
-    if hd:
-        flash(hold_message(hd), "error")
-    flash(f"Reorder ready as draft #{nid} - same items as #{oid}. Add the PO, check quantities, then send.", "ok")
-    return redirect(url_for("orders.editor", order=nid))
+    return nid
 
 
-@bp.route("/orders/<int:oid>/status", methods=["POST"])
-@login_required
-def set_status(oid):
-    o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
-    st = request.form.get("status")
+def apply_status(oid, tap_label=None, status=None, note="", fields=None):
+    """Set an order's step the way the status buttons do (also used by the AI assistant). Returns the new status."""
+    o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
+    if not o:
+        return None
+    st = status
     from ..order_kind import APPROVED, TAPS, kind_title
-    tap = next((t for t in TAPS if t[0] == request.form.get("tap")), None)
-    note = request.form.get("note", "").strip()
+    tap = next((t for t in TAPS if t[0] == tap_label), None)
     if tap:                       # one tap: "Request sent" = status Sent + it's a quote
         st = tap[2]
         if tap[1] and tap[1] != (o["kind"] or "order"):
@@ -560,17 +567,28 @@ def set_status(oid):
             x("UPDATE orders SET quote_approved_at=?, sent_at=NULL WHERE id=?", (now(), oid))   # sent = when the ORDER goes in
             o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
             note = "Quote approved - now an order"
-            flash(f"Quote #{oid} approved - it's an order now (Order ready in Order Tracking).", "ok")
     if st in STATUSES:
-        fields = {"status": st, "updated": now()}
-        for k in ("vendor_ref", "due_date", "notes"):
-            if k in request.form:
-                fields[k] = request.form.get(k, "").strip()
+        upd = {"status": st, "updated": now()}
+        upd.update(fields or {})
         if st == "Sent" and not o["sent_at"]:
-            fields["sent_at"] = now()
-        x(f"UPDATE orders SET {', '.join(k + '=?' for k in fields)} WHERE id=?", list(fields.values()) + [oid])
+            upd["sent_at"] = now()
+        x(f"UPDATE orders SET {', '.join(k + '=?' for k in upd)} WHERE id=?", list(upd.values()) + [oid])
         if st != o["status"] or note:
             add_status(oid, st, note)
+    return st
+
+
+@bp.route("/orders/<int:oid>/status", methods=["POST"])
+@login_required
+def set_status(oid):
+    o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True) or abort(404)
+    from ..order_kind import APPROVED
+    fields = {k: request.form.get(k, "").strip() for k in ("vendor_ref", "due_date", "notes") if k in request.form}
+    apply_status(oid, request.form.get("tap"), request.form.get("status"), request.form.get("note", "").strip(),
+                 fields)
+    if request.form.get("tap") == APPROVED:
+        flash(f"Quote #{oid} approved - it's an order now (Order ready in Order Tracking).", "ok")
+    del o
     nxt = request.form.get("next") or ""
     return redirect(nxt if nxt.startswith("/") else url_for("orders.view", oid=oid))
 

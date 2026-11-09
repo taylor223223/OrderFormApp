@@ -229,6 +229,7 @@ CREATE TABLE IF NOT EXISTS ai_outbox (
 CREATE TABLE IF NOT EXISTS ai_summaries (id INTEGER PRIMARY KEY, day TEXT, period TEXT, body TEXT, created TEXT);
 CREATE TABLE IF NOT EXISTS ai_usage (id INTEGER PRIMARY KEY, ts TEXT, model TEXT, purpose TEXT, in_tok INTEGER,
     out_tok INTEGER, cost REAL);
+CREATE TABLE IF NOT EXISTS ai_chat (id INTEGER PRIMARY KEY, ts TEXT, role TEXT, text TEXT, actions TEXT);
 CREATE INDEX IF NOT EXISTS ix_ai_log_msg ON ai_log(msg_id);
 CREATE INDEX IF NOT EXISTS ix_ai_threads_key ON ai_threads(conv_key);
 """
