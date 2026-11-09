@@ -355,7 +355,7 @@ def ask(text, email_customer=False):
     x("INSERT INTO ai_chat(ts, role, text) VALUES (?,?,?)", (now(), "me", text))
     actions, reply = [], ""
     for _ in range(10):
-        r = call(smart(), system, msgs, tools=[t["spec"] for t in TOOLS], max_tokens=2000, purpose="chat")
+        r = call(smart(), system, msgs, tools=[t["spec"] for t in TOOLS], max_tokens=6000, purpose="chat")
         content = r.get("content") or []
         msgs.append({"role": "assistant", "content": content})
         uses = [b for b in content if b.get("type") == "tool_use"]

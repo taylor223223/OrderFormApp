@@ -655,3 +655,36 @@ def test_summary(env):
     assert "End of day" in body and "Needs you" in body and "At a glance" in body
     assert "Who reached out and what your assistant did" in body and "kelli" in body and "Emails sent for you" in body
     assert "Orders and quotes it made" in body and "Saved to the app" in body and "added Jo Newperson" in body
+
+
+def test_out_of_room_is_asked_again_with_more(app, monkeypatch):
+    """2.35.4: long real emails made Claude run out of room before writing any answer ("no JSON"):
+    it's asked again with 4x the room; if it still says nothing, the error says why."""
+    from orderapp.ai import client as CL
+
+    class R:
+        status_code = 200
+        text = ""
+
+        def __init__(self, d):
+            self.d = d
+
+        def json(self):
+            return self.d
+    sent = []
+
+    def fake_post(body, key, version):
+        sent.append(body["max_tokens"])
+        if len(sent) == 1:
+            return R({"content": [{"type": "thinking", "thinking": "..."}], "stop_reason": "max_tokens", "usage": {}})
+        return R({"content": [{"type": "text", "text": '{"category": "order_confirmation"}'}],
+                  "stop_reason": "end_turn", "usage": {}})
+    monkeypatch.setattr(CL, "_post", fake_post)
+    with app.app_context():
+        assert CL.ask_json("claude-haiku-5-5", "s", "p", max_tokens=3000)["category"] == "order_confirmation"
+    assert sent == [3000, 12000]
+    monkeypatch.setattr(CL, "_post", lambda *a: R({"content": [], "stop_reason": "refusal", "usage": {}}))
+    with app.app_context():
+        import pytest as _pt
+        with _pt.raises(CL.AIError, match="stopped: refusal"):
+            CL.ask("m", "s", "p")

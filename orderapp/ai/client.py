@@ -50,7 +50,18 @@ def _post(body, key, version):
 
 
 def ask(model, system, prompt, max_tokens=2000, purpose=""):
-    """One message to Claude; returns the reply text."""
+    """One message to Claude; returns the reply text. If Claude ran out of room before writing its answer (long
+    emails make it think longer), it's asked again with more room."""
+    text, data = _ask_once(model, system, prompt, max_tokens, purpose)
+    if not text.strip() and data.get("stop_reason") == "max_tokens" and max_tokens < 16000:
+        text, data = _ask_once(model, system, prompt, min(max_tokens * 4, 16000), purpose + " (more room)")
+    if not text.strip():
+        kinds = ", ".join(sorted({b.get("type", "?") for b in data.get("content") or []})) or "nothing"
+        raise AIError(f"Claude gave no written answer (stopped: {data.get('stop_reason')}; got: {kinds}).")
+    return text
+
+
+def _ask_once(model, system, prompt, max_tokens, purpose):
     key = (setting("ai_api_key") or "").strip()
     if not key:
         raise AIError("No Anthropic API key - add it in Settings -> AI Assistant.")
@@ -75,7 +86,7 @@ def ask(model, system, prompt, max_tokens=2000, purpose=""):
     tin, tout = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
     x("INSERT INTO ai_usage(ts, model, purpose, in_tok, out_tok, cost) VALUES (?,?,?,?,?,?)",
       (now(), model, purpose, tin, tout, (tin * pin + tout * pout) / 1e6))
-    return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+    return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text"), data
 
 
 def call(model, system, messages, tools=None, max_tokens=2000, purpose=""):
@@ -117,7 +128,7 @@ def parse_json(text):
     else:
         i, j = t.find("{"), t.rfind("}")
         if i < 0 or j < i:
-            raise AIError("Claude's answer had no JSON in it.")
+            raise AIError(f"Claude's answer had no JSON in it (it said: {t[:160]!r}).")
         t = t[i:j + 1]
     try:
         return json.loads(t)

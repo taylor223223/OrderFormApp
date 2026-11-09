@@ -276,7 +276,7 @@ def classify(m):
     prompt = (f"Today is {today:%A %Y-%m-%d}.\nFrom: {m.get('sender_name') or ''} <{m.get('sender') or ''}>"
               f"{' (COWORKER)' if is_coworker(m.get('sender')) else ''}\nSubject: {m.get('subject') or ''}\n"
               f"Attachments: {', '.join(m.get('attachment_names') or []) or 'none'}\n\n{(m.get('body') or '')[:6000]}")
-    r = ask_json(fast(), system, prompt, max_tokens=900, purpose="sort")
+    r = ask_json(fast(), system, prompt, max_tokens=3000, purpose="sort")
     r["category"] = str(r.get("category") or "other").strip().lower()
     r["forms"] = [f for f in (r.get("forms") or []) if f in FORMS]
     return r
@@ -338,7 +338,7 @@ def extract(model, m, c, form_keys, thread_id, purpose):
         "(product not clear yet - available forms:)\n" + form_menu()
     prompt = (f"Today is {date.today():%Y-%m-%d}.\n\nAPP RECORDS:\n{customer_facts(c)}\n\nORDER FORMS:\n{specs}\n\n"
               f"EMAIL THREAD (oldest first):\n{thread_text(thread_id, m)}")
-    r = ask_json(model, EXTRACT_SYSTEM.format(me=me) + rules_text(), prompt, max_tokens=4000, purpose=purpose)
+    r = ask_json(model, EXTRACT_SYSTEM.format(me=me) + rules_text(), prompt, max_tokens=8000, purpose=purpose)
     r["forms"] = [f for f in (r.get("forms") or []) if isinstance(f, dict) and f.get("form_key") in FORMS]
     r["kind"] = str(r.get("kind") or "unknown").lower()
     return apply_defaults(r)
