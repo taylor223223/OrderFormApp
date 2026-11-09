@@ -602,6 +602,52 @@ def test_tools_directly(app):
 
 
 
+def test_offline_emails_wait_and_bad_json_is_retried(env, monkeypatch):
+    """2.35.2: no internet / Claude busy -> the email isn't marked done, it's tried again next check;
+    an answer without JSON is asked for again; an errored email has a Retry."""
+    app, A, mail, claude = env
+    from orderapp.ai.client import AITransient
+    calls = {"n": 0}
+
+    def offline(*a, **k):
+        raise AITransient("Couldn't reach Claude (no internet?)")
+    monkeypatch.setattr(A, "ask_json", offline)
+    mail.inbox = [_msg("o1", "pat@samplepalms.test", "Screens", "2 screens 35x48 unit 204")]
+    with app.app_context():
+        r = A.run(prov=mail)
+    assert r["new"] == 0 and "tried again" in r["error"]
+    assert not _q(app, "SELECT 1 FROM ai_log WHERE msg_id='o1'")
+    monkeypatch.setattr(A, "ask_json", claude.ask_json)          # back online
+    claude.cls = {"category": "fyi", "summary": "screens fyi", "forms": []}
+    with app.app_context():
+        r = A.run(prov=mail)
+    assert r["new"] == 1 and _q(app, "SELECT status FROM ai_log WHERE msg_id='o1'")[0]["status"] == "info"
+
+    # plain-sentence answer -> asked again, JSON the second time
+    from orderapp.ai import client as CL
+    answers = iter(["Sure! This looks like an order confirmation.", '{"category": "order_confirmation"}'])
+    monkeypatch.setattr(CL, "ask", lambda *a, **k: next(answers))
+    with app.app_context():
+        assert CL.ask_json("m", "sys", "p")["category"] == "order_confirmation"
+
+    # an errored email can be retried
+    def broken(*a, **k):
+        from orderapp.ai.client import AIError
+        raise AIError("Claude's answer had no JSON in it.")
+    monkeypatch.setattr(A, "ask_json", broken)
+    mail.inbox = [_msg("o2", "orders@company.test", "Re: Red Rox", "Entered: 248150")]
+    with app.app_context():
+        A.run(prov=mail)
+    lid = _q(app, "SELECT id, status FROM ai_log WHERE msg_id='o2'")[0]
+    assert lid["status"] == "error"
+    monkeypatch.setattr(A, "ask_json", claude.ask_json)
+    claude.cls = {"category": "order_confirmation", "summary": "order entered", "forms": []}
+    with app.app_context():
+        row = A.retry(lid["id"])
+    assert row["status"] == "info" and len(_q(app, "SELECT 1 FROM ai_log WHERE msg_id='o2'")) == 1
+
+
+
 def test_summary(env):
     app, A, mail, claude = env
     with app.app_context():

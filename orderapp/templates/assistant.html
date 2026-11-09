@@ -57,7 +57,8 @@ tasks, and holds anything it isn't sure about for you.
 <div class="card" style="margin-bottom:10px;border-left:4px solid {{ '#b91c1c' if h.status == 'error' else '#d97706' }}">
   <div class="row" style="justify-content:space-between"><div><b>{{ h.sender_name or h.sender }}</b> <span class="muted small">{{ h.received or h.ts }}</span>
   <div>{{ h.summary or h.subject }}</div><div class="small muted">{{ h.subject }}</div></div>
-  <form method="post" action="{{ url_for('assistant.log_done', lid=h.id) }}"><button class="btn sm">✓ Done - remove</button></form></div>
+  <div class="row" style="gap:6px">{% if h.status == 'error' and h.email_id %}<form method="post" action="{{ url_for('assistant.log_retry', lid=h.id) }}"><button class="btn sm primary">⟳ Retry</button></form>{% endif %}
+  <form method="post" action="{{ url_for('assistant.log_done', lid=h.id) }}"><button class="btn sm">✓ Done - remove</button></form></div></div>
   <div style="margin-top:6px"><b>{{ h.action }}</b></div>
   <ul class="small" style="margin:4px 0">{% for r in loads(h.reasons or '[]') %}<li>{{ r }}</li>{% endfor %}</ul>
   {% if h.order_ids %}<div class="small">Draft{{ 's' if ',' in h.order_ids }}: {% for o in h.order_ids.split(',') if o %}<a href="{{ url_for('orders.editor', order=o) }}">#{{ o }} (open the form)</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}

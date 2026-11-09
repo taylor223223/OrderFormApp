@@ -24,6 +24,7 @@
     {% set ep = request.endpoint or '' %}
     <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep=='main.dashboard' }}" style="--c:#f59e0b"><span class="ic">🏠</span>Dashboard</a>
     <a href="{{ url_for('plan.day', day=today_iso()) }}" class="{{ 'on' if ep.startswith('plan.') }}" style="--c:#65a30d" title="Today's route · Week plan · Trip log"><span class="ic">🗺️</span>Routes</a>
+    {% if ai_on or ai_held %}<a href="{{ url_for('assistant.home') }}" class="{{ 'on' if ep.startswith('assistant.') }}" style="--c:#6d28d9" title="AI email assistant"><span class="ic">🤖</span>Assistant{% if ai_held %}<span class="badge" title="Waiting for your review">{{ ai_held }}</span>{% endif %}</a>{% endif %}
     <a href="{{ url_for('orders.new') }}" class="{{ 'on' if ep in ('orders.new','orders.editor','photos.field_order') }}" style="--c:#ea580c"><span class="ic">📝</span>New Order</a>
     <a href="{{ url_for('orders.tracking') }}" class="{{ 'on' if ep in ('orders.tracking','orders.view','orders.send_page') }}" style="--c:#0d9488"><span class="ic">📦</span>Order Tracking</a>
     <a href="{{ url_for('quotes.index') }}" class="{{ 'on' if ep.startswith('quotes.') and ep not in ('quotes.prices','quotes.deliveries') }}" style="--c:#0891b2"><span class="ic">🧾</span>Quotes</a>
@@ -33,7 +34,6 @@
     <a href="{{ url_for('sales.home') }}" class="{{ 'on' if ep.startswith('sales.') and ep != 'sales.items' }}" style="--c:#2a78d6"><span class="ic">💲</span>Sales</a>
     <a href="{{ url_for('company.home') }}" class="{{ 'on' if ep.startswith('company.') }}" style="--c:#0f766e"><span class="ic">🗄️</span>Company Data</a>
     <a href="{{ url_for('sales.items') }}" class="{{ 'on' if ep == 'sales.items' }}" style="--c:#4f46e5"><span class="ic">🏷️</span>Items &amp; Stock</a>
-    {% if ai_on or ai_held %}<a href="{{ url_for('assistant.home') }}" class="{{ 'on' if ep.startswith('assistant.') }}" style="--c:#6d28d9" title="AI email assistant"><span class="ic">🤖</span>Assistant{% if ai_held %}<span class="badge" title="Waiting for your review">{{ ai_held }}</span>{% endif %}</a>{% endif %}
     <a href="{{ url_for('emails.inbox') }}" class="{{ 'on' if ep.startswith('emails.') }}" style="--c:#c2410c"><span class="ic">✉️</span>Email{% if email_drafts %}<span class="badge" title="Order emails turned into drafts, waiting for review">{{ email_drafts }}</span>{% endif %}</a>
     <a href="{{ url_for('imports.upload') }}" class="{{ 'on' if ep in ('imports.upload','imports.apply_mapping') or ep.startswith('exports.') }}" style="--c:#a16207"><span class="ic">📥</span>Import / Export</a>
     <a href="{{ url_for('imports.review') }}" class="{{ 'on' if ep.startswith('imports.review') }}" style="--c:#b45309"><span class="ic">✅</span>Review{% if pending_reviews %}<span class="badge">{{ pending_reviews }}</span>{% endif %}</a>

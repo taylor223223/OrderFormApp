@@ -208,3 +208,16 @@ def rules():
     set_setting("ai_rules", (request.form.get("rules") or "").strip())
     flash("Rules saved - the assistant follows them from the next email on.", "ok")
     return redirect(url_for("assistant.home", tab="rules"))
+
+
+@bp.route("/assistant/log/<int:lid>/retry", methods=["POST"])
+@login_required
+def log_retry(lid):
+    from ..ai.assistant import retry
+    from ..ai.client import AIError
+    try:
+        row = retry(lid)
+        flash(f"🤖 {row['action']}" if row else "Couldn't find that email to retry.", "ok" if row else "error")
+    except AIError as e:
+        flash(f"Still couldn't do it: {e}", "error")
+    return redirect(url_for("assistant.home"))

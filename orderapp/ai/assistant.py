@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 
 from ..catalog import FORM_ORDER, FORMS, ORDER_SETTINGS, editor_fields
 from ..db import add_status, dumps, find_customer, loads, now, q, set_setting, setting, x
-from .client import AIError, ask, ask_json
+from .client import AIError, AITransient, ask, ask_json
 
 SIG_IMAGE = re.compile(r"^(image\d{3}|outlook-[\w-]+|logo[\w-]*)\.(png|jpe?g|gif|bmp)$", re.I)
 PHOTO_EXT = (".jpg", ".jpeg", ".png", ".heic", ".heif", ".gif", ".bmp", ".tif", ".tiff", ".webp")
@@ -983,6 +983,8 @@ def process(m, email_id=None, customer=None):
               (prior_key,), one=True)
     try:
         cls = classify(m)
+    except AITransient:
+        raise                 # offline / busy: leave this email for the next check
     except AIError as e:
         return log(m, email_id, None, {"category": "error", "summary": m.get("subject")}, f"Couldn't read it: {e}",
                    "error", [str(e)])
@@ -1018,6 +1020,9 @@ def process(m, email_id=None, customer=None):
         log(m, email_id, tid, cls, "Noted for your summary" if cat != "junk" else "Ignored (junk)", "info",
             customer_id=c["id"] if c else None)
         _set_thread(tid, "done")
+    except AITransient:
+        x("DELETE FROM ai_threads WHERE id=? AND status='open'", (tid,))
+        raise
     except AIError as e:
         log(m, email_id, tid, cls, f"Stopped: {e}", "error", [str(e)], customer_id=c["id"] if c else None)
         _set_thread(tid, "held", str(e)[:300])
@@ -1108,7 +1113,11 @@ def _run(prov, res, limit):
         full.setdefault("msg_id", mm["msg_id"])
         full.setdefault("attachment_names", [a[0] for a in full.get("attachments") or []])
         eid = _store(full, prov.name)
-        process(full, eid)
+        try:
+            process(full, eid)
+        except AITransient as e:          # no internet / Claude busy: stop here, these get retried next check
+            res["error"] = f"{e} - {len(todo) - res['new']} email(s) will be tried again on the next check."
+            break
         res["new"] += 1
     set_setting("ai_last_check", datetime.now().strftime("%Y-%m-%d %H:%M"))
     return res
@@ -1204,3 +1213,19 @@ def due_summaries():
             build_summary(period, day)
             made.append(period)
     return made
+
+
+def retry(log_id):
+    """Run an email that errored through again (Assistant -> Needs you -> Retry)."""
+    g = q("SELECT * FROM ai_log WHERE id=?", (log_id,), one=True)
+    if not g or not g["email_id"]:
+        return None
+    e = q("SELECT * FROM email_messages WHERE id=?", (g["email_id"],), one=True)
+    if not e:
+        return None
+    m = {"msg_id": e["msg_id"], "subject": e["subject"], "sender": e["sender"], "sender_name": e["sender_name"],
+         "received": e["received"], "body": e["body"], "attachments": [], "attachment_names": []}
+    x("DELETE FROM ai_log WHERE id=?", (log_id,))
+    x("UPDATE ai_outbox SET status='cancelled' WHERE log_id=? AND status IN ('held','practice','failed')", (log_id,))
+    process(m, e["id"])
+    return q("SELECT * FROM ai_log WHERE msg_id=? ORDER BY id DESC LIMIT 1", (e["msg_id"],), one=True)

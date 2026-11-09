@@ -18,6 +18,10 @@ class AIError(Exception):
     pass
 
 
+class AITransient(AIError):
+    """Offline / Claude busy - try the same email again on the next check instead of giving up on it."""
+
+
 def _price(model):
     for k, v in PRICES.items():
         if k in (model or ""):
@@ -60,7 +64,9 @@ def ask(model, system, prompt, max_tokens=2000, purpose=""):
         if r.status_code == 400 and "version" in r.text.lower() and version != "2023-06-01":
             r = _post(body, key, "2023-06-01")
     except Exception as e:  # noqa: BLE001
-        raise AIError(f"Couldn't reach Claude: {e}") from e
+        raise AITransient(f"Couldn't reach Claude (no internet?): {e}") from e
+    if r.status_code in (408, 429, 500, 502, 503, 504, 529):
+        raise AITransient(f"Claude is busy right now ({r.status_code}) - will try again.")
     if r.status_code >= 400:
         raise AIError(f"Claude API error {r.status_code}: {r.text[:300]}")
     data = r.json()
@@ -88,7 +94,9 @@ def call(model, system, messages, tools=None, max_tokens=2000, purpose=""):
         if r.status_code == 400 and "version" in r.text.lower() and version != "2023-06-01":
             r = _post(body, key, "2023-06-01")
     except Exception as e:  # noqa: BLE001
-        raise AIError(f"Couldn't reach Claude: {e}") from e
+        raise AITransient(f"Couldn't reach Claude (no internet?): {e}") from e
+    if r.status_code in (408, 429, 500, 502, 503, 504, 529):
+        raise AITransient(f"Claude is busy right now ({r.status_code}) - will try again.")
     if r.status_code >= 400:
         raise AIError(f"Claude API error {r.status_code}: {r.text[:300]}")
     data = r.json()
@@ -118,7 +126,15 @@ def parse_json(text):
 
 
 def ask_json(model, system, prompt, max_tokens=3000, purpose=""):
-    return parse_json(ask(model, system, prompt, max_tokens=max_tokens, purpose=purpose))
+    """Ask for a JSON answer; if Claude answers in sentences, ask once more, firmly."""
+    try:
+        return parse_json(ask(model, system, prompt, max_tokens=max_tokens, purpose=purpose))
+    except AITransient:
+        raise
+    except AIError:
+        return parse_json(ask(model, system + "\n\nIMPORTANT: answer with ONE JSON object only - no other text. "
+                              "If the email is unclear, still answer in JSON (use your best guess and say so).",
+                              prompt, max_tokens=max_tokens, purpose=purpose + " (retry)"))
 
 
 def test_key():
