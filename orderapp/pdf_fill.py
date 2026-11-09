@@ -471,7 +471,9 @@ def read_filled_form(pdf_bytes):
     scores = []
     for fk in FORMS:
         tmpl = fitz.open(template_path(fk))
-        tnames = {_clean(w.field_name) for w in tmpl[0].widgets()}
+        tpage = tmpl[0]           # keep the page alive while its widgets are read (a temporary one crashes on Windows)
+        tnames = {_clean(w.field_name) for w in list(tpage.widgets())}
+        del tpage
         tmpl.close()
         # how much of the filled copy this form explains (older copies have fewer boxes than ours)
         cover = len(names & tnames) / max(len(names), 1)

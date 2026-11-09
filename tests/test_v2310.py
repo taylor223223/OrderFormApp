@@ -54,7 +54,9 @@ def _text(pdf):
 
 def _vals(pdf):
     import pymupdf as fitz
-    return {w.field_name: w.field_value for p in fitz.open(stream=pdf, filetype="pdf") for w in p.widgets() or []}
+    d = fitz.open(stream=pdf, filetype="pdf")
+    pages = list(d)
+    return {w.field_name: w.field_value for p in pages for w in list(p.widgets() or [])}
 
 
 # ---------------------------------------------------------------- orders: download each / compile into one

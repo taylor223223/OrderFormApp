@@ -85,6 +85,8 @@ def test_customer_form_prefilled(app):
     with app.app_context():
         from orderapp.db import q
         out = prefilled(src, q("SELECT * FROM customers WHERE id=?", (app.cid,), one=True))
-    vals = {w.field_name: w.field_value for w in fitz.open(out)[0].widgets()}
+    d = fitz.open(out)
+    pg = d[0]
+    vals = {w.field_name: w.field_value for w in list(pg.widgets())}
     assert vals["Property"] == "Sample Gardens (made up)" and vals["Manager Name"] == "Pat Sample"
     assert vals["Manager Email"] == "pat@sample.example"

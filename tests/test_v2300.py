@@ -114,7 +114,9 @@ def test_bigger_email_box(app):
     with app.app_context():
         for fk in FORMS:
             pdf, _ = fill_form(fk, {"header": H, "blocks": [{"qty": "1"}]})
-            em = [w for w in pymupdf.open(stream=pdf, filetype="pdf")[0].widgets() if w.field_name == "Contact Email"]
+            d = pymupdf.open(stream=pdf, filetype="pdf")
+            pg = d[0]
+            em = [w for w in list(pg.widgets()) if w.field_name == "Contact Email"]
             assert em and em[0].rect.width >= 190 and em[0].text_fontsize >= 7.5, (fk, em and em[0].rect)
 
 

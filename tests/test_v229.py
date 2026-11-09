@@ -130,7 +130,9 @@ def test_countertop_without_sink_drops_the_sink_drawing(app):
         blank, _ = fill_form("countertop", {"header": {"name": "Sample (made up)"}, "blocks": []})
 
     def names(pdf):
-        return {w.field_name for w in pymupdf.open(stream=pdf, filetype="pdf")[0].widgets()}
+        d = pymupdf.open(stream=pdf, filetype="pdf")
+        pg = d[0]
+        return {w.field_name for w in list(pg.widgets())}
     assert "L0.sink_center" not in names(none) and "L0.sink_center_r" not in names(none)
     assert "L0.sink_center" in names(bowl) and "L0.sink_center" in names(blank)   # blank paper form keeps it
 

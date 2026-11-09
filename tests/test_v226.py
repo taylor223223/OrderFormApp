@@ -31,7 +31,9 @@ def test_every_form_has_contact_boxes(app):
     from orderapp.pdf_fill import fill_form
     for fk, spec in FORMS.items():
         assert {"contact", "contact_phone", "contact_email"} <= set(spec["header"]), fk
-        names = {w.field_name for w in fitz.open(resource_path(os.path.join("forms", spec["file"])))[0].widgets()}
+        d = fitz.open(resource_path(os.path.join("forms", spec["file"])))
+        pg = d[0]
+        names = {w.field_name for w in list(pg.widgets())}
         assert {"Contact Name", "Contact Phone", "Contact Email"} <= names, fk
         with app.app_context():
             pdf, _ = fill_form(fk, {"header": H, "blocks": [{"qty": "1"}]})
