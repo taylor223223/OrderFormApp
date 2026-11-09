@@ -252,3 +252,15 @@ def test_route_day_calendar_goes_to_the_picked_day(c):
     html = c.get(f"/routes/day/{TODAY}").get_data(as_text=True)
     assert 'class="goday"' in html and f'data-url="/routes/day/DAY"' in html
     assert 'onchange="location.href="' not in html            # the old handler broke on its own quote marks
+
+
+def test_note_box_has_its_own_date(app, c):
+    """2.34.7: the notes box on Routes and the Dashboard can write any day's note without leaving the page."""
+    r = c.post("/routes/note", data={"csrf_token": c.t, "day": FRIDAY, "note": "Bring the Avalon sample",
+                                     "next": f"/routes/day/{TODAY}"})
+    assert r.status_code == 302 and r.headers["Location"].endswith(f"/routes/day/{TODAY}")   # stayed on today
+    j = c.get(f"/routes/day/{FRIDAY}/note.json").get_json()
+    assert j["note"] == "Bring the Avalon sample" and j["day"] == FRIDAY
+    day_page = c.get(f"/routes/day/{TODAY}").get_data(as_text=True)
+    assert 'data-nb-day' in day_page and 'type="date" name="day"' in day_page
+    assert 'data-nb-day' in c.get("/").get_data(as_text=True)

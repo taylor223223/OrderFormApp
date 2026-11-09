@@ -17,8 +17,10 @@
 </div>
 {% if ai_summary %}<details class="card" style="border-left:4px solid #6d28d9" open><summary><b>🤖 {{ ai_summary.period|capitalize }} summary</b> <span class="small muted">{{ ai_summary.created[11:16] }}</span> · <a class="small" href="{{ url_for('assistant.home') }}">Assistant</a></summary>
 <pre style="white-space:pre-wrap;font-family:inherit;margin:6px 0 0">{{ ai_summary.body }}</pre></details>{% endif %}
-{% if today_note %}<div class="card daynote-today"><div class="row" style="justify-content:space-between"><b>📝 Notes for today</b><a class="small" href="{{ url_for('plan.day', day=today) }}">edit</a></div>
+{% if today_note %}<div class="card daynote-today"><div class="row" style="justify-content:space-between"><b>📝 Notes for today</b></div>
 <div style="white-space:pre-wrap;margin-top:4px">{{ today_note }}</div></div>{% endif %}
+<details class="daynote-dash" {{ 'open' if not today_note }}><summary class="small muted" style="cursor:pointer">✏️ Write or edit notes for any day</summary>
+{% set nb_day, nb_note, nb_label, nb_next = today, today_note, 'today', url_for('main.dashboard') %}{% include '_day_note_box.html' %}</details>
 <div class="grid g2 previews">
   <!-- Today's route preview -->
   <div class="card pv pv-route">

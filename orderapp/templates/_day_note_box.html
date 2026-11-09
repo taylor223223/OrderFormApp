@@ -1,0 +1,29 @@
+{# Notes for a day, with its own date picker: write tomorrow's (or Wednesday's) notes without leaving this page.
+   Needs: nb_day (YYYY-MM-DD the box starts on), nb_note (that day's note), nb_next (where to come back to). #}
+<form method="post" action="{{ url_for('plan.save_note_any') }}" class="card daynote" data-notebox>
+  <input type="hidden" name="next" value="{{ nb_next }}">
+  <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+    <label style="margin:0">📝 Notes for <span data-nb-label>{{ nb_label }}</span></label>
+    <input type="date" name="day" value="{{ nb_day }}" data-nb-day style="width:auto" title="Pick any day to read or write its notes - you stay on this page">
+    <span class="small muted" data-nb-status></span>
+  </div>
+  <textarea name="note" rows="2" data-nb-note placeholder="What the day looks like - who's expecting you, what to bring, gate codes... (shows on the Dashboard that morning)">{{ nb_note }}</textarea>
+  <div class="row" style="justify-content:flex-end;margin-top:4px"><button class="btn sm">Save notes</button></div>
+</form>
+<script>
+(function () {
+  const f = document.currentScript.previousElementSibling;
+  const day = f.querySelector('[data-nb-day]'), note = f.querySelector('[data-nb-note]');
+  const label = f.querySelector('[data-nb-label]'), status = f.querySelector('[data-nb-status]');
+  let loaded = note.value;
+  day.addEventListener('change', async () => {
+    if (!day.value) return;
+    if (note.value !== loaded && !confirm('You have unsaved notes - switch days without saving them?')) return;
+    status.textContent = 'loading…';
+    try {
+      const r = await fetch('{{ url_for("plan.note_json", day="DAY") }}'.replace('DAY', day.value)).then(r => r.json());
+      note.value = loaded = r.note || ''; label.textContent = r.label; status.textContent = '';
+    } catch (e) { status.textContent = "couldn't load that day"; }
+  });
+})();
+</script>

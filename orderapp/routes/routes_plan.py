@@ -597,6 +597,20 @@ def save_day_note(day):
     return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("plan.day", day=d.isoformat()))
 
 
+@bp.route("/routes/note", methods=["POST"])
+@login_required
+def save_note_any():
+    """The notes box with its own date picker: save the note for whatever day is picked, stay on this page."""
+    return save_day_note(request.form.get("day", ""))
+
+
+@bp.route("/routes/day/<day>/note.json")
+@login_required
+def note_json(day):
+    d = _day(day) or abort(404)
+    return jsonify({"day": d.isoformat(), "label": f"{d:%A %m/%d}", "note": day_note(d.isoformat())})
+
+
 @bp.route("/routes/day/<day>/sheet")
 @login_required
 def sheet(day):
