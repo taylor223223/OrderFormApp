@@ -22,9 +22,15 @@ def _clean(name):
     return re.sub(r" \[\d+\]", "", name or "")
 
 
+class _WidgetIndex(defaultdict):
+    """Field name -> widgets. Holds on to the page: widgets of a page that's been let go of crash PyMuPDF on Windows."""
+    page = None
+
+
 def _index_widgets(page):
-    idx = defaultdict(list)
-    for w in page.widgets():
+    idx = _WidgetIndex(list)
+    idx.page = page
+    for w in list(page.widgets()):
         idx[_clean(w.field_name)].append(w)
     return idx
 
@@ -543,7 +549,8 @@ def validate_catalog():
     problems = []
     for fk, spec in FORMS.items():
         doc = fitz.open(template_path(fk))
-        idx = _index_widgets(doc[0])
+        page0 = doc[0]
+        idx = _index_widgets(page0)
 
         def chk(ref, check):
             if ref is None:

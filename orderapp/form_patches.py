@@ -394,9 +394,10 @@ def patch_door(doc, prehung=False):
         w.field_flags = fitz.PDF_FIELD_IS_READ_ONLY
         q.widgets.append(w)
     # 4) the rest of the company form, moved down; the Measurements rows are redrawn (see _measure_rows)
-    meas = _measure_rows(src[0], prehung)
+    src_page = src[0]          # one page object kept alive while its widgets are used (temporary ones crash on Windows)
+    meas = _measure_rows(src_page, prehung)
     low = add - SHRINK
-    for w in _hinge_extras(src[0], prehung):        # hinge size "Other" + square hinges (lower half)
+    for w in _hinge_extras(src_page, prehung):        # hinge size "Other" + square hinges (lower half)
         r = w.rect
         w.rect = fitz.Rect(r.x0, r.y0 + low, r.x1, r.y1 + low)
         q.widgets.append(w)
