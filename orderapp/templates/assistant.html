@@ -1,5 +1,27 @@
 {% extends "base.html" %}{% block title %}Assistant{% endblock %}
 {% block body %}
+{% macro reply_box(lid, to, tab) %}
+<details class="replybox" style="margin-top:4px"><summary class="small" style="cursor:pointer;color:#2563eb">↩ Reply{% if to %} to {{ to }}{% endif %}</summary>
+<form method="post" action="{{ url_for('assistant.log_reply', lid=lid) }}" style="margin-top:4px">
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <textarea name="body" rows="4" placeholder="Type your reply - or let the assistant write one, then edit it"></textarea>
+  <div class="row" style="gap:6px;margin-top:4px;align-items:center;flex-wrap:wrap">
+    <button class="btn sm primary">Send reply</button>
+    <button class="btn sm" type="button" onclick="draftReply(this, '{{ url_for('assistant.log_draft', lid=lid) }}')">✍ Let the assistant write it</button>
+    <label class="row small" style="gap:4px"><input type="checkbox" name="done" value="1" checked style="width:auto"> mark it done</label>
+  </div></form></details>
+{% endmacro %}
+<script>
+async function draftReply(btn, url) {
+  const box = btn.closest('form').querySelector('textarea'); const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Writing…';
+  try {
+    const r = await fetch(url, {method: 'POST', headers: {'X-CSRF-Token': CSRF}}).then(r => r.json());
+    if (r.ok) box.value = r.text; else alert(r.error || 'Couldn\'t write a reply.');
+  } catch (e) { box.value = box.value; }
+  btn.disabled = false; btn.textContent = old;
+}
+</script>
 <div class="pagehead"><div><h1>🤖 Assistant</h1>
 <div class="muted">Reads your inbox, makes orders and quotes, asks customers for what's missing, adds visits to Routes and
 tasks, and holds anything it isn't sure about for you.
@@ -10,14 +32,35 @@ tasks, and holds anything it isn't sure about for you.
   <form method="post" action="{{ url_for('assistant.summary_now') }}"><button class="btn">Summary now</button></form>
   <a class="btn" href="{{ url_for('settings.index') }}#ai">Settings</a></div></div>
 
-{% if running %}<meta http-equiv="refresh" content="5">{% endif %}
-{% if last_result %}{% set r = last_result %}
+{% if running %}<meta http-equiv="refresh" content="4">
+<div class="card" style="margin-bottom:10px;border-left:4px solid #2563eb">⏳ <b>Reading your email…</b>
+{% if progress %}{{ progress }} handled so far.{% endif %} This page updates by itself - the summary shows here when it's done.</div>
+{% elif last_result %}{% set r = last_result %}
 <div class="card" style="margin-bottom:10px;border-left:4px solid {{ '#b91c1c' if r.error else '#15803d' }}">
-  <b>Last check {{ r.when }}:</b>
-  {% if r.error %}<span style="color:#b91c1c">✘ {{ r.error }}</span>{% endif %}
-  {% if r.read is defined %}<span class="small">{{ r.read }} email(s) in the inbox lately · <b>{{ r.new }} new handled</b>
-  {% if r.seen %} · {{ r.seen }} already done{% endif %}{% if r.skipped_me %} · {{ r.skipped_me }} from your own address (skipped){% endif %}
-  {% if r.skipped_old %} · {{ r.skipped_old }} from before you turned it on (skipped){% endif %}</span>{% endif %}
+  <div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
+  <b>Last check {{ r.when }}</b>
+  {% if r.read is defined %}<span class="small">{{ r.read }} unread email(s) looked at · <b>{{ r.new }} new handled</b>
+  {% if r.seen %} · {{ r.seen }} already done{% endif %}{% if r.skipped_me %} · {{ r.skipped_me }} from you{% endif %}
+  {% if r.skipped_old %} · {{ r.skipped_old }} from before you turned it on{% endif %}
+  {% if r.left %} · <b style="color:#b91c1c">{{ r.left }} still to do</b>{% endif %}</span>{% endif %}</div>
+  {% if r.error %}<div style="color:#b91c1c;margin-top:4px">✘ {{ r.error }}</div>{% endif %}
+  {% set items = r.get('items') or [] %}
+  {% if items %}
+  {% set needs = items|selectattr('status','in',['held','error'])|list %}
+  {% set junk = items|selectattr('category','equalto','junk')|list %}
+  {% set rest = items|rejectattr('status','in',['held','error'])|rejectattr('category','equalto','junk')|list %}
+  <div class="small" style="margin:6px 0 2px"><b>Summary of this check:</b> {{ items|length }} new email(s) -
+  {{ needs|length }} need you, {{ rest|length }} handled{% if junk %}, {{ junk|length }} junk ignored{% endif %}.</div>
+  <div class="tablewrap"><table class="small"><tr><th>From</th><th>What it was</th><th>What your assistant did</th><th></th></tr>
+  {% for it in needs + rest %}<tr>
+    <td class="nowrap">{{ it['from'] }}<div class="muted">{{ it['received'][5:] }}</div></td>
+    <td><b>{{ it['summary'] or it['subject'] }}</b><div class="muted">{{ it['subject'] }}</div>
+      {% if it.get('id') and it['category'] != 'junk' %}{{ reply_box(it['id'], it['from'], tab) }}{% endif %}</td>
+    <td>{{ it['action'] }}{% if it['order_ids'] %} · {% for o in it['order_ids'].split(',') if o %}<a href="{{ url_for('orders.view', oid=o) }}">#{{ o }}</a> {% endfor %}{% endif %}</td>
+    <td><span class="tag {{ 'warn' if it['status'] in ('held','error','waiting') else 'ok' }}">{{ 'needs you' if it['status'] in ('held','error') else it['status'] }}</span></td></tr>{% endfor %}
+  {% if junk %}<tr><td colspan="4" class="muted">Junk / newsletters ignored: {% for it in junk %}{{ it['from'] }}{{ ', ' if not loop.last }}{% endfor %}</td></tr>{% endif %}
+  </table></div>
+  {% elif r.read is defined and not r.error %}<div class="small muted" style="margin-top:4px">No new unread emails since the last check.</div>{% endif %}
 </div>{% endif %}
 <div class="card" id="chat" style="border-left:4px solid #6d28d9;margin-bottom:12px">
   <b>💬 Talk to your assistant</b> <span class="small muted">- ask it anything you'd do in the app, or pass on a customer's call / text. It can look things up, add or move route stops, write day notes, add tasks, log visits, update customers, reorder, move orders along, send emails - and run orders and quotes through the normal process.</span>
@@ -64,6 +107,7 @@ tasks, and holds anything it isn't sure about for you.
   {% if h.order_ids %}<div class="small">Draft{{ 's' if ',' in h.order_ids }}: {% for o in h.order_ids.split(',') if o %}<a href="{{ url_for('orders.editor', order=o) }}">#{{ o }} (open the form)</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
   {% if h.email_id %}<div class="small"><a href="{{ url_for('emails.message', rid=h.email_id) }}">Read the email</a></div>{% endif %}
   {% for o in outbox_for.get(h.id, []) %}{{ mail(o) }}{% endfor %}
+  {{ reply_box(h.id, h.sender_name or h.sender, 'review') }}
 </div>
 {% else %}<div class="card muted">Nothing waiting on you. 🎉</div>{% endfor %}
 
@@ -78,7 +122,8 @@ tasks, and holds anything it isn't sure about for you.
 {% elif tab == 'activity' %}
 <div class="tablewrap"><table><tr><th>When</th><th>From</th><th>What it was</th><th>What it did</th><th></th></tr>
 {% for l in log %}<tr><td class="small nowrap">{{ (l.ts or '')[:16] }}</td><td class="small">{{ l.sender_name or l.sender }}</td>
-<td><span class="tag">{{ l.category }}</span> {{ l.summary or l.subject }}</td>
+<td><span class="tag">{{ l.category }}</span> {{ l.summary or l.subject }}
+  {% if l.category != 'junk' and l.sender %}{{ reply_box(l.id, '', 'activity') }}{% endif %}</td>
 <td class="small">{{ l.action }}{% if l.order_ids %} · {% for o in l.order_ids.split(',') if o %}<a href="{{ url_for('orders.view', oid=o) }}">#{{ o }}</a> {% endfor %}{% endif %}</td>
 <td><span class="tag {{ 'ok' if l.status == 'done' else ('warn' if l.status in ('held','waiting') else '') }}">{{ l.status }}</span></td></tr>
 {% else %}<tr><td class="empty" colspan="5">Nothing yet.</td></tr>{% endfor %}</table></div>
@@ -98,8 +143,24 @@ tasks, and holds anything it isn't sure about for you.
 </form>
 
 {% elif tab == 'summaries' %}
-{% for s in summ %}<div class="card" style="margin-bottom:10px"><b>{{ s.day }} · {{ s.period|capitalize }}</b>
-<pre style="white-space:pre-wrap;font-family:inherit;margin:6px 0 0">{{ s.body }}</pre></div>
+{% for s in summ %}{% set P = summary_parts(s.body) %}
+<details class="card" style="margin-bottom:10px" {{ 'open' if loop.first }}>
+  <summary style="cursor:pointer"><b>{{ s.day }} · {{ s.period|capitalize }}</b>
+  {% if P.glance %}<span class="small muted"> - {{ P.glance[0] }}</span>{% endif %}</summary>
+  {% if P.glance %}<div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0">
+    {% for g in P.glance %}<span class="tag" style="font-size:12px">{{ g }}</span>{% endfor %}</div>{% endif %}
+  {% for sec in P.sections %}
+  {% set urgent = sec.title.lower().startswith('needs you') or 'not sent' in sec.title.lower() %}
+  <div style="margin-top:8px">
+    <div style="font-weight:700;{{ 'color:#b91c1c' if urgent }}">{{ sec.title }}{% if not '(' in sec.title %} <span class="muted small">({{ sec['items']|length }})</span>{% endif %}</div>
+    {% set rows = sec['items'] %}
+    <ul class="small" style="margin:3px 0 0 18px;padding:0">
+    {% for it in rows[:6] %}<li style="margin:2px 0">{% if it.who %}<b>{{ it.who }}</b> - {% endif %}{{ it.what }}{% if it.did %} <span class="muted">→ {{ it.did }}</span>{% endif %}{% if it.status %} <span class="tag {{ 'warn' if it.status in ('HELD for you','ERROR - check it','waiting on them') else 'ok' }}" style="font-size:10px">{{ it.status }}</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% if rows|length > 6 %}<details class="small" style="margin-left:18px"><summary style="cursor:pointer;color:#2563eb">Show {{ rows|length - 6 }} more</summary>
+    <ul style="margin:3px 0 0 0;padding-left:0">{% for it in rows[6:] %}<li style="margin:2px 0;list-style:none">• {% if it.who %}<b>{{ it.who }}</b> - {% endif %}{{ it.what }}{% if it.did %} <span class="muted">→ {{ it.did }}</span>{% endif %}{% if it.status %} <span class="tag" style="font-size:10px">{{ it.status }}</span>{% endif %}</li>{% endfor %}</ul></details>{% endif %}
+  </div>{% endfor %}
+</details>
 {% else %}<div class="card muted">No summaries yet - they're made at the times in Settings (or tap Summary now).</div>{% endfor %}
 {% endif %}
 {% endblock %}

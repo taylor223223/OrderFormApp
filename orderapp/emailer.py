@@ -161,16 +161,33 @@ class OutlookDesktop:
 
     errors = []
 
-    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
+    @staticmethod
+    def _with_subfolders(folder, depth=0):
+        """The folder plus every folder inside it (mail that Outlook rules moved into Inbox sub-folders)."""
+        yield folder
+        if depth >= 4:
+            return
+        try:
+            subs = folder.Folders
+            for i in range(1, subs.Count + 1):
+                yield from OutlookDesktop._with_subfolders(subs.Item(i), depth + 1)
+        except Exception:  # noqa: BLE001
+            return
+
+    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word="", all_folders=False):
         """Newest first from every inbox, walking back until older than `days` (no date-filter strings -
-        those depend on Windows' date format and silently match nothing)."""
+        those depend on Windows' date format and silently match nothing). all_folders=True also reads the
+        folders inside each Inbox."""
         _, ns = self._ns()
         OutlookDesktop.errors = []
         since = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d %H:%M")
         s = (search or "").lower()
         sw = (subject_word or "").strip().lower()
         out = []
+        folders = []
         for inbox, store_id in self._inboxes(ns):
+            folders += [(f, store_id) for f in (self._with_subfolders(inbox) if all_folders else [inbox])]
+        for inbox, store_id in folders:
             items = inbox.Items
             items.Sort("[ReceivedTime]", True)
             it = items.GetFirst()
@@ -227,6 +244,14 @@ class OutlookDesktop:
         return {"msg_id": msg_id, "subject": it.Subject or "", "sender": self._sender(it),
                 "sender_name": it.SenderName or "", "received": str(it.ReceivedTime)[:16],
                 "body": it.Body or "", "attachments": atts, "attachment_names": names}
+
+    def reply(self, msg_id, body):
+        """Reply in the same thread (keeps the conversation together in Outlook)."""
+        _, ns = self._ns()
+        r = self._item(ns, msg_id).Reply()
+        r.Body = body + "\n\n" + (r.Body or "")
+        r.Send()
+        return "Reply sent from Outlook."
 
     def send(self, to, cc, subject, body, attachments, review=True):
         app, _ = self._ns()
@@ -336,24 +361,51 @@ class GraphMail:
     def _req(self, method, path, **kw):
         import requests
         h = {"Authorization": "Bearer " + self._token()}
-        r = requests.request(method, GRAPH + path, headers=h, timeout=60, **kw)
+        url = path if path.startswith("http") else GRAPH + path     # paging links come back as full URLs
+        r = requests.request(method, url, headers=h, timeout=60, **kw)
         if r.status_code >= 400:
             raise MailError(f"Microsoft Graph error {r.status_code}: {r.text[:300]}")
         return r.json() if r.content and "json" in r.headers.get("Content-Type", "") else {}
 
-    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word=""):
+    SKIP_FOLDERS = ("sentitems", "drafts", "deleteditems", "outbox", "junkemail", "conversationhistory",
+                    "syncissues", "scheduled")
+
+    def _skip_folder_ids(self):
+        """Folder ids of Sent / Drafts / Deleted / Junk etc. - everything else counts as 'mail that came in'."""
+        if getattr(self, "_skip_ids", None) is None:
+            ids = set()
+            for name in self.SKIP_FOLDERS:
+                try:
+                    ids.add(self._req("GET", f"/me/mailFolders/{name}", params={"$select": "id"})["id"])
+                except Exception:  # noqa: BLE001 - not every mailbox has every folder
+                    pass
+            self._skip_ids = ids
+        return self._skip_ids
+
+    def list_messages(self, days=14, limit=75, unread_only=False, search="", subject_word="", all_folders=False):
+        """Newest first. Follows Microsoft's paging so nothing past the first 100 is dropped. all_folders=True also
+        reads mail that rules moved out of the Inbox into other folders (not Sent / Drafts / Deleted / Junk)."""
         since = (datetime.utcnow() - timedelta(days=int(days))).strftime("%Y-%m-%dT%H:%M:%SZ")
         flt = f"receivedDateTime ge {since}"
         if unread_only:
             flt += " and isRead eq false"
+        sel = "id,subject,from,receivedDateTime,bodyPreview,hasAttachments,parentFolderId"
         params = {"$top": str(min(int(limit), 100)), "$orderby": "receivedDateTime desc", "$filter": flt,
-                  "$select": "id,subject,from,receivedDateTime,bodyPreview,hasAttachments"}
+                  "$select": sel}
         if search:
-            params = {"$top": str(min(int(limit), 100)), "$search": f'"{search}"',
-                      "$select": "id,subject,from,receivedDateTime,bodyPreview,hasAttachments"}
-        data = self._req("GET", "/me/mailFolders/inbox/messages", params=params)
+            params = {"$top": str(min(int(limit), 100)), "$search": f'"{search}"', "$select": sel}
+        skip = self._skip_folder_ids() if all_folders else set()
+        path = "/me/messages" if all_folders else "/me/mailFolders/inbox/messages"
+        raw = []
+        data = self._req("GET", path, params=params)
+        while True:
+            raw += [m for m in data.get("value", []) if m.get("parentFolderId") not in skip]
+            nxt = data.get("@odata.nextLink")
+            if not nxt or len(raw) >= int(limit):
+                break
+            data = self._req("GET", nxt)
         out = []
-        for m in data.get("value", []):
+        for m in raw[:int(limit)]:
             fr = (m.get("from") or {}).get("emailAddress", {})
             out.append({"msg_id": m["id"], "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                         "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
@@ -384,6 +436,11 @@ class GraphMail:
         return {"msg_id": msg_id, "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                 "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
                 "body": body, "attachments": atts, "attachment_names": names}
+
+    def reply(self, msg_id, body):
+        """Reply in the same thread through Microsoft 365 (shows up in Sent Items like any reply)."""
+        self._req("POST", f"/me/messages/{msg_id}/reply", json={"comment": body})
+        return "Reply sent through Microsoft 365."
 
     def send(self, to, cc, subject, body, attachments, review=True):
         def rcpts(s):

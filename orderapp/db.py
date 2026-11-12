@@ -134,7 +134,7 @@ DEFAULT_SETTINGS = {
                     "Jimmy / Sally - orders@apartmentinterior.net - order desk",
     "ai_summary_morning": "07:00",
     "ai_summary_evening": "17:00",
-    "ai_lookback_days": "3",
+    "ai_lookback_days": "7",
     "ai_month_limit": "50",
 }
 
@@ -393,6 +393,9 @@ def _data_migrations(con):
     r = con.execute("SELECT value FROM settings WHERE key='ai_api_key'").fetchone()
     if r and r[0] and not r[0].strip().startswith("sk-ant-"):   # a browser autofilled a password in there - drop it
         con.execute("UPDATE settings SET value='' WHERE key='ai_api_key'")
+    if "dm_ai_lookback7" not in done:   # 2.36.0: read a full week back each check (was 3 days)
+        con.execute("UPDATE settings SET value='7' WHERE key='ai_lookback_days' AND value='3'")
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_ai_lookback7', '1')")
     if "dm_graph_app" not in done:      # 2.33.1: fill in the company's Microsoft 365 app if it was blank
         r = con.execute("SELECT value FROM settings WHERE key='graph_client_id'").fetchone()
         if r is not None and not (r[0] or "").strip():

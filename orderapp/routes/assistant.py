@@ -3,7 +3,7 @@ import json
 import threading
 from datetime import date
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from ..db import now, q, set_setting, setting, x
 from ..security import login_required
@@ -37,6 +37,7 @@ def home():
                            today=date.today().isoformat(), customers=customers, rules=setting("ai_rules") or "",
                            last_note=request.args.get("note", type=int),
                            last_result=json.loads(setting("ai_last_result") or "{}"),
+                           progress=setting("ai_progress") or "", summary_parts=summary_parts,
                            chat=[dict(r, actions=json.loads(r["actions"] or "[]")) for r in
                                  reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 12"))])
 
@@ -45,7 +46,6 @@ def _bg(fn):
     app = current_app._get_current_object()
 
     def work():
-        _running["on"] = True
         try:
             try:
                 import pythoncom
@@ -56,6 +56,7 @@ def _bg(fn):
                 fn()
         finally:
             _running["on"] = False
+    _running["on"] = True          # set before the page reloads, so it keeps refreshing until the check is done
     threading.Thread(target=work, daemon=True).start()
 
 
@@ -67,7 +68,7 @@ def run_now():
     else:
         from ..ai.assistant import run
         _bg(run)
-        flash("Checking email now - refresh in a minute to see what it did.", "ok")
+        flash("Checking email now - this page updates by itself when it's done.", "ok")
     return redirect(url_for("assistant.home", tab=request.form.get("tab", "review")))
 
 
@@ -221,3 +222,58 @@ def log_retry(lid):
     except AIError as e:
         flash(f"Still couldn't do it: {e}", "error")
     return redirect(url_for("assistant.home"))
+
+
+@bp.route("/assistant/log/<int:lid>/reply", methods=["POST"])
+@login_required
+def log_reply(lid):
+    """Send your own reply to any email the assistant picked up (keeps it in the same Outlook thread)."""
+    from ..ai.assistant import reply_to
+    try:
+        msg = reply_to(lid, request.form.get("body", ""), mark_done=request.form.get("done") == "1")
+        flash(f"✉ {msg}", "ok")
+    except Exception as e:  # noqa: BLE001 - show any mail problem on the page
+        flash(f"Reply not sent: {e}", "error")
+    return redirect(url_for("assistant.home", tab=request.form.get("tab", "review")))
+
+
+@bp.route("/assistant/log/<int:lid>/draft", methods=["POST"])
+@login_required
+def log_draft(lid):
+    """Let the assistant write a reply into the box for you to edit."""
+    from ..ai.assistant import draft_reply
+    from ..ai.client import AIError
+    try:
+        return jsonify(ok=True, text=draft_reply(lid))
+    except AIError as e:
+        return jsonify(ok=False, error=str(e))
+
+
+def summary_parts(body):
+    """Turn a plain-text summary into header / at-a-glance numbers / sections of items for a tidy page."""
+    blocks = [b for b in (body or "").split("\n\n") if b.strip()]
+    head = blocks[0] if blocks and not blocks[0].lstrip().startswith("-") and "\n" not in blocks[0] else ""
+    out = {"head": head, "glance": [], "sections": []}
+    for b in blocks[1:] if head else blocks:
+        lines = b.split("\n")
+        title = lines[0].strip()
+        items = []
+        for ln in lines[1:]:
+            t = ln.strip()
+            if t.startswith("- "):
+                t = t[2:]
+            if not t:
+                continue
+            who, sep, rest = t.partition(": ")
+            arrow = rest.split(" -> ", 1) if sep else t.split(" -> ", 1)
+            what = arrow[0] if sep else arrow[0]
+            did = arrow[1] if len(arrow) > 1 else ""
+            status = ""
+            if did.endswith("]") and "[" in did:
+                did, status = did[:did.rindex("[")].strip(), did[did.rindex("[") + 1:-1]
+            items.append({"who": who if sep else "", "what": what, "did": did, "status": status})
+        if title.lower().startswith("at a glance"):
+            out["glance"] = [i["what"] if not i["who"] else f"{i['who']}: {i['what']}" for i in items]
+        else:
+            out["sections"].append({"title": title, "items": items})
+    return out

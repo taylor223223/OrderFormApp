@@ -14,6 +14,7 @@ Every reply to a customer has the catalog attached. Practice mode does all the a
 (except replies to the test addresses, and order-desk emails redirected to the practice address).
 """
 import json
+import threading
 import os
 import re
 from datetime import date, datetime, timedelta
@@ -1029,10 +1030,16 @@ def process(m, email_id=None, customer=None):
 
 
 # ------------------------------------------------------------------ the inbox check
-def run(prov=None, limit=60):
-    """Read new inbox emails since the last check (catches up after the computer was off / offline).
-    The result (or the reason it couldn't) is kept in ai_last_result for the Assistant page."""
-    res = {"read": 0, "new": 0, "error": "", "skipped_me": 0, "skipped_old": 0, "seen": 0}
+_CHECK_LOCK = threading.Lock()
+
+
+def run(prov=None, limit=None):
+    """Read every UNREAD email that came in since the last check (all inbox folders, every page), handle each one, and
+    keep a per-email summary of this check in ai_last_result for the Assistant page."""
+    res = {"read": 0, "new": 0, "error": "", "skipped_me": 0, "skipped_old": 0, "seen": 0, "items": [],
+           "left": 0}
+    if not _CHECK_LOCK.acquire(blocking=False):     # the timer and the button never read the inbox at once
+        return json.loads(setting("ai_last_result") or "{}") or res
     try:
         res = _run_checked(prov, res, limit)
     except Exception as e:  # noqa: BLE001 - show it, never die silently
@@ -1044,6 +1051,8 @@ def run(prov=None, limit=60):
                 fh.write(f"\n{now()} AI assistant check failed:\n{traceback.format_exc()}\n")
         except Exception:  # noqa: BLE001
             pass
+    finally:
+        _CHECK_LOCK.release()
     res["when"] = now()[:16]
     set_setting("ai_last_result", json.dumps(res))
     return res
@@ -1069,27 +1078,62 @@ def _run_checked(prov, res, limit):
         _PROV["p"] = None
 
 
-def _run(prov, res, limit):
-    last = setting("ai_last_check") or ""
+def _lookback_days():
+    """How far back each check reads. Never shrinks below the setting (default 7 days) and stretches to cover the
+    whole time since the last check, so emails are never skipped - ones already handled are just recognised."""
     try:
-        back = int(setting("ai_lookback_days") or 3)
+        back = int(setting("ai_lookback_days") or 7)
     except ValueError:
-        back = 3
+        back = 7
+    back = max(back, 2)
+    last = setting("ai_last_check") or ""
     if last:
         try:
-            gap = (datetime.now() - datetime.strptime(last[:16], "%Y-%m-%d %H:%M")).days + 1
-            back = max(1, min(back if gap > back else gap, 14))
+            gap = (datetime.now() - datetime.strptime(last[:16], "%Y-%m-%d %H:%M")).days + 2
+            back = max(back, gap)
         except ValueError:
             pass
-    try:
-        msgs = prov.list_messages(days=back, limit=200)
+    return min(back, 30)
+
+
+def _check_items(msg_ids):
+    """One line per email handled in this check - who, what it was, what the assistant did."""
+    if not msg_ids:
+        return []
+    marks = ",".join("?" * len(msg_ids))
+    rows = q(f"""SELECT id, msg_id, sender, sender_name, subject, received, category, summary, action, status, order_ids
+                 FROM ai_log WHERE msg_id IN ({marks}) ORDER BY id""", tuple(msg_ids))
+    last = {}
+    for r in rows:              # an email can log more than one line - keep its last word on it
+        last[r["msg_id"]] = r
+    items = []
+    for mid in msg_ids:
+        r = last.get(mid)
+        if not r:
+            continue
+        items.append({"id": r["id"], "from": r["sender_name"] or r["sender"] or "", "email": r["sender"] or "",
+                      "subject": r["subject"] or "", "received": (r["received"] or "")[:16],
+                      "category": r["category"] or "", "summary": r["summary"] or "", "action": r["action"] or "",
+                      "status": r["status"] or "", "order_ids": r["order_ids"] or ""})
+    return items
+
+
+def _run(prov, res, limit):
+    back = _lookback_days()
+    try:            # only emails you haven't opened yet - ones you've read yourself are left alone
+        msgs = prov.list_messages(days=back, limit=2000, all_folders=True, unread_only=True)
+    except TypeError:                               # a mail provider without the all-folders option
+        msgs = prov.list_messages(days=back, limit=2000, unread_only=True)
     except Exception as e:  # noqa: BLE001
         res["error"] = f"Couldn't read the inbox: {e}"
         return res
     seen = {r["msg_id"] for r in q("SELECT msg_id FROM ai_log WHERE msg_id IS NOT NULL")}
     started = (setting("ai_started") or "")[:16]
-    todo = []
+    todo, dup = [], set()
     for mm in msgs:
+        if mm["msg_id"] in dup:
+            continue
+        dup.add(mm["msg_id"])
         if mm["msg_id"] in seen:
             res["seen"] += 1
         elif is_me(mm.get("sender")):
@@ -1099,12 +1143,14 @@ def _run(prov, res, limit):
         else:
             todo.append(mm)
     todo.sort(key=lambda mm: mm.get("received") or "")
-    res["read"] = len(msgs)
+    res["read"] = len(dup)
     errs = getattr(type(prov), "errors", None)
     if not msgs and errs:
         res["error"] = "Outlook wouldn't let the app read the emails: " + errs[0]
     from ..routes.emails import _store
-    for mm in todo[:limit]:
+    batch = todo if not limit else todo[:int(limit)]
+    done_ids = []
+    for i, mm in enumerate(batch):
         try:
             full = prov.get_message(mm["msg_id"])
         except Exception as e:  # noqa: BLE001
@@ -1116,9 +1162,15 @@ def _run(prov, res, limit):
         try:
             process(full, eid)
         except AITransient as e:          # no internet / Claude busy: stop here, these get retried next check
-            res["error"] = f"{e} - {len(todo) - res['new']} email(s) will be tried again on the next check."
+            res["error"] = f"{e} - {len(batch) - i} email(s) will be tried again on the next check."
             break
         res["new"] += 1
+        done_ids.append(mm["msg_id"])
+        if res["new"] % 10 == 0:          # progress for the Assistant page while it works
+            set_setting("ai_progress", f"{res['new']} of {len(batch)}")
+    res["left"] = len(todo) - res["new"]
+    res["items"] = _check_items(done_ids)
+    set_setting("ai_progress", "")
     set_setting("ai_last_check", datetime.now().strftime("%Y-%m-%d %H:%M"))
     return res
 
@@ -1126,6 +1178,11 @@ def _run(prov, res, limit):
 # ------------------------------------------------------------------ morning / end-of-day summary
 STATUS_WORD = {"done": "done", "held": "HELD for you", "waiting": "waiting on them", "info": "noted",
                "error": "ERROR - check it"}
+
+
+def _short(t, n):
+    t = " ".join(str(t or "").split())
+    return t if len(t) <= n else t[:n - 1].rstrip() + "…"
 
 
 def build_summary(period, day=None):
@@ -1163,14 +1220,14 @@ def build_summary(period, day=None):
               f"{len(held)} waiting for you, {len(waiting)} waiting on customers",
               f"{len(stops)} route stop(s) and {len(new_tasks)} task(s) added"]
     sect("At a glance", glance)
-    sect(f"Needs you ({len(held)})", [f"{h['sender_name'] or h['sender']}: {h['summary'] or h['subject']} -> "
-                                      f"{'; '.join(json.loads(h['reasons'] or '[]'))[:160]}" for h in held])
+    sect(f"Needs you ({len(held)})", [f"{h['sender_name'] or h['sender']}: {_short(h['summary'] or h['subject'], 80)} -> "
+                                      f"{_short('; '.join(json.loads(h['reasons'] or '[]')), 110)}" for h in held])
     # every person who reached out, and what the assistant did with each email
     rows = []
     for who, items in people.items():
         for g in items:
-            rows.append(f"{who} ({(g['received'] or g['ts'] or '')[11:16]}): {g['summary'] or g['subject'] or ''}"
-                        f" -> {g['action'] or ''} [{STATUS_WORD.get(g['status'], g['status'])}]")
+            rows.append(f"{who} ({(g['received'] or g['ts'] or '')[11:16]}): {_short(g['summary'] or g['subject'] or '', 80)}"
+                        f" -> {_short(g['action'] or '', 90)} [{STATUS_WORD.get(g['status'], g['status'])}]")
     sect("Who reached out and what your assistant did", rows)
     sect("Emails sent for you" + tag,
          [f"{'[practice] ' if s['status'] == 'practice' else ''}{ {'customer': 'Customer', 'quote': 'Quote to customer', 'order': 'Order desk', 'coworker': 'Coworker'}.get(s['kind'], s['kind'])}"
@@ -1213,6 +1270,50 @@ def due_summaries():
             build_summary(period, day)
             made.append(period)
     return made
+
+
+def draft_reply(log_id):
+    """A short reply for Taylor to edit and send - written from the email and what the assistant already did."""
+    g = q("SELECT * FROM ai_log WHERE id=?", (log_id,), one=True)
+    if not g:
+        return ""
+    e = q("SELECT body FROM email_messages WHERE id=?", (g["email_id"],), one=True) if g["email_id"] else None
+    rules = (setting("ai_rules") or "").strip()
+    system = ("You write short, friendly, professional email replies for Taylor Anderson, a sales rep at Apartment "
+              "Interior Supply (apartment doors, blinds, screens, cabinets, countertops). Write only the reply body - "
+              "no subject line. Keep it to a few sentences, answer what they asked, never promise prices or delivery "
+              "dates that aren't in the email, and sign off 'Thank you,\nTaylor'."
+              + (f"\n\nTaylor's rules:\n{rules}" if rules else ""))
+    prompt = (f"From: {g['sender_name'] or ''} <{g['sender'] or ''}>\nSubject: {g['subject'] or ''}\n\n"
+              f"{((e['body'] if e else '') or '')[:6000]}\n\n---\nWhat the assistant already did with it: "
+              f"{g['action'] or 'nothing yet'}\nWrite Taylor's reply.")
+    return ask(fast(), system, prompt, max_tokens=1200, purpose="draft reply").strip()
+
+
+def reply_to(log_id, body, mark_done=True):
+    """Send Taylor's reply to an email the assistant picked up. Returns a message for the page."""
+    from ..emailer import MailError, provider
+    g = q("SELECT * FROM ai_log WHERE id=?", (log_id,), one=True)
+    if not g:
+        raise MailError("That email isn't in the assistant's list anymore.")
+    body = (body or "").strip()
+    if not body:
+        raise MailError("Write a reply first.")
+    prov = provider(setting)
+    subj = g["subject"] or ""
+    subj = subj if subj.lower().startswith("re:") else "Re: " + subj
+    try:
+        msg = prov.reply(g["msg_id"], body) if g["msg_id"] and hasattr(prov, "reply") else None
+    except Exception:  # noqa: BLE001 - the original can't be found (moved/deleted): send a fresh email instead
+        msg = None
+    if msg is None:
+        msg = prov.send(g["sender"], "", subj, body, [], review=False)
+    x("""INSERT INTO ai_outbox(ts, log_id, kind, to_addr, cc, subject, body, attachments, status, note)
+         VALUES (?,?,?,?,?,?,?,?,?,?)""", (now(), log_id, "reply", g["sender"], "", subj, body, "[]", "sent",
+                                           "You replied from the app"))
+    if mark_done:
+        x("UPDATE ai_log SET reviewed=1 WHERE id=?", (log_id,))
+    return msg
 
 
 def retry(log_id):
