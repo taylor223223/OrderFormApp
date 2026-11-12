@@ -271,7 +271,7 @@ def _seed_sales(r, cids, today):
                 if r.random() > season[d.month - 1] * growth * 0.85:
                     continue
                 ci = r.choices(list(MIX.keys()), weights=[9, 12, 5, 7, 8, 6, 6, 1])[0]
-                if ci == 11 and d > today - timedelta(days=300):
+                if ci == 11 and (d.year == today.year or d > today - timedelta(days=300)):
                     continue                       # Canyon Vista went quiet (shows on the win-back list)
                 inv += 1
                 name = PROPS[ci][0]
