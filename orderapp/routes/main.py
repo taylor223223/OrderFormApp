@@ -93,9 +93,31 @@ def dashboard():
         ai_summary = q("SELECT * FROM ai_summaries WHERE day=? ORDER BY id DESC LIMIT 1", (today,), one=True)
     except Exception:  # noqa: BLE001
         ai_summary = None
-    return render_template("dashboard.html", ai_summary=ai_summary, today=today, today_note=day_note(today), is_monday=date.today().weekday() == 0, route=route, crm=crm, customers=customers,
+    ai = _ai_window()
+    return render_template("dashboard.html", ai=ai, ai_summary=ai_summary, today=today, today_note=day_note(today), is_monday=date.today().weekday() == 0, route=route, crm=crm, customers=customers,
                            contacts=_contact_options(), stats=stats, by_status=by_status, recent=recent, due=due,
                            forms=form_list(), batches=pending_batches(), **_extras())
+
+
+def _ai_window():
+    """The assistant's little window on the dashboard (v2.37.2): what's open, what's scheduled, the last few chat lines."""
+    import json
+    out = {"enabled": setting("ai_enabled") == "1", "you": [], "n": {"you": 0, "office": 0, "customer": 0},
+           "later": [], "chat": []}
+    try:
+        from ..ai.followup import open_requests, scheduled_list
+        reqs = open_requests()
+        for r in reqs:
+            out["n"][r["waiting_on"]] = out["n"].get(r["waiting_on"], 0) + 1
+        out["you"] = [r for r in reqs if r["waiting_on"] == "you"][:4]
+        out["later"] = scheduled_list()[:3]
+        out["chat"] = [dict(r, actions=json.loads(r["actions"] or "[]")) for r in
+                       reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 4"))]
+    except Exception:  # noqa: BLE001 - the dashboard never breaks over this window
+        pass
+    from ..ai.render import md
+    out["md"] = md
+    return out
 
 
 def _extras():

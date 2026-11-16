@@ -190,7 +190,7 @@ def note():
     text = (request.form.get("text") or "").strip()
     if not text:
         flash("Type something for the assistant first.", "error")
-        return redirect(url_for("assistant.home"))
+        return redirect(url_for("main.dashboard") + "#ai" if request.form.get("next") == "dash" else url_for("assistant.home"))
     if setting("ai_enabled") != "1":
         flash("Turn the assistant on first (Settings -> AI Assistant).", "error")
         return redirect(url_for("assistant.home"))
@@ -205,6 +205,8 @@ def note():
         ask(text, bool(request.form.get("email_customer")))
     except AIError as e:
         flash(f"The assistant couldn't do it: {e}", "error")
+    if request.form.get("next") == "dash":       # sent from the dashboard window -> back to the dashboard
+        return redirect(url_for("main.dashboard") + "#ai")
     return redirect(url_for("assistant.home", tab=request.form.get("tab") or "review") + "#chat")
 
 

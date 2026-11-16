@@ -337,7 +337,7 @@ def extract(model, m, c, form_keys, thread_id, purpose):
     keys = form_keys or []
     specs = "\n\n".join(form_spec_text(k) for k in keys) if keys else \
         "(product not clear yet - available forms:)\n" + form_menu()
-    prompt = (f"Today is {date.today():%Y-%m-%d}.\n\nAPP RECORDS:\n{customer_facts(c)}\n\nORDER FORMS:\n{specs}\n\n"
+    prompt = (f"Today is {date.today():%A %Y-%m-%d}.\n\nAPP RECORDS:\n{customer_facts(c)}\n\nORDER FORMS:\n{specs}\n\n"
               f"EMAIL THREAD (oldest first):\n{thread_text(thread_id, m)}")
     r = ask_json(model, EXTRACT_SYSTEM.format(me=me) + rules_text(), prompt, max_tokens=8000, purpose=purpose)
     r["forms"] = [f for f in (r.get("forms") or []) if isinstance(f, dict) and f.get("form_key") in FORMS]

@@ -13,7 +13,14 @@ from .client import AIError, call
 
 SYSTEM = """You are {me}'s assistant inside his sales app (he's a sales rep for an apartment-interior products supplier:
 doors, blinds, screens, cabinets, countertops...). He types to you like he'd talk to a coworker - often several
-things at once ("word vomit"). Do ALL of it. Today is {today}.
+things at once ("word vomit"). Do ALL of it.
+
+TODAY IS {today}. That comes from the computer's clock and is always right - it is the only source of today's date.
+The next 7 days: {week}.
+- Older chat messages are stamped [sent ...] with when they were written. "Today" / "tomorrow" / "this Friday" inside an
+  old message meant relative to THAT day, not to today. Never work out today's date from the chat.
+- If he says you have the date wrong, just use the date above from then on - do NOT move, reschedule or change
+  anything because of it unless he names exactly what to move and where.
 
 You can do anything he can do in the app - use the tools: look things up, add / move / mark visited route stops, write
 day notes, add tasks and reminders, log CRM touches, save customers and contacts, find / reorder / build orders and
@@ -545,6 +552,15 @@ TOOLS = [
 BY_NAME = {t["spec"]["name"]: t["fn"] for t in TOOLS}
 
 
+def _stamp(ts):
+    """'2026-11-13 14:05' -> 'Fri 11/13 2:05 PM' so old chat lines say what day they were from."""
+    try:
+        d = datetime.strptime((ts or "")[:16], "%Y-%m-%d %H:%M")
+        return f"{d:%a %m/%d} {d:%I:%M %p}".replace(" 0", " ")
+    except ValueError:
+        return ts or "earlier"
+
+
 def history(n=12):
     return list(reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT ?", (n,))))
 
@@ -554,19 +570,21 @@ def ask(text, email_customer=False):
     from .assistant import rules_text, signature, smart
     me = signature() or "the rep"
     today = date.today()
-    system = SYSTEM.format(me=me, today=f"{today:%A %Y-%m-%d}", rules=rules_text())
+    week = ", ".join(f"{d:%a %m/%d}={d:%Y-%m-%d}" for d in (today + timedelta(days=i) for i in range(8)))
+    system = SYSTEM.format(me=me, today=f"{today:%A %B %d, %Y} ({today:%Y-%m-%d})", week=week, rules=rules_text())
     msgs = []
-    for h in history(8):                      # a little memory of the conversation
+    for h in history(8):                      # a little memory of the conversation, each stamped with when it was said
         role = "user" if h["role"] == "me" else "assistant"
+        txt = f"[sent {_stamp(h['ts'])}] " + (h["text"] or "")
         if msgs and msgs[-1]["role"] == role:
-            msgs[-1]["content"] += "\n" + (h["text"] or "")
+            msgs[-1]["content"] += "\n" + txt
         else:
-            msgs.append({"role": role, "content": h["text"] or ""})
+            msgs.append({"role": role, "content": txt})
     while msgs and msgs[0]["role"] != "user":
         msgs.pop(0)
     if msgs and msgs[-1]["role"] == "user":   # last time got no answer - don't send two "user" turns in a row
         msgs.append({"role": "assistant", "content": "(no answer)"})
-    msgs.append({"role": "user", "content": text + ("\n(If there's a customer message in this, he wants the customer "
+    msgs.append({"role": "user", "content": f"[now: {datetime.now():%A %Y-%m-%d %I:%M %p} - today's real date] " + text + ("\n(If there's a customer message in this, he wants the customer "
                                                     "emailed: email_customer=true.)" if email_customer else "")})
     x("INSERT INTO ai_chat(ts, role, text) VALUES (?,?,?)", (now(), "me", text))
     actions, reply = [], ""

@@ -75,6 +75,34 @@
     <div class="small" style="margin-top:6px"><a href="{{ url_for('crm.home') }}">Open CRM →</a></div>
   </div>
 </div>
+<!-- Assistant window -->
+<div class="card pv pv-ai" id="ai" style="margin-top:12px">
+  <div class="pvhead"><a href="{{ url_for('assistant.home') }}"><span class="ic">🤖</span> Assistant</a>
+    <span class="small muted"><a href="{{ url_for('assistant.home', tab='requests') }}">{{ ai.n.you }} on you · {{ ai.n.office }} on Jimmy · {{ ai.n.customer }} on customers</a>{% if ai.later %} · <a href="{{ url_for('assistant.home', tab='later') }}">{{ ai.later|length }} scheduled</a>{% endif %}</span></div>
+  <div class="grid g2" style="gap:12px;align-items:start">
+    <div>
+      {% if ai.chat %}<div id="aichat" style="max-height:220px;overflow:auto;padding:6px;background:#fafafa;border-radius:8px">
+      {% for m in ai.chat %}<div style="margin:5px 0;{{ 'text-align:right' if m.role == 'me' }}">
+        <div style="display:inline-block;max-width:90%;padding:5px 9px;border-radius:10px;text-align:left;font-size:13px;{{ 'background:#ede9fe;white-space:pre-wrap' if m.role == 'me' else 'background:#fff;border:1px solid #e5e7eb' }}">{% if m.role == 'me' %}{{ m.text|truncate(300) }}{% else %}{{ ai.md(m.text) }}{% endif %}</div>
+        <div class="small muted">{{ (m.ts or '')[5:16] }}</div></div>{% endfor %}</div>
+      <script>(function(){const c=document.getElementById('aichat'); if(c) c.scrollTop=c.scrollHeight;})();</script>{% endif %}
+      <form method="post" action="{{ url_for('assistant.note') }}" onsubmit="const b=this.querySelector('button');b.disabled=true;b.textContent='⏳ Working on it…'">
+        <input type="hidden" name="next" value="dash">
+        <textarea name="text" rows="2" style="margin-top:6px" placeholder="Tell it anything - e.g. send my unsent orders to Jimmy, remind me Friday to call Crystal, chart my sales by month"></textarea>
+        <div class="row" style="justify-content:space-between;margin-top:6px"><span class="small muted">{% if ai.enabled %}It does it and tells you what it did.{% else %}Turn it on in Settings → AI Assistant.{% endif %}</span>
+          <button class="btn sm primary" {{ 'disabled' if not ai.enabled }}>Send</button></div>
+      </form>
+    </div>
+    <div>
+      <div class="pvsub" style="margin-top:0">Waiting on you</div>
+      {% for r in ai.you %}<div class="small pvact"><span class="tag">{{ r.kind or 'request' }}</span> <a href="{{ url_for('assistant.home', tab='requests') }}">{{ (r.what or r.subject)|truncate(70) }}</a>{% if r.who %} <span class="muted">· {{ r.who|truncate(30) }}</span>{% endif %}</div>
+      {% else %}<div class="small muted">Nothing waiting on you. 👍</div>{% endfor %}
+      {% if ai.later %}<div class="pvsub">Coming up</div>
+      {% for s in ai.later %}<div class="small pvact"><span class="tag">{{ '✉ email' if s.kind == 'email' else '⏰ reminder' }}</span> {{ (s.due or '')[5:16] }} <span class="muted">{{ (s.payload.subject or s.payload.text or s.note or '')|truncate(60) }}</span></div>{% endfor %}{% endif %}
+      <div class="small" style="margin-top:6px"><a href="{{ url_for('assistant.home') }}">Open the assistant →</a></div>
+    </div>
+  </div>
+</div>
 {% if batches %}
 <div class="card" style="margin-top:16px"><b>Waiting for your review</b>
   <ul>{% for b in batches[:6] %}<li><a href="{{ url_for('imports.review_batch', bid=b.id) }}">{{ b.label }}</a> <span class="muted">({{ b.n }} items)</span></li>{% endfor %}</ul></div>
