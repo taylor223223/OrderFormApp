@@ -108,6 +108,8 @@ def match_reply(subject):
             found.append({"order_id": o["id"], "cname": o["cname"] or "", "po": o["po"] or "",
                           "vendor_ref": o["vendor_ref"] or "", "status": o["status"], "title": o["title"],
                           "how": "Reply to your order email", "sure": True, "line": strip_re(subject)[:140]})
+    if len(found) > 1:      # same property + product sent twice: the newest open one is the one being answered
+        found = [max(found, key=lambda f: f["order_id"])]
     if found:
         return found
     res = [r for r in DL.match(strip_re(subject)) if r["sure"]]

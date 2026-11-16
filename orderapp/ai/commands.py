@@ -148,6 +148,29 @@ def t_send_order_to_desk(order_id):
     return {"order_id": order_id, "email": st, "to": desk}
 
 
+def t_send_unsent_orders(include_drafts=False, kind=""):
+    """Every order / quote request made in the app but not sent yet -> its own email to Jimmy, one by one."""
+    sts = ("Ready", "Draft") if include_drafts else ("Ready",)
+    sql = ("SELECT o.id, o.status, coalesce(o.kind,'order') kind FROM orders o WHERE o.status IN (%s) "
+           "AND coalesce(o.sent_subject,'')='' " % ",".join("?" * len(sts)))
+    a = list(sts)
+    if kind:
+        sql += "AND coalesce(o.kind,'order')=? "
+        a.append(kind)
+    rows = q(sql + "ORDER BY o.id", a)
+    sent = []
+    for r in rows:
+        res = t_send_order_to_desk(r["id"])
+        o = q("SELECT o.id, o.sent_subject, c.name cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id "
+              "WHERE o.id=?", (r["id"],), one=True)
+        sent.append({"order_id": r["id"], "kind": r["kind"], "subject": (o["sent_subject"] if o else "") or "",
+                     "email": res.get("email"), "to": res.get("to")})
+    drafts = 0 if include_drafts else (q("SELECT COUNT(*) n FROM orders WHERE status='Draft' AND "
+                                         "coalesce(sent_subject,'')=''", one=True)["n"])
+    return {"sent": sent, "count": len(sent), "drafts_not_sent": drafts,
+            "note": "List each one back to Taylor (order #, subject). Drafts aren't sent unless he says to include them."}
+
+
 def t_reorder(order_id, po=""):
     from ..routes.orders import make_reorder
     from ..catalog import FORMS
@@ -298,6 +321,9 @@ TOOLS = [
     _tool(t_set_order_step, "Move an order/quote to a step, like tapping its button: Order ready, Order sent, "
           "Delivered, Quote ready, Request sent, Quote received, Quote sent, Approved / ordered, Declined.",
           {"order_id": I, "step": S}, ["order_id", "step"]),
+    _tool(t_send_unsent_orders, "Send EVERY order / quote request that's ready but not sent yet to Jimmy - one email "
+          "each, subject '<Apartment> <Order type>' (+ 'Quote' for quotes). Use when he says 'send my orders', "
+          "'send the ones I haven't sent', etc.", {"include_drafts": {"type": "boolean"}, "kind": S}),
     _tool(t_send_order_to_desk, "Email an order / quote request PDF to the order desk (Jimmy).", {"order_id": I},
           ["order_id"]),
     _tool(t_reorder, "Make a new draft with the same items as a past app order.", {"order_id": I, "po": S},

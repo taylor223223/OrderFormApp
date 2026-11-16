@@ -20,7 +20,7 @@
     <div><label>Default when sending</label><select name="send_mode"><option value="review" {{ 'selected' if v.send_mode!='send' }}>Open a draft for me to review (safer)</option><option value="send" {{ 'selected' if v.send_mode=='send' }}>Send immediately</option></select></div>
     <div><label>Send orders to</label><input name="order_to" value="{{ v.order_to }}"></div>
     <div><label>Always CC</label><input name="order_cc" value="{{ v.order_cc }}"></div>
-    <div style="grid-column:1/-1"><label>Subject template</label><input name="subject_template" value="{{ v.subject_template }}"><div class="small muted">Placeholders: {title} {customer} {po} {date} {sales_rep} {order_id}</div></div>
+    <div style="grid-column:1/-1"><label>Subject template</label><input name="subject_template" value="{{ v.subject_template }}"><div class="small muted">Placeholders: {customer} {type} {quote} {po_tail} {title} {po} {date} {sales_rep} {order_id}</div></div>
     <div style="grid-column:1/-1"><label>Message template</label><textarea name="body_template" rows="5">{{ v.body_template }}</textarea></div>
   </div>
   <div id="graphbox" class="card" style="background:#fafbfc">

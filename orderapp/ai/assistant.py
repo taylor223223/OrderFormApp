@@ -460,7 +460,7 @@ def send_outbox(out_id, prov=None):
         return "failed"
     x("UPDATE ai_outbox SET status='sent', sent_at=? WHERE id=?", (now(), out_id))
     if o["order_id"] and o["kind"] == "order":
-        _mark_sent(o["order_id"], o["to_addr"])
+        _mark_sent(o["order_id"], o["to_addr"], (o["subject"] or "").replace("[PRACTICE] ", "", 1))
     if o["order_id"] and o["kind"] == "quote":      # the priced quote went to the customer: Quote sent
         first = q("SELECT * FROM orders WHERE id=?", (o["order_id"],), one=True)
         for mbr in (quote_group(first) if first else []):
@@ -470,12 +470,12 @@ def send_outbox(out_id, prov=None):
     return "sent"
 
 
-def _mark_sent(oid, to):
+def _mark_sent(oid, to, subject=""):
     o = q("SELECT * FROM orders WHERE id=?", (oid,), one=True)
     if not o:
         return
-    x("UPDATE orders SET status='Sent', sent_at=coalesce(sent_at, ?), sent_to=?, updated=? WHERE id=?",
-      (now(), to, now(), oid))
+    x("UPDATE orders SET status='Sent', sent_at=coalesce(sent_at, ?), sent_to=?, updated=?, "
+      "sent_subject=coalesce(nullif(?, ''), sent_subject) WHERE id=?", (now(), to, now(), subject, oid))
     add_status(oid, "Sent", f"AI assistant emailed it to {to}")
 
 

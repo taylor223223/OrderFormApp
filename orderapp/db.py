@@ -86,7 +86,7 @@ DEFAULT_SETTINGS = {
     # the company's own Microsoft 365 app registration ("AIS Sales Support", made 11/07 - not a secret)
     "graph_client_id": "89f24f4e-a9a9-4611-8693-dcf1c200907c",
     "graph_tenant": "86fb3ada-89fc-411b-a8cc-42acc9ebbdc5",
-    "subject_template": "{title} - {customer} - PO {po}",
+    "subject_template": "{customer} {type}{quote}{po_tail}",
     "body_template": "Hello,\n\nPlease see the attached {title} for {customer} (PO {po}).\n\nThank you,\n{sales_rep}",
     "output_dir": "",
     "date_format": "%m/%d/%Y",
@@ -393,6 +393,10 @@ def _data_migrations(con):
     r = con.execute("SELECT value FROM settings WHERE key='ai_api_key'").fetchone()
     if r and r[0] and not r[0].strip().startswith("sk-ant-"):   # a browser autofilled a password in there - drop it
         con.execute("UPDATE settings SET value='' WHERE key='ai_api_key'")
+    if "dm_subject_v2" not in done:      # 2.36.2: "The Ryan Roller Shade" / "... Quote" - PO only when there is one
+        con.execute("UPDATE settings SET value='{customer} {type}{quote}{po_tail}' WHERE key='subject_template' "
+                    "AND value='{title} - {customer} - PO {po}'")
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_subject_v2', '1')")
     if "dm_ai_lookback7" not in done:   # 2.36.0: read a full week back each check (was 3 days)
         con.execute("UPDATE settings SET value='7' WHERE key='ai_lookback_days' AND value='3'")
         con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_ai_lookback7', '1')")

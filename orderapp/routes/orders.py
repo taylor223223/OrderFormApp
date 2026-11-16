@@ -392,10 +392,23 @@ def open_folder(oid):
     return redirect(url_for("orders.view", oid=oid))
 
 
+def order_type(o):
+    """'Roller Shade', 'Window Screen', 'Door'... from the order form's name (falls back to the order title)."""
+    f = FORMS.get(o["form_key"] or "")
+    name = (f.get("title") if isinstance(f, dict) else "") or o["title"] or ""
+    name = re.sub(r"\(.*?\)", "", name)
+    name = re.sub(r"\b(Order Form|Form|Order)\b", "", name, flags=re.I)
+    return " ".join(name.split())
+
+
 def _fmt(tmpl, o, data):
     h = data.get("header", {})
+    from ..order_kind import is_quote
+    po = (o["po"] or "").strip()
     vals = {"title": o["title"] or "", "customer": h.get("name") or "", "po": o["po"] or "",
-            "date": o["order_date"] or "", "sales_rep": setting("sales_rep") or "", "order_id": o["id"]}
+            "date": o["order_date"] or "", "sales_rep": setting("sales_rep") or "", "order_id": o["id"],
+            "type": order_type(o), "quote": " Quote" if is_quote(o) else "",
+            "po_tail": f" - PO {po}" if po else ""}
     try:
         return tmpl.format(**vals)
     except (KeyError, ValueError, IndexError):
