@@ -67,7 +67,7 @@
       <div><label>Follow-ups before it's handed to me</label><input name="ai_nudge_max" value="{{ v.ai_nudge_max or '2' }}" inputmode="numeric"></div>
       <div><label>Jimmy / office overdue after (business days)</label><input name="ai_nudge_office_days" value="{{ v.ai_nudge_office_days or '1' }}" inputmode="numeric"></div>
       <div><label>Quote follow-up after (business days, 0 = never)</label><input name="ai_nudge_quote_days" value="{{ v.ai_nudge_quote_days or '5' }}" inputmode="numeric"></div>
-      <div><label>Show orders waiting on an invoice # for (days after sending)</label><input name="ai_invoice_days" value="{{ v.ai_invoice_days or '14' }}" inputmode="numeric"></div></div></div>
+      <div><label>Show orders waiting on an invoice # for (days after sending)</label><input name="ai_invoice_days" value="{{ v.ai_invoice_days or '4' }}" inputmode="numeric"></div></div></div>
     <div><label>Morning summary at</label><input name="ai_summary_morning" value="{{ v.ai_summary_morning or '' }}" placeholder="07:00">
       <label>End-of-day summary at</label><input name="ai_summary_evening" value="{{ v.ai_summary_evening or '' }}" placeholder="17:00"></div>
     <div><label>Fast model (sorting, cross-check)</label><input name="ai_model_fast" value="{{ v.ai_model_fast }}">

@@ -652,6 +652,21 @@ def restore(tid):
 
 
 # ---------------- tracking ----------------
+@bp.route("/tracking/bulk_delivered", methods=["POST"])
+@login_required
+def bulk_delivered():
+    """Clean up the past: every sent order from before a date -> Delivered (placeholder invoice # optional)."""
+    from ..ai.commands import t_bulk_update_orders
+    before = (request.form.get("before") or "").strip()[:10]
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", before):
+        flash("Pick a date first.", "error")
+        return redirect(url_for("orders.tracking"))
+    r = t_bulk_update_orders("Delivered", sent_before=before, invoice_if_missing=(request.form.get("invoice") or "").strip())
+    flash(f"Marked {r['updated']} order(s) Delivered" + (f" ({r['placeholder_invoice_added']} got the placeholder invoice #)"
+          if r["placeholder_invoice_added"] else "") + ".", "ok")
+    return redirect(url_for("orders.tracking"))
+
+
 @bp.route("/tracking")
 @login_required
 def tracking():

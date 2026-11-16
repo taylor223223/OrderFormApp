@@ -185,7 +185,7 @@ def open_requests():
                       "kind": t["category"] or "", "id": t["id"], "ref": "thread", "nudges": t["nudges"] or 0,
                       "detail": t["reason"] or "Waiting for their answer", "subject": t["subject"] or ""})
     # only orders sent in the last few weeks - older ones without a # were handled before the app tracked invoices
-    since = (datetime.now() - timedelta(days=_int("ai_invoice_days", 14))).strftime("%Y-%m-%d")
+    since = (datetime.now() - timedelta(days=_int("ai_invoice_days", 4))).strftime("%Y-%m-%d")
     for o in q("""SELECT o.*, c.name cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
                   WHERE o.status='Sent' AND coalesce(o.waiting_closed,'')='' ORDER BY o.id"""):
         quote = (o["kind"] or "order") == "quote"

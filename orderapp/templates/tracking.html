@@ -8,6 +8,11 @@
 {% if undo %}<div class="flash ok row" style="gap:10px;align-items:center" id="undoBar">🗑️ Deleted order #{{ undo.order_id }}{% if undo.label %} ({{ undo.label }}){% endif %}.
 <form method="post" action="{{ url_for('orders.restore', tid=undo.id) }}"><input type="hidden" name="next" value="{{ url_for('orders.tracking') }}"><button class="btn sm primary">Undo</button></form>
 <span class="small muted">It stays in Recently deleted (bottom of this page) for 30 days.</span></div>{% endif %}
+<details class="card small" style="margin-bottom:10px"><summary style="cursor:pointer"><b>✅ Clean up past orders</b> <span class="muted">- mark every sent order from before a date as Delivered in one go</span></summary>
+<form method="post" action="{{ url_for('orders.bulk_delivered') }}" class="row" style="gap:8px;margin-top:6px;align-items:end;flex-wrap:wrap" onsubmit="return confirm('Mark every Sent / Confirmed / Backordered / Shipped order sent before this date as Delivered? Nothing is emailed.')">
+  <div><label>Sent before</label><input type="date" name="before" value="{{ today_iso() }}" style="width:auto"></div>
+  <div><label>Invoice # for ones without one (optional)</label><input name="invoice" placeholder="e.g. 111111" style="width:160px"></div>
+  <button class="btn primary sm">Mark them Delivered</button></form></details>
 <div class="row" style="margin-bottom:10px">
   {% for k in ['open','all'] + order_chips %}
   <a class="tag {{ 'st-' ~ k.split()[0] if k not in ('open','all') }}" style="{{ 'outline:2px solid var(--brand)' if st==k }}" href="{{ url_for('orders.tracking', status=k, q=s) }}">{{ k|capitalize if k in ('open','all') else k }}{% if k in counts %} ({{ counts[k] }}){% endif %}</a>

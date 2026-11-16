@@ -1,13 +1,13 @@
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from flask import Flask, abort, request, session
 
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.37.4"
+__version__ = "2.37.5"
 
 
 def _secret_key():
@@ -200,6 +200,28 @@ def create_app(db_path=None, testing=False, demo=None):
         app.register_blueprint(bp)
     if not testing and not app.config["DEMO"]:
         _start_email_watcher(app)
+    @app.errorhandler(500)
+    def _crashed(e):
+        """A page broke: save the details to crash.log (next to the database) and say what happened, instead of the
+        bare "Internal Server Error" page (v2.37.5)."""
+        import html
+        import traceback
+        from flask import request
+        orig = getattr(e, "original_exception", None) or e
+        tb = "".join(traceback.format_exception(type(orig), orig, orig.__traceback__))
+        try:
+            with open(os.path.join(os.path.dirname(app.config["DB_PATH"]), "crash.log"), "a", encoding="utf-8") as f:
+                f.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} {request.method} {request.path} (v{__version__})\n{tb}")
+        except Exception:  # noqa: BLE001
+            pass
+        detail = "" if app.config.get("CLOUD") else (
+            f"<details open><summary>Details (send this to Claude to fix it)</summary><pre style='white-space:pre-wrap;"
+            f"font-size:12px'>{html.escape(tb[-4000:])}</pre></details>")
+        return (f"<!doctype html><meta charset=utf-8><title>Something broke</title><body style='font-family:Arial;"
+                f"max-width:900px;margin:30px auto;padding:0 16px'><h2>Something broke on this page</h2><p><b>"
+                f"{html.escape(type(orig).__name__)}: {html.escape(str(orig)[:300])}</b></p><p>It was saved to crash.log. "
+                f"<a href='/'>Back to the dashboard</a></p>{detail}</body>"), 500
+
     return app
 
 

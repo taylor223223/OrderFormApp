@@ -29,6 +29,7 @@ def home():
     sched = q("SELECT t.*, c.name cname FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id "
               "WHERE t.done=0 AND t.owner IN ('ai','ai-schedule') ORDER BY t.id DESC")
     summ = q("SELECT * FROM ai_summaries ORDER BY id DESC LIMIT 20") if tab == "summaries" else []
+    from ..ai.commands import load_actions
     from ..ai.followup import open_requests, scheduled_list
     reqs = open_requests()
     later = scheduled_list()
@@ -42,8 +43,8 @@ def home():
                            last_note=request.args.get("note", type=int),
                            last_result=json.loads(setting("ai_last_result") or "{}"),
                            progress=setting("ai_progress") or "", summary_parts=summary_parts,
-                           reqs=reqs, later=later, invoice_days=setting("ai_invoice_days") or "14", md=md, chart_svg=chart_svg,
-                           chat=[dict(r, actions=json.loads(r["actions"] or "[]")) for r in
+                           reqs=reqs, later=later, invoice_days=setting("ai_invoice_days") or "4", md=md, chart_svg=chart_svg,
+                           chat=[dict(r, actions=load_actions(r["actions"])) for r in
                                  reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 12"))])
 
 
@@ -205,6 +206,9 @@ def note():
         ask(text, bool(request.form.get("email_customer")))
     except AIError as e:
         flash(f"The assistant couldn't do it: {e}", "error")
+    except Exception as e:  # noqa: BLE001 - a bug never takes the page down; say what happened instead
+        current_app.logger.exception("assistant chat failed")
+        flash(f"The assistant hit an error and stopped: {str(e)[:200]}", "error")
     if request.form.get("next") == "dash":       # sent from the dashboard window -> back to the dashboard
         return redirect(url_for("main.dashboard") + "#ai")
     return redirect(url_for("assistant.home", tab=request.form.get("tab") or "review") + "#chat")

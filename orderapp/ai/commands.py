@@ -16,6 +16,9 @@ SYSTEM = """You are {me}'s assistant inside his sales app (he's a sales rep for 
 doors, blinds, screens, cabinets, countertops...). He types to you like he'd talk to a coworker - often several
 things at once ("word vomit"). Do ALL of it.
 
+When he tells you to change orders (mark delivered / sent / done, put invoice #s on, clear them), just do it with the
+order tools - never run it through process_customer_message and never hold it for review. For many orders at once use
+bulk_update_orders in ONE call.
 Be quick and efficient: when you need several lookups or actions that don't depend on each other, call them all in
 the SAME step instead of one at a time, and don't look up things you already know.
 
@@ -151,6 +154,49 @@ def t_set_order_step(order_id, step):
     from ..routes.orders import apply_status
     st = apply_status(int(order_id), step, None, "Set by the AI assistant (you asked)")
     return {"order_id": order_id, "now": step, "status": st, "approved": step == APPROVED}
+
+
+BULK_DEFAULT = ["Sent", "Confirmed", "Backordered", "Shipped"]
+
+
+def t_bulk_update_orders(step="Delivered", statuses=None, kind="order", sent_before="", customer_id=None, ids=None,
+                         invoice_if_missing="", limit=1000):
+    """Many orders in ONE step (v2.37.5): e.g. mark every past order Delivered, filling a placeholder invoice #."""
+    from ..order_kind import TAPS
+    from ..order_notices import set_invoice
+    from ..routes.orders import apply_status
+    from .followup import close_request
+    if step and step not in [t[0] for t in TAPS]:
+        return {"error": f"step must be one of: {', '.join(t[0] for t in TAPS)}"}
+    sts = statuses or BULK_DEFAULT
+    sql = "SELECT * FROM orders WHERE 1=1"
+    a = []
+    if ids:
+        sql += f" AND id IN ({','.join('?' * len(ids))})"
+        a += [int(i) for i in ids]
+    else:
+        sql += f" AND status IN ({','.join('?' * len(sts))})"
+        a += list(sts)
+        if kind:
+            sql += " AND coalesce(kind,'order')=?"
+            a.append(kind)
+    if customer_id:
+        sql += " AND customer_id=?"
+        a.append(int(customer_id))
+    if sent_before:
+        sql += " AND substr(coalesce(sent_at, order_date, created, ''), 1, 10) < ?"
+        a.append(sent_before[:10])
+    rows = q(sql + " ORDER BY id LIMIT ?", a + [int(limit)])
+    inv = 0
+    for o in rows:
+        if invoice_if_missing and not (o["invoice_no"] or "").strip() and (o["kind"] or "order") == "order":
+            set_invoice(o["id"], str(invoice_if_missing), note="placeholder - you told the assistant")
+            inv += 1
+        if step:
+            apply_status(o["id"], step, None, "Set by the AI assistant (you asked - bulk)")
+        close_request("order", o["id"])
+    return {"updated": len(rows), "step": step, "placeholder_invoice_added": inv,
+            "order_ids": [o["id"] for o in rows][:40] + (["..."] if len(rows) > 40 else [])}
 
 
 def t_send_order_to_desk(order_id):
@@ -540,6 +586,13 @@ TOOLS = [
     _tool(t_mark_visit_done, "Mark a route stop visited and log it in the CRM (how: In person / Call / Text / Email; "
           "ordered: Yes / No; order_what: what they ordered).",
           {"stop_id": I, "notes": S, "how": S, "who": S, "ordered": S, "order_what": S}, ["stop_id"]),
+    _tool(t_bulk_update_orders, "Change MANY orders in ONE call - always use this (not one order at a time) when he "
+          "says all / every / the past ones, e.g. \"mark them all delivered, use 1s if an invoice is needed\" -> "
+          "step=Delivered, invoice_if_missing=\"111111\" (whatever he says). Defaults: open sent orders (Sent, Confirmed, "
+          "Backordered, Shipped), kind=order. Filter with statuses, kind (order|quote|\"\" for both), sent_before "
+          "(YYYY-MM-DD), customer_id, or exact ids. Nothing is emailed. Just do it and report the count.",
+          {"step": S, "statuses": {"type": "array", "items": S}, "kind": S, "sent_before": S, "customer_id": I,
+           "ids": {"type": "array", "items": I}, "invoice_if_missing": S}),
     _tool(t_set_invoice, "Put the 6-digit invoice # (from Jimmy) on an order.", {"order_id": I, "invoice_no": S},
           ["order_id", "invoice_no"]),
     _tool(t_forward_quote, "Email a returned quote to the customer (a project's parts go as one combined PDF).",
@@ -570,7 +623,7 @@ SPECS = [t["spec"] for t in TOOLS]
 # one quick thing ("log a visit at Sample Palms", "remind me Friday to call Pat") -> the cheaper model (v2.37.3)
 _SIMPLE = re.compile(r"^\s*(remind|log|mark|add|note|save|schedule|move|put|set|text|call|visited|cancel|delete|"
                      r"what|when|who|where|how many|show|find|look up|is|did|does)\b", re.I)
-_MULTI = re.compile(r"\b(and then|also|then|plus|after that|chart|graph|overview|recommend|analy|compare|quote|"
+_MULTI = re.compile(r"\b(all|every|them|those|and then|also|then|plus|after that|chart|graph|overview|recommend|analy|compare|quote|"
                     r"order|reorder|email|reply|forward|send)\b|[;\n]", re.I)
 
 
@@ -628,7 +681,14 @@ def ask(text, email_customer=False):
     actions, reply = [], ""
     model = pick_model(text)
     for _ in range(16):
-        r = call(model, system, msgs, tools=SPECS, max_tokens=6000, purpose="chat")
+        try:
+            r = call(model, system, msgs, tools=SPECS, max_tokens=6000, purpose="chat")
+        except AIError as e:       # keep what was already done and say what went wrong - never lose the whole request
+            if not actions:
+                raise
+            reply = (f"I got partway and then hit a problem talking to Claude ({str(e)[:160]}). What I already did is "
+                     "listed below - tell me to keep going to finish.")
+            break
         content = r.get("content") or []
         msgs.append({"role": "assistant", "content": content})
         uses = [b for b in content if b.get("type") == "tool_use"]
@@ -648,6 +708,9 @@ def ask(text, email_customer=False):
             results.append({"type": "tool_result", "tool_use_id": u["id"],
                             "content": _brief(out)})
         msgs.append({"role": "user", "content": results})
+    else:
+        reply = (reply + "\n\n" if reply else "") + ("I ran out of steps before finishing - tell me to keep going, "
+                                                       "or ask for it in one go (e.g. \"all of them at once\").")
     reply = reply or "Done."
     x("INSERT INTO ai_chat(ts, role, text, actions) VALUES (?,?,?,?)",
       (now(), "assistant", reply, json.dumps(actions, default=str)[:20000]))

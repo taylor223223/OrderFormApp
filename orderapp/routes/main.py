@@ -105,13 +105,14 @@ def _ai_window():
     out = {"enabled": setting("ai_enabled") == "1", "you": [], "n": {"you": 0, "office": 0, "customer": 0},
            "later": [], "chat": []}
     try:
+        from ..ai.commands import load_actions
         from ..ai.followup import open_requests, scheduled_list
         reqs = open_requests()
         for r in reqs:
             out["n"][r["waiting_on"]] = out["n"].get(r["waiting_on"], 0) + 1
         out["you"] = [r for r in reqs if r["waiting_on"] == "you"][:4]
         out["later"] = scheduled_list()[:3]
-        out["chat"] = [dict(r, actions=json.loads(r["actions"] or "[]")) for r in
+        out["chat"] = [dict(r, actions=load_actions(r["actions"])) for r in
                        reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 4"))]
     except Exception:  # noqa: BLE001 - the dashboard never breaks over this window
         pass
