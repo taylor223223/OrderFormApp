@@ -122,6 +122,7 @@ DEFAULT_SETTINGS = {
     "ai_mode": "practice",
     "ai_model_fast": "claude-haiku-5-5",
     "ai_model_smart": "claude-sonnet-5-5",
+    "ai_chat_cheap": "1",
     "ai_api_version": "2026-10-21",
     "ai_auto_orders": "1",
     "ai_auto_customer": "1",

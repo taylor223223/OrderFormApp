@@ -6,6 +6,7 @@ quotes you relay go through the normal order process (process_customer_message),
 Every exchange is kept in ai_chat and logged for the daily summary.
 """
 import json
+import re
 from datetime import date, datetime, timedelta
 
 from ..db import now, q, set_setting, setting, x
@@ -14,6 +15,9 @@ from .client import AIError, call
 SYSTEM = """You are {me}'s assistant inside his sales app (he's a sales rep for an apartment-interior products supplier:
 doors, blinds, screens, cabinets, countertops...). He types to you like he'd talk to a coworker - often several
 things at once ("word vomit"). Do ALL of it.
+
+Be quick and efficient: when you need several lookups or actions that don't depend on each other, call them all in
+the SAME step instead of one at a time, and don't look up things you already know.
 
 TODAY IS {today}. That comes from the computer's clock and is always right - it is the only source of today's date.
 The next 7 days: {week}.
@@ -550,6 +554,29 @@ TOOLS = [
     _tool(t_read_thread, "Read a whole email conversation (give any email id in it).", {"email_id": I}, ["email_id"]),
 ]
 BY_NAME = {t["spec"]["name"]: t["fn"] for t in TOOLS}
+SPECS = [t["spec"] for t in TOOLS]
+
+# one quick thing ("log a visit at Sample Palms", "remind me Friday to call Pat") -> the cheaper model (v2.37.3)
+_SIMPLE = re.compile(r"^\s*(remind|log|mark|add|note|save|schedule|move|put|set|text|call|visited|cancel|delete|"
+                     r"what|when|who|where|how many|show|find|look up|is|did|does)\b", re.I)
+_MULTI = re.compile(r"\b(and then|also|then|plus|after that|chart|graph|overview|recommend|analy|compare|quote|"
+                    r"order|reorder|email|reply|forward|send)\b|[;\n]", re.I)
+
+
+def pick_model(text):
+    """Short single-step requests use the fast model; anything bigger, or orders / emails / quotes, uses the smart one.
+    Settings -> AI Assistant can turn this off (ai_chat_cheap = 0)."""
+    from .assistant import fast, smart
+    t = (text or "").strip()
+    if setting("ai_chat_cheap") == "0" or len(t) > 140 or t.count(".") > 1 or not _SIMPLE.match(t) or _MULTI.search(t):
+        return smart()
+    return fast()
+
+
+def _brief(out, limit=5000):
+    """A tool's answer for Claude, kept short so it doesn't get re-sent at full size on every later step."""
+    s = json.dumps(out, default=str, separators=(",", ":"))
+    return s if len(s) <= limit else s[:limit] + ' ...(cut short - ask with narrower filters for more)'
 
 
 def _stamp(ts):
@@ -567,7 +594,7 @@ def history(n=12):
 
 def ask(text, email_customer=False):
     """One message from Taylor -> Claude with tools, looping until it answers. Returns (reply, actions)."""
-    from .assistant import rules_text, signature, smart
+    from .assistant import rules_text, signature
     me = signature() or "the rep"
     today = date.today()
     week = ", ".join(f"{d:%a %m/%d}={d:%Y-%m-%d}" for d in (today + timedelta(days=i) for i in range(8)))
@@ -588,8 +615,9 @@ def ask(text, email_customer=False):
                                                     "emailed: email_customer=true.)" if email_customer else "")})
     x("INSERT INTO ai_chat(ts, role, text) VALUES (?,?,?)", (now(), "me", text))
     actions, reply = [], ""
+    model = pick_model(text)
     for _ in range(16):
-        r = call(smart(), system, msgs, tools=[t["spec"] for t in TOOLS], max_tokens=6000, purpose="chat")
+        r = call(model, system, msgs, tools=SPECS, max_tokens=6000, purpose="chat")
         content = r.get("content") or []
         msgs.append({"role": "assistant", "content": content})
         uses = [b for b in content if b.get("type") == "tool_use"]
@@ -607,7 +635,7 @@ def ask(text, email_customer=False):
                 out = {"error": str(e)[:300]}
             actions.append({"tool": u["name"], "input": u.get("input"), "result": out})
             results.append({"type": "tool_result", "tool_use_id": u["id"],
-                            "content": json.dumps(out, default=str)[:12000]})
+                            "content": _brief(out)})
         msgs.append({"role": "user", "content": results})
     reply = reply or "Done."
     x("INSERT INTO ai_chat(ts, role, text, actions) VALUES (?,?,?,?)",

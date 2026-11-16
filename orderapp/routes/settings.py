@@ -24,7 +24,7 @@ EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", 
             "ai_model_fast", "ai_model_smart", "ai_coworker_domain", "ai_coworkers", "ai_my_email", "ai_test_senders",
             "ai_practice_to", "ai_catalog_path", "ai_signature", "ai_summary_morning", "ai_summary_evening",
             "ai_month_limit", "ai_nudge_customer_days", "ai_nudge_office_days", "ai_nudge_max", "ai_nudge_quote_days"]
-AI_FLAGS = ["ai_auto_orders", "ai_auto_customer", "ai_auto_coworker", "ai_read_sent"]
+AI_FLAGS = ["ai_auto_orders", "ai_auto_customer", "ai_auto_coworker", "ai_read_sent", "ai_chat_cheap"]
 
 
 @bp.route("/settings", methods=["GET", "POST"])

@@ -29,6 +29,46 @@ def _price(model):
     return PRICES["sonnet"]
 
 
+def _cost(model, u):
+    """$ for one call. Cached input (prompt caching) is billed at 1.25x to write and 0.1x to read."""
+    pin, pout = _price(model)
+    tin = int(u.get("input_tokens") or 0)
+    cw, cr = int(u.get("cache_creation_input_tokens") or 0), int(u.get("cache_read_input_tokens") or 0)
+    tout = int(u.get("output_tokens") or 0)
+    return tin + cw + cr, tout, (tin * pin + cw * pin * 1.25 + cr * pin * 0.1 + tout * pout) / 1e6
+
+
+def _log(model, purpose, data):
+    tin, tout, cost = _cost(model, data.get("usage") or {})
+    x("INSERT INTO ai_usage(ts, model, purpose, in_tok, out_tok, cost) VALUES (?,?,?,?,?,?)",
+      (now(), model, purpose, tin, tout, cost))
+
+
+CACHE = {"type": "ephemeral"}
+
+
+def _cached_system(system, min_len=0):
+    """The instructions as a cached block - repeats within ~5 minutes cost a tenth (v2.37.3)."""
+    if not system or len(system) < min_len:
+        return system
+    return [{"type": "text", "text": system, "cache_control": CACHE}]
+
+
+def _cached_messages(messages):
+    """Mark the end of the conversation so the next step of the same chat re-reads it from cache."""
+    if not messages:
+        return messages
+    out = list(messages)
+    last = dict(out[-1])
+    content = last.get("content")
+    blocks = [{"type": "text", "text": content}] if isinstance(content, str) else [dict(b) for b in (content or [])]
+    if blocks:
+        blocks[-1] = dict(blocks[-1], cache_control=CACHE)
+        last["content"] = blocks
+        out[-1] = last
+    return out
+
+
 def month_spend():
     r = q("SELECT COALESCE(SUM(cost), 0) c FROM ai_usage WHERE substr(ts, 1, 7)=?",
           (datetime.now().strftime("%Y-%m"),), one=True)
@@ -67,8 +107,8 @@ def _ask_once(model, system, prompt, max_tokens, purpose):
         raise AIError("No Anthropic API key - add it in Settings -> AI Assistant.")
     if over_limit():
         raise AIError("This month's AI spending limit is reached (Settings -> AI Assistant).")
-    body = {"model": model, "max_tokens": max_tokens, "system": system,
-            "messages": [{"role": "user", "content": prompt}]}
+    body = {"model": model, "max_tokens": max_tokens, "system": _cached_system(system, min_len=4000),
+            "messages": [{"role": "user", "content": prompt}]}   # long instructions repeat across an inbox check
     version = setting("ai_api_version") or "2026-10-21"
     try:
         r = _post(body, key, version)
@@ -81,11 +121,7 @@ def _ask_once(model, system, prompt, max_tokens, purpose):
     if r.status_code >= 400:
         raise AIError(f"Claude API error {r.status_code}: {r.text[:300]}")
     data = r.json()
-    u = data.get("usage") or {}
-    pin, pout = _price(model)
-    tin, tout = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
-    x("INSERT INTO ai_usage(ts, model, purpose, in_tok, out_tok, cost) VALUES (?,?,?,?,?,?)",
-      (now(), model, purpose, tin, tout, (tin * pin + tout * pout) / 1e6))
+    _log(model, purpose, data)
     return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text"), data
 
 
@@ -96,9 +132,10 @@ def call(model, system, messages, tools=None, max_tokens=2000, purpose=""):
         raise AIError("No Anthropic API key - add it in Settings -> AI Assistant.")
     if over_limit():
         raise AIError("This month's AI spending limit is reached (Settings -> AI Assistant).")
-    body = {"model": model, "max_tokens": max_tokens, "system": system, "messages": messages}
+    body = {"model": model, "max_tokens": max_tokens, "system": _cached_system(system),
+            "messages": _cached_messages(messages)}
     if tools:
-        body["tools"] = tools
+        body["tools"] = list(tools[:-1]) + [dict(tools[-1], cache_control=CACHE)]   # the toolbox is cached too
     version = setting("ai_api_version") or "2026-10-21"
     try:
         r = _post(body, key, version)
@@ -111,11 +148,7 @@ def call(model, system, messages, tools=None, max_tokens=2000, purpose=""):
     if r.status_code >= 400:
         raise AIError(f"Claude API error {r.status_code}: {r.text[:300]}")
     data = r.json()
-    u = data.get("usage") or {}
-    pin, pout = _price(model)
-    tin, tout = int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0)
-    x("INSERT INTO ai_usage(ts, model, purpose, in_tok, out_tok, cost) VALUES (?,?,?,?,?,?)",
-      (now(), model, purpose, tin, tout, (tin * pin + tout * pout) / 1e6))
+    _log(model, purpose, data)
     return data
 
 
