@@ -21,7 +21,16 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements-dev.txt
       - name: Test
-        run: python -m pytest -q
+        shell: bash
+        run: |
+          # each test file in its own Python: the Windows build machine now and then crashes inside native code
+          # (access violation, at a different spot each time) - that can't take the whole run down, and a file
+          # that crashes gets one more try. A real failure fails both tries and stops the build.
+          fail=0
+          for f in tests/test_*.py; do
+            python -m pytest -q "$f" || python -m pytest -q "$f" || fail=1
+          done
+          exit $fail
       - name: Build exe
         run: pyinstaller --noconfirm OrderFormApp.spec
       - name: Make the demo copy
