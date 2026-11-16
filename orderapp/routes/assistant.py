@@ -43,7 +43,7 @@ def home():
                            last_note=request.args.get("note", type=int),
                            last_result=json.loads(setting("ai_last_result") or "{}"),
                            progress=setting("ai_progress") or "", summary_parts=summary_parts,
-                           reqs=reqs, later=later, invoice_days=setting("ai_invoice_days") or "4", md=md, chart_svg=chart_svg,
+                           reqs=reqs, later=later, invoice_days=setting("ai_invoice_days") or "3", md=md, chart_svg=chart_svg,
                            chat=[dict(r, actions=load_actions(r["actions"])) for r in
                                  reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 12"))])
 

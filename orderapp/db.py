@@ -123,7 +123,7 @@ DEFAULT_SETTINGS = {
     "ai_model_fast": "claude-haiku-5-5",
     "ai_model_smart": "claude-sonnet-5-5",
     "ai_chat_cheap": "1",
-    "ai_invoice_days": "4",
+    "ai_invoice_days": "3",
     "ai_api_version": "2026-10-21",
     "ai_auto_orders": "1",
     "ai_auto_customer": "1",
@@ -407,9 +407,9 @@ def _data_migrations(con):
     r = con.execute("SELECT value FROM settings WHERE key='ai_api_key'").fetchone()
     if r and r[0] and not r[0].strip().startswith("sk-ant-"):   # a browser autofilled a password in there - drop it
         con.execute("UPDATE settings SET value='' WHERE key='ai_api_key'")
-    if "dm_invoice_days4" not in done:   # 2.37.5: orders drop off "waiting on Jimmy" after 4 days, not 14
-        con.execute("UPDATE settings SET value='4' WHERE key='ai_invoice_days' AND value='14'")
-        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_invoice_days4', '1')")
+    if "dm_invoice_days3" not in done:   # 2.37.5: orders drop off "waiting on Jimmy" after 3 days (was 14)
+        con.execute("UPDATE settings SET value='3' WHERE key='ai_invoice_days' AND value IN ('14', '4')")
+        con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('dm_invoice_days3', '1')")
     if "dm_subject_v2" not in done:      # 2.36.2: "The Ryan Roller Shade" / "... Quote" - PO only when there is one
         con.execute("UPDATE settings SET value='{customer} {type}{quote}{po_tail}' WHERE key='subject_template' "
                     "AND value='{title} - {customer} - PO {po}'")

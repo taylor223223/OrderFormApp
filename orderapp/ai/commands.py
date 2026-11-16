@@ -652,6 +652,30 @@ def _stamp(ts):
         return ts or "earlier"
 
 
+def actions_json(actions, limit=20000):
+    """What the assistant did, saved as VALID json even when it's huge (a cut-off string broke every Assistant page)."""
+    slim = []
+    for a in actions:
+        res = a.get("result")
+        if a.get("tool") != "make_chart":                     # charts need their data to be drawn
+            res = _brief(res, 400)
+        slim.append({"tool": a.get("tool"), "input": _brief(a.get("input"), 300), "result": res})
+    out = json.dumps(slim, default=str)
+    while len(out) > limit and len(slim) > 1:
+        slim = slim[:max(1, len(slim) // 2)] + [{"tool": "(more steps not saved)", "input": "", "result": ""}]
+        out = json.dumps(slim, default=str)
+    return out if len(out) <= limit else "[]"
+
+
+def load_actions(raw):
+    """Read saved actions; anything unreadable (older versions cut long ones off mid-way) is just skipped."""
+    try:
+        v = json.loads(raw or "[]")
+        return v if isinstance(v, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
 def history(n=12):
     return list(reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT ?", (n,))))
 
@@ -713,7 +737,7 @@ def ask(text, email_customer=False):
                                                        "or ask for it in one go (e.g. \"all of them at once\").")
     reply = reply or "Done."
     x("INSERT INTO ai_chat(ts, role, text, actions) VALUES (?,?,?,?)",
-      (now(), "assistant", reply, json.dumps(actions, default=str)[:20000]))
+      (now(), "assistant", reply, actions_json(actions)))
     did = [a["tool"] for a in actions if not a["tool"].startswith((
         "find_", "customer_details", "order_details", "route_day", "list_", "purchase_", "unit_", "open_requests",
         "sales_overview", "recommendations", "make_chart", "search_emails", "read_thread"))]
