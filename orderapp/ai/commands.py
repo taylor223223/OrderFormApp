@@ -12,19 +12,28 @@ from ..db import now, q, set_setting, setting, x
 from .client import AIError, call
 
 SYSTEM = """You are {me}'s assistant inside his sales app (he's a sales rep for an apartment-interior products supplier:
-doors, blinds, screens, cabinets, countertops...). He types to you like he'd talk to a coworker. Today is {today}.
+doors, blinds, screens, cabinets, countertops...). He types to you like he'd talk to a coworker - often several
+things at once ("word vomit"). Do ALL of it. Today is {today}.
 
-Use the tools to do what he asks - look things up, add / move route stops, write day notes, add tasks, log visits,
-update customers and contacts, find and reorder past orders, move orders through their steps, send emails.
-- If his message is (or includes) a customer's order, quote request, reorder, measure / walk request or anything a
-  customer said on a call or text, pass that part to process_customer_message - that runs the normal order process.
-  Do the rest yourself with the other tools. Both in one message is fine.
+You can do anything he can do in the app - use the tools: look things up, add / move / mark visited route stops, write
+day notes, add tasks and reminders, log CRM touches, save customers and contacts, find / reorder / build orders and
+quote requests, send unsent orders to Jimmy, move orders along, put Jimmy's invoice # on orders, forward returned
+quotes, send or schedule emails, see what's open and who it's waiting on, give overviews, numbers, charts and
+recommendations.
+- Customer orders / quote requests / reorders / measure requests (from a call, text, or him describing one) go to
+  process_customer_message - that runs the normal order process. Do the rest yourself. Several in one message is fine.
 - Look up ids with the find_ tools - never guess an id. Days are YYYY-MM-DD; work out "Wednesday", "tomorrow",
-  "next Tuesday" from today's date (the coming one, never a past day).
-- If something is ambiguous (two customers match, which order he means), ask him one short question instead of
-  guessing. Don't ask about things you can look up.
+  "next Tuesday at 8" from today's date (the coming one, never a past day).
+- He lets you act without asking - just do it and tell him exactly what you did. Only ask (one short question)
+  when something is truly ambiguous (two customers match, which order he means). Never ask for things you can look up.
+- A PO number is optional - never ask for one or hold anything because it's missing.
 - Don't delete anything unless he clearly asks.
-- Finish with a short plain-English reply saying what you did (or found). No markdown headings.{rules}"""
+- Remembering: when he corrects you, tells you how he likes something done, or says "from now on / always / never",
+  save it with add_rule (short and specific) and say you'll remember it. Follow every rule below.
+- How to answer: short and easy to scan. You may use light markdown - **bold** for key numbers or names, short
+  bullet lists, a small table when comparing things, a short heading only for longer overviews. For a graph or chart
+  (or a trend that's clearer as one) call make_chart. Follow his formatting preferences in the rules.
+- Finish with what you did (or found) - every action, plainly.{rules}"""
 
 
 def _d(s):
@@ -296,6 +305,157 @@ def t_add_rule(rule):
     return {"rules_now": setting("ai_rules")}
 
 
+def t_open_requests(waiting_on=""):
+    from .followup import open_requests
+    rows = open_requests()
+    if waiting_on:
+        rows = [r for r in rows if r["waiting_on"] == waiting_on]
+    return [{k: r.get(k) for k in ("waiting_on", "what", "who", "detail", "days", "overdue", "ref", "id")}
+            for r in rows[:60]]
+
+
+def t_mark_visit_done(stop_id, notes="", how="In person", who="", ordered="", order_what=""):
+    from ..routes.routes_plan import mark_done
+    s = q("SELECT * FROM route_stops WHERE id=?", (stop_id,), one=True)
+    if not s:
+        return {"error": "No route stop with that id (use route_day)."}
+    mark_done(s, notes=notes, ordered=ordered or None, order_what=order_what or None, how=how or None,
+              who=who or None)
+    return {"stop_id": stop_id, "visited": True, "crm_logged": True}
+
+
+def t_set_invoice(order_id, invoice_no):
+    from ..order_notices import set_invoice
+    ok = set_invoice(int(order_id), str(invoice_no), note="you told the assistant")
+    return {"order_id": order_id, "invoice_no": invoice_no} if ok else {"error": "No order with that id."}
+
+
+def t_forward_quote(order_id, to="", message=""):
+    """Email a returned quote (one order, or its whole project combined) to the customer."""
+    from .assistant import catalog_file, combine_quotes, quote_group, queue_email, signature
+    o = q("SELECT * FROM orders WHERE id=?", (order_id,), one=True)
+    if not o:
+        return {"error": "No order with that id."}
+    h = (json.loads(o["data"] or "{}") or {}).get("header", {})
+    to = to or h.get("quote_email") or h.get("contact_email") or ""
+    if not to:
+        return {"error": "No email on the quote - ask him who to send it to."}
+    members = quote_group(o) or [o]
+    files = [f for mbr in members for f in json.loads(mbr["quote_file"] or "[]")]
+    if not files:
+        return {"error": "No returned quote PDF saved on this quote yet."}
+    import os
+    folder = os.path.dirname(files[0])
+    doc = combine_quotes(members, folder) if len(files) > 1 else files[0]
+    body = message or (f"Hello {h.get('quote_to') or h.get('contact') or ''},\n\nHere is the quote you asked for. "
+                       f"The product catalog is attached too. Just reply to let me know if you'd like to go ahead."
+                       f"\n\nThank you,\n{signature()}")
+    st = queue_email("quote", to, f"Your quote - {h.get('name') or ''} {o['title'] or ''}".strip(), body,
+                     [doc, catalog_file()], None, o["id"])
+    return {"to": to, "email": st, "parts": len(members)}
+
+
+def t_schedule_email(to, subject, body, when, attach_catalog=False, customer_id=None):
+    from .followup import parse_when, schedule
+    due = parse_when(when)
+    if not due:
+        return {"error": "when must be 'YYYY-MM-DD HH:MM' (or a date for 8 AM)."}
+    sid = schedule("email", due, {"to": to, "subject": subject, "body": body, "attach_catalog": bool(attach_catalog),
+                                  "customer_id": customer_id}, f"to {to}")
+    return {"scheduled_id": sid, "sends_at": due}
+
+
+def t_remind_me(text, when, customer_id=None):
+    from .followup import parse_when, schedule
+    due = parse_when(when)
+    if not due:
+        return {"error": "when must be 'YYYY-MM-DD HH:MM' (or a date for 8 AM)."}
+    sid = schedule("reminder", due, {"text": text, "customer_id": customer_id}, text[:60])
+    x("INSERT INTO tasks(customer_id, title, due_date, owner, created) VALUES (?,?,?,?,?)",
+      (customer_id, text, due[:10], "me", now()))
+    return {"reminder_id": sid, "at": due, "also_added_to_tasks": True}
+
+
+def t_list_scheduled():
+    from .followup import scheduled_list
+    return [{"id": r["id"], "kind": r["kind"], "when": r["due"], "what": r["payload"]} for r in scheduled_list()]
+
+
+def t_cancel_scheduled(scheduled_id):
+    x("UPDATE ai_scheduled SET status='cancelled' WHERE id=? AND status='waiting'", (scheduled_id,))
+    return {"cancelled": scheduled_id}
+
+
+def t_sales_overview(year=None, customer_id=None, category=""):
+    from .. import sales as S
+    if not S.has_data():
+        return {"error": "No sales imported yet (Sales tab -> Import)."}
+    y = int(year or date.today().year)
+    same = f"{y - 1}-{date.today().isoformat()[5:]}" if y == date.today().year else None
+    out = {"year": y, "by_month": S.monthly(y, customer_id, category or None),
+           "total": S.total(y, customer_id, category or None),
+           ("last_year_same_period" if same else "last_year_total"): S.total(y - 1, customer_id, category or None,
+                                                                              upto=same),
+           "by_category": S.by_category(y, customer_id)[:15]}
+    if not customer_id:
+        out["top_customers"] = S.by_customer(y, category or None, limit=15)
+        out["goals"] = S.goals(y)
+    return out
+
+
+def t_recommendations():
+    """Who to contact / what to chase: win-backs, overdue requests, quotes waiting, accounts due to reorder."""
+    from .. import sales as S
+    from .followup import open_requests
+    reqs = open_requests()
+    rec = {"overdue": [{k: r[k] for k in ("waiting_on", "what", "who", "days")} for r in reqs if r["overdue"]][:15]}
+    if S.has_data():
+        y = date.today().year
+        rec["win_back"] = [{"customer": g["name"], "last_year": g["ly"], "last_order": g["last"]}
+                           for g in S.gaps(y, limit=12)]
+        due = []
+        for c in q("""SELECT s.customer_id, coalesce(c.name, s.customer_name) name, COUNT(DISTINCT s.invoice_date) n,
+                      MIN(s.invoice_date) first, MAX(s.invoice_date) last FROM sales s
+                      LEFT JOIN customers c ON c.id=s.customer_id WHERE s.invoice_date>=?
+                      GROUP BY coalesce(s.customer_id, lower(s.customer_name)) HAVING n>=4""",
+                   ((date.today() - timedelta(days=365)).isoformat(),)):
+            try:
+                span = (date.fromisoformat(c["last"][:10]) - date.fromisoformat(c["first"][:10])).days
+                every = span / max(c["n"] - 1, 1)
+                quiet = (date.today() - date.fromisoformat(c["last"][:10])).days
+            except ValueError:
+                continue
+            if every and quiet > every * 1.5 and quiet > 21:
+                due.append({"customer": c["name"], "usually_every_days": round(every), "days_since_last": quiet})
+        rec["due_to_reorder"] = sorted(due, key=lambda d: -d["days_since_last"] / max(d["usually_every_days"], 1))[:12]
+    return rec
+
+
+def t_make_chart(type, title, labels, series, money=False):
+    """Draw a chart in the chat. series: [{name, values}]."""
+    spec = {"type": type, "title": title, "labels": labels, "series": series, "money": bool(money)}
+    return {"chart": spec, "note": "The chart shows under your reply - don't repeat all the numbers."}
+
+
+def t_search_emails(text="", sender="", limit=15):
+    sql, a = "SELECT id, subject, sender, sender_name, received, direction FROM email_messages WHERE 1=1", []
+    if text:
+        sql += " AND (subject LIKE ? OR body LIKE ?)"
+        a += [f"%{text}%"] * 2
+    if sender:
+        sql += " AND (sender LIKE ? OR sender_name LIKE ? OR to_addr LIKE ?)"
+        a += [f"%{sender}%"] * 3
+    return [dict(r) for r in q(sql + " ORDER BY received DESC LIMIT ?", a + [int(limit)])]
+
+
+def t_read_thread(email_id):
+    from ..routes.emails import thread_messages
+    from ..order_notices import reply_top
+    _, msgs = thread_messages(rid=int(email_id))
+    return [{"when": m["when"], "from": m["who"], "to": m["to"], "direction": m["dir"],
+             "text": (reply_top(m["body"]) or m["body"])[:3000]} for m in msgs[-12:]]
+
+
 S, I, B, O = {"type": "string"}, {"type": "integer"}, {"type": "boolean"}, {"type": "object"}
 
 
@@ -332,7 +492,8 @@ TOOLS = [
           {"customer_id": I, "text": S, "limit": I}, ["customer_id"]),
     _tool(t_unit_sizes, "Saved sizes per unit for a customer.", {"customer_id": I, "unit": S}, ["customer_id"]),
     _tool(t_process_customer_message, "Run a customer's order / quote / reorder / measure request through the normal "
-          "order process (makes the order, checks it, sends it in when sure, else asks / holds).",
+          "order process (makes the order, checks it, sends it in when sure, else asks / holds). Also use it when HE "
+          "wants an order or quote request built - pass what he described (customer, items, sizes, order or quote).",
           {"text": S, "customer_id": I, "email_customer": B}, ["text"]),
     _tool(t_route_day, "A day's route stops and its note.", {"day": S}, ["day"]),
     _tool(t_add_route_stop, "Add a stop to a day's route.", {"day": S, "customer_id": I, "label": S, "purpose": S,
@@ -350,7 +511,36 @@ TOOLS = [
           ["customer_id", "kind"]),
     _tool(t_send_email, "Email someone (catalog attached by default). Follows practice / live mode.",
           {"to": S, "subject": S, "body": S, "attach_catalog": B}, ["to", "subject", "body"]),
-    _tool(t_add_rule, "Save a standing rule for the assistant (\"from now on...\").", {"rule": S}, ["rule"]),
+    _tool(t_add_rule, "Save a standing rule for the assistant (\"from now on...\", or a correction he gave you).",
+          {"rule": S}, ["rule"]),
+    _tool(t_open_requests, "Everything still open: waiting on him (you), on a customer, or on Jimmy/office (office). "
+          "Filter with waiting_on = you | customer | office.", {"waiting_on": S}),
+    _tool(t_mark_visit_done, "Mark a route stop visited and log it in the CRM (how: In person / Call / Text / Email; "
+          "ordered: Yes / No; order_what: what they ordered).",
+          {"stop_id": I, "notes": S, "how": S, "who": S, "ordered": S, "order_what": S}, ["stop_id"]),
+    _tool(t_set_invoice, "Put the 6-digit invoice # (from Jimmy) on an order.", {"order_id": I, "invoice_no": S},
+          ["order_id", "invoice_no"]),
+    _tool(t_forward_quote, "Email a returned quote to the customer (a project's parts go as one combined PDF).",
+          {"order_id": I, "to": S, "message": S}, ["order_id"]),
+    _tool(t_schedule_email, "Send an email later. when = 'YYYY-MM-DD HH:MM' (a bare date = 8 AM).",
+          {"to": S, "subject": S, "body": S, "when": S, "attach_catalog": B, "customer_id": I},
+          ["to", "subject", "body", "when"]),
+    _tool(t_remind_me, "A reminder at a time (shows in Needs you + Open requests, also added to his to-dos).",
+          {"text": S, "when": S, "customer_id": I}, ["text", "when"]),
+    _tool(t_list_scheduled, "Scheduled emails and reminders still waiting.", {}),
+    _tool(t_cancel_scheduled, "Cancel a scheduled email / reminder.", {"scheduled_id": I}, ["scheduled_id"]),
+    _tool(t_sales_overview, "Sales numbers from the imported company sales (his territory): by month, total, same "
+          "period last year, by category, top customers, goals. Optional customer_id / category.",
+          {"year": I, "customer_id": I, "category": S}),
+    _tool(t_recommendations, "Who to contact / what to chase: overdue requests, win-back accounts (bought last year, "
+          "not this year), accounts overdue for their usual reorder.", {}),
+    _tool(t_make_chart, "Draw a chart in the chat (type: bar | line | pie). series = [{name, values}]. Use when he "
+          "asks for a graph/chart, or when a trend is easier to see than a list.",
+          {"type": S, "title": S, "labels": {"type": "array", "items": S},
+           "series": {"type": "array", "items": O}, "money": B}, ["type", "title", "labels", "series"]),
+    _tool(t_search_emails, "Find emails (received and sent) by words or by person.",
+          {"text": S, "sender": S, "limit": I}),
+    _tool(t_read_thread, "Read a whole email conversation (give any email id in it).", {"email_id": I}, ["email_id"]),
 ]
 BY_NAME = {t["spec"]["name"]: t["fn"] for t in TOOLS}
 
@@ -380,7 +570,7 @@ def ask(text, email_customer=False):
                                                     "emailed: email_customer=true.)" if email_customer else "")})
     x("INSERT INTO ai_chat(ts, role, text) VALUES (?,?,?)", (now(), "me", text))
     actions, reply = [], ""
-    for _ in range(10):
+    for _ in range(16):
         r = call(smart(), system, msgs, tools=[t["spec"] for t in TOOLS], max_tokens=6000, purpose="chat")
         content = r.get("content") or []
         msgs.append({"role": "assistant", "content": content})
@@ -404,8 +594,9 @@ def ask(text, email_customer=False):
     reply = reply or "Done."
     x("INSERT INTO ai_chat(ts, role, text, actions) VALUES (?,?,?,?)",
       (now(), "assistant", reply, json.dumps(actions, default=str)[:20000]))
-    did = [a["tool"] for a in actions if not a["tool"].startswith(("find_", "customer_details", "order_details",
-                                                                   "route_day", "list_", "purchase_", "unit_"))]
+    did = [a["tool"] for a in actions if not a["tool"].startswith((
+        "find_", "customer_details", "order_details", "route_day", "list_", "purchase_", "unit_", "open_requests",
+        "sales_overview", "recommendations", "make_chart", "search_emails", "read_thread"))]
     x("""INSERT INTO ai_log(ts, msg_id, sender, sender_name, subject, received, category, summary, action, status,
          reasons) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
       (now(), f"chat-{datetime.now():%Y%m%d%H%M%S%f}", "", f"{me} (you)", text[:80], now()[:16], "command",

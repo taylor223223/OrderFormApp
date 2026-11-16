@@ -42,7 +42,12 @@ tasks, and holds anything it isn't sure about for you.
   {% if r.read is defined %}<span class="small">{{ r.read }} unread email(s) looked at · <b>{{ r.new }} new handled</b>
   {% if r.seen %} · {{ r.seen }} already done{% endif %}{% if r.skipped_me %} · {{ r.skipped_me }} from you{% endif %}
   {% if r.skipped_old %} · {{ r.skipped_old }} from before you turned it on{% endif %}
-  {% if r.left %} · <b style="color:#b91c1c">{{ r.left }} still to do</b>{% endif %}</span>{% endif %}</div>
+  {% if r.left %} · <b style="color:#b91c1c">{{ r.left }} still to do</b>{% endif %}
+  {% if r.sent_read %} · {{ r.sent_read }} of your sent emails read{% if r.closed_by_you %} ({{ r.closed_by_you }} item(s) you'd already handled closed){% endif %}{% endif %}
+  {% if r.crm_logged %} · {{ r.crm_logged }} CRM email entr{{ 'y' if r.crm_logged == 1 else 'ies' }}{% endif %}
+  {% if r.tracked_from_outlook %} · {{ r.tracked_from_outlook }} order(s) you emailed Jimmy added to tracking{% endif %}
+  {% if r.nudged %} · {{ r.nudged }} follow-up(s) sent{% endif %}{% if r.handed_back %} · {{ r.handed_back }} handed back to you{% endif %}</span>{% endif %}</div>
+  {% if r.sent_error %}<div class="small" style="color:#b45309">⚠ {{ r.sent_error }}</div>{% endif %}
   {% if r.error %}<div style="color:#b91c1c;margin-top:4px">✘ {{ r.error }}</div>{% endif %}
   {% set items = r.get('items') or [] %}
   {% if items %}
@@ -66,7 +71,7 @@ tasks, and holds anything it isn't sure about for you.
   <b>💬 Talk to your assistant</b> <span class="small muted">- ask it anything you'd do in the app, or pass on a customer's call / text. It can look things up, add or move route stops, write day notes, add tasks, log visits, update customers, reorder, move orders along, send emails - and run orders and quotes through the normal process.</span>
   {% if chat %}<div style="max-height:340px;overflow:auto;margin:8px 0;padding:6px;background:#fafafa;border-radius:8px" id="chatlog">
   {% for m in chat %}<div style="margin:6px 0;{{ 'text-align:right' if m.role == 'me' }}">
-    <div style="display:inline-block;max-width:85%;padding:6px 10px;border-radius:10px;white-space:pre-wrap;text-align:left;{{ 'background:#ede9fe' if m.role == 'me' else 'background:#fff;border:1px solid #e5e7eb' }}">{{ m.text }}</div>
+    <div style="display:inline-block;max-width:85%;padding:6px 10px;border-radius:10px;text-align:left;{{ 'background:#ede9fe;white-space:pre-wrap' if m.role == 'me' else 'background:#fff;border:1px solid #e5e7eb' }}">{% if m.role == 'me' %}{{ m.text }}{% else %}{{ md(m.text) }}{% for a in m.actions if a.tool == 'make_chart' and a.result and a.result.chart %}<div style="margin-top:6px">{{ chart_svg(a.result.chart) }}</div>{% endfor %}{% endif %}</div>
     {% if m.actions %}<div class="small muted">{% for a in m.actions %}{{ a.tool.replace('_', ' ') }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
     <div class="small muted">{{ (m.ts or '')[11:16] }}</div></div>{% endfor %}</div>
   <script>const cl=document.getElementById('chatlog'); if(cl) cl.scrollTop=cl.scrollHeight;</script>{% endif %}
@@ -82,7 +87,7 @@ tasks, and holds anything it isn't sure about for you.
 </form></div>
 
 <div class="row subtabs" style="gap:6px;margin-bottom:12px">
-{% for k, lab in [('review','Needs you'),('schedule','To schedule'),('activity','Everything it did'),('outbox','Emails'),('summaries','Daily summaries'),('rules','Rules')] %}
+{% for k, lab in [('requests','Open requests'),('review','Needs you'),('schedule','To schedule'),('later','Scheduled'),('activity','Everything it did'),('outbox','Emails'),('summaries','Daily summaries'),('rules','Rules')] %}
 <a class="btn sm {{ 'primary' if tab == k }}" href="{{ url_for('assistant.home', tab=k) }}">{{ lab }}{% if counts.get(k) %} ({{ counts[k] }}){% endif %}</a>{% endfor %}</div>
 
 {% macro mail(o) %}
@@ -95,7 +100,32 @@ tasks, and holds anything it isn't sure about for you.
   <button class="btn sm" formaction="{{ url_for('assistant.outbox_drop', oid=o.id) }}">Don't send</button></div>
 </form>{% endmacro %}
 
-{% if tab == 'review' %}
+{% if tab == 'requests' %}
+{% set groups = [('you', 'Waiting on you', '#b91c1c'), ('office', 'Waiting on Jimmy / the office', '#d97706'), ('customer', 'Waiting on customers', '#2563eb')] %}
+{% for key, title, col in groups %}{% set rows = reqs|selectattr('waiting_on', 'equalto', key)|list %}
+<div class="card" style="margin-bottom:10px;border-left:4px solid {{ col }}">
+  <b style="color:{{ col }}">{{ title }}</b> <span class="muted small">({{ rows|length }})</span>
+  {% if rows %}<div class="tablewrap"><table class="small" style="margin-top:4px"><tr><th>What</th><th>Who</th><th>Waiting</th><th></th></tr>
+  {% for it in rows %}<tr>
+    <td><b>{{ it.what }}</b><div class="muted">{{ it.detail }}</div>
+      {% if it.ref == 'log' and it.kind != 'reminder' %}{{ reply_box(it.id, it.who, 'requests') }}{% endif %}</td>
+    <td>{{ it.who }}</td>
+    <td class="nowrap">{% if it.days %}<span class="tag {{ 'warn' if it.overdue }}">{{ it.days }} business day{{ 's' if it.days != 1 }}</span>{% else %}today{% endif %}{% if it.nudges %}<div class="muted">{{ it.nudges }} follow-up(s) sent</div>{% endif %}</td>
+    <td class="nowrap">{% if it.subject and it.kind not in ('reminder', 'scheduled', 'command') %}<a class="btn sm" href="{{ url_for('emails.thread', subject=it.subject) }}">✉ Thread</a>{% endif %}
+      {% if it.ref == 'order' %}<a class="btn sm" href="{{ url_for('orders.view', oid=it.id) }}">Order #{{ it.id }}</a>{% else %}
+      <form method="post" action="{{ url_for('assistant.request_close') }}" style="display:inline"><input type="hidden" name="ref" value="{{ it.ref }}"><input type="hidden" name="rid" value="{{ it.id }}"><button class="btn sm">✓ Done</button></form>{% endif %}</td></tr>{% endfor %}
+  </table></div>{% else %}<div class="small muted">Nothing.</div>{% endif %}
+</div>{% endfor %}
+<div class="small muted">Closes on its own when you reply (even from Outlook), Jimmy sends the invoice #, a quote comes back, or a customer answers. Customers who go quiet get a short follow-up after the days in Settings → AI Assistant.</div>
+
+{% elif tab == 'later' %}
+<div class="card"><b>Scheduled emails and reminders</b> <span class="small muted">- tell the assistant "email Crystal Tuesday at 8..." or "remind me Friday to call Curtis".</span>
+<div class="tablewrap"><table class="small" style="margin-top:6px"><tr><th>When</th><th>What</th><th></th></tr>
+{% for s in later %}<tr><td class="nowrap">{{ s.due }}</td><td>{% if s.kind == 'email' %}✉ <b>{{ s.payload.subject }}</b> → {{ s.payload.to }}<div class="muted" style="white-space:pre-wrap">{{ (s.payload.body or '')[:300] }}</div>{% else %}⏰ {{ s.payload.text }}{% endif %}</td>
+<td><form method="post" action="{{ url_for('assistant.later_cancel', sid=s.id) }}"><button class="btn sm">Cancel</button></form></td></tr>
+{% else %}<tr><td colspan="3" class="empty">Nothing scheduled.</td></tr>{% endfor %}</table></div></div>
+
+{% elif tab == 'review' %}
 {% for h in held %}
 <div class="card" style="margin-bottom:10px;border-left:4px solid {{ '#b91c1c' if h.status == 'error' else '#d97706' }}">
   <div class="row" style="justify-content:space-between"><div><b>{{ h.sender_name or h.sender }}</b> <span class="muted small">{{ h.received or h.ts }}</span>
@@ -149,6 +179,7 @@ tasks, and holds anything it isn't sure about for you.
   {% if P.glance %}<span class="small muted"> - {{ P.glance[0] }}</span>{% endif %}</summary>
   {% if P.glance %}<div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0">
     {% for g in P.glance %}<span class="tag" style="font-size:12px">{{ g }}</span>{% endfor %}</div>{% endif %}
+  {% for ch in P.charts %}<div style="margin:6px 0">{{ chart_svg(ch) }}</div>{% endfor %}
   {% for sec in P.sections %}
   {% set urgent = sec.title.lower().startswith('needs you') or 'not sent' in sec.title.lower() %}
   <div style="margin-top:8px">

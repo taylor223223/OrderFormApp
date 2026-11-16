@@ -7,7 +7,7 @@ from flask import Flask, abort, request, session
 from . import db
 from .paths import data_dir, is_cloud, is_demo, resource_path
 
-__version__ = "2.36.2"
+__version__ = "2.37.0"
 
 
 def _secret_key():
@@ -250,3 +250,23 @@ def _start_email_watcher(app):
             pythoncom.CoUninitialize()
 
     threading.Thread(target=loop, daemon=True, name="email-watcher").start()
+
+    def scheduler():
+        """Every minute: send the emails you scheduled and fire your reminders (v2.37.0)."""
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(30)
+        while True:
+            try:
+                with app.app_context():
+                    if db.setting("ai_enabled") == "1" and db.q("SELECT 1 FROM users LIMIT 1", one=True):
+                        from .ai.followup import due_scheduled
+                        due_scheduled()
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(60)
+
+    threading.Thread(target=scheduler, daemon=True, name="ai-scheduler").start()

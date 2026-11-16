@@ -606,6 +606,22 @@ def set_status(oid):
     return redirect(nxt if nxt.startswith("/") else url_for("orders.view", oid=oid))
 
 
+@bp.route("/orders/<int:oid>/invoice", methods=["POST"])
+@login_required
+def set_invoice(oid):
+    """Type in (or fix) the invoice # Jimmy sent back."""
+    from ..order_notices import set_invoice as _set
+    q("SELECT 1 FROM orders WHERE id=?", (oid,), one=True) or abort(404)
+    num = request.form.get("invoice_no", "").strip()
+    if num:
+        _set(oid, num, note="typed in")
+        flash(f"Invoice {num} saved on order #{oid}.", "ok")
+    else:
+        x("UPDATE orders SET invoice_no=NULL, invoice_date=NULL, updated=? WHERE id=?", (now(), oid))
+    nxt = request.form.get("next") or ""
+    return redirect(nxt if nxt.startswith("/") else url_for("orders.view", oid=oid))
+
+
 @bp.route("/orders/<int:oid>/delete", methods=["POST"])
 @login_required
 def delete(oid):
@@ -672,8 +688,9 @@ def tracking():
     if not quote_tab and st != "all":   # quotes live on the Quotes tab; approved ones are orders and show here
         sql += " AND coalesce(o.kind,'order')<>'quote'"
     if s:
-        sql += " AND (c.name LIKE ? OR o.po LIKE ? OR o.title LIKE ? OR o.vendor_ref LIKE ? OR o.notes LIKE ?)"
-        args += [f"%{s}%"] * 5
+        sql += (" AND (c.name LIKE ? OR o.po LIKE ? OR o.title LIKE ? OR o.vendor_ref LIKE ? OR o.notes LIKE ?"
+                " OR o.invoice_no LIKE ?)")
+        args += [f"%{s}%"] * 6
     sql += " ORDER BY CASE WHEN coalesce(o.due_date,'')='' THEN 1 ELSE 0 END, o.due_date, o.updated DESC"
     rows = q(sql, args)
     from .. import order_trash

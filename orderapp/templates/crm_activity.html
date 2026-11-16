@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Activity{% endblock %}
 {% block body %}
 <div class="small"><a href="{{ url_for('crm.activities') }}">← Activity</a></div>
-<h1>{{ r.kind }}{% if r.cname %} - {{ r.cname }}{% endif %}</h1>
+<h1>{{ r.kind }}{% if r.cname %} - {{ r.cname }}{% endif %}</h1>{% if r.email_id is defined and r.email_id %}<div><a class="btn sm" href="{{ url_for('emails.thread', rid=r.email_id) }}">✉ Open the email thread</a></div>{% endif %}
 <form method="post" class="card" style="max-width:820px">
 <div class="grid g2">
 <div><label>Type</label><select name="kind">{% for k in kinds %}<option {{ 'selected' if k==r.kind }}>{{ k }}</option>{% endfor %}</select></div>

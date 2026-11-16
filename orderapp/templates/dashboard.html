@@ -71,7 +71,7 @@
     {% for t in crm.due %}<div class="row pvtask"><form method="post" action="{{ url_for('crm.task_toggle', tid=t.id) }}"><input type="hidden" name="next" value="/"><button class="btn sm" title="Done">✓</button></form>
       <span style="flex:1"><b>{{ t.title }}</b>{% if t.cname %} <span class="small muted">· {{ t.cname }}</span>{% endif %}</span>{% if t.due_date and t.due_date < today %}<span class="tag" style="background:var(--err-soft);color:var(--err)">overdue</span>{% endif %}</div>{% endfor %}{% endif %}
     {% if crm.recent %}<div class="pvsub">Recent</div>
-    {% for a in crm.recent %}<div class="small pvact"><span class="tag">{{ a.kind }}</span> <a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.cname or '(no property)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %} <span class="muted">{{ (a.subject or a.notes or '')[:60] }}</span></div>{% endfor %}{% endif %}
+    {% for a in crm.recent %}<div class="small pvact">{% if a.email_id is defined and a.email_id %}<a class="tag" href="{{ url_for('emails.thread', rid=a.email_id) }}" title="Open the email thread">✉ Email</a>{% else %}<span class="tag">{{ a.kind }}</span>{% endif %} <a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.cname or '(no property)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %} <span class="muted">{{ (a.subject or a.notes or '')[:60] }}</span></div>{% endfor %}{% endif %}
     <div class="small" style="margin-top:6px"><a href="{{ url_for('crm.home') }}">Open CRM →</a></div>
   </div>
 </div>

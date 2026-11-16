@@ -5,6 +5,7 @@ from datetime import date
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
+from ..ai.render import chart_svg, md
 from ..db import now, q, set_setting, setting, x
 from ..security import login_required
 
@@ -16,7 +17,7 @@ _running = {"on": False}
 @login_required
 def home():
     from ..ai.client import month_spend
-    tab = request.args.get("tab", "review")
+    tab = request.args.get("tab", "requests")
     held = q("SELECT * FROM ai_log WHERE status IN ('held','error') AND reviewed=0 ORDER BY id DESC LIMIT 200")
     outbox_for = {}
     for o in q("SELECT * FROM ai_outbox WHERE log_id IN (SELECT id FROM ai_log WHERE status IN ('held','error') "
@@ -28,7 +29,10 @@ def home():
     sched = q("SELECT t.*, c.name cname FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id "
               "WHERE t.done=0 AND t.owner IN ('ai','ai-schedule') ORDER BY t.id DESC")
     summ = q("SELECT * FROM ai_summaries ORDER BY id DESC LIMIT 20") if tab == "summaries" else []
-    counts = {"review": len(held), "schedule": len(sched)}
+    from ..ai.followup import open_requests, scheduled_list
+    reqs = open_requests()
+    later = scheduled_list()
+    counts = {"review": len(held), "schedule": len(sched), "requests": len(reqs), "later": len(later)}
     customers = q("SELECT id, name FROM customers ORDER BY name COLLATE NOCASE")
     return render_template("assistant.html", tab=tab, held=held, outbox_for=outbox_for, log=log, outbox=outbox,
                            sched=sched, summ=summ, counts=counts, spend=month_spend(),
@@ -38,6 +42,7 @@ def home():
                            last_note=request.args.get("note", type=int),
                            last_result=json.loads(setting("ai_last_result") or "{}"),
                            progress=setting("ai_progress") or "", summary_parts=summary_parts,
+                           reqs=reqs, later=later, md=md, chart_svg=chart_svg,
                            chat=[dict(r, actions=json.loads(r["actions"] or "[]")) for r in
                                  reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 12"))])
 
@@ -253,8 +258,14 @@ def summary_parts(body):
     """Turn a plain-text summary into header / at-a-glance numbers / sections of items for a tidy page."""
     blocks = [b for b in (body or "").split("\n\n") if b.strip()]
     head = blocks[0] if blocks and not blocks[0].lstrip().startswith("-") and "\n" not in blocks[0] else ""
-    out = {"head": head, "glance": [], "sections": []}
+    out = {"head": head, "glance": [], "sections": [], "charts": []}
     for b in blocks[1:] if head else blocks:
+        if b.lstrip().startswith("[chart]"):
+            try:
+                out["charts"].append(json.loads(b.strip()[7:]))
+            except ValueError:
+                pass
+            continue
         lines = b.split("\n")
         title = lines[0].strip()
         items = []
@@ -277,3 +288,19 @@ def summary_parts(body):
         else:
             out["sections"].append({"title": title, "items": items})
     return out
+
+
+@bp.route("/assistant/request/close", methods=["POST"])
+@login_required
+def request_close():
+    from ..ai.followup import close_request
+    close_request(request.form.get("ref"), request.form.get("rid", type=int))
+    return redirect(url_for("assistant.home", tab="requests"))
+
+
+@bp.route("/assistant/later/<int:sid>/cancel", methods=["POST"])
+@login_required
+def later_cancel(sid):
+    x("UPDATE ai_scheduled SET status='cancelled' WHERE id=? AND status='waiting'", (sid,))
+    flash("Cancelled.", "ok")
+    return redirect(url_for("assistant.home", tab="later"))

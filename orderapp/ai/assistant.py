@@ -612,20 +612,25 @@ def log(m, email_id, thread_id, cls, action, status, reasons=None, detail="", or
 
 def _thread(m, cls, c):
     key = conv_key(m.get("sender"), m.get("subject"))
-    t = q("SELECT * FROM ai_threads WHERE conv_key=? AND status='waiting' ORDER BY id DESC LIMIT 1", (key,), one=True)
+    t = q("""SELECT * FROM ai_threads WHERE status='waiting' AND (conv_key=? OR (conv_id IS NOT NULL AND conv_id=?))
+             ORDER BY id DESC LIMIT 1""", (key, m.get("conv_id") or "-"), one=True)
     if t:
+        x("UPDATE ai_threads SET last_activity=?, conv_id=coalesce(conv_id, ?) WHERE id=?",
+          (now(), m.get("conv_id"), t["id"]))
         return t["id"], t
-    tid = x("""INSERT INTO ai_threads(conv_key, sender, subject, customer_id, category, status, created, updated)
-               VALUES (?,?,?,?,?,'open',?,?)""",
+    tid = x("""INSERT INTO ai_threads(conv_key, sender, subject, customer_id, category, status, created, updated, conv_id,
+               last_activity) VALUES (?,?,?,?,?,'open',?,?,?,?)""",
             (key, m.get("sender"), _norm_subject(m.get("subject")), c["id"] if c else None, cls.get("category"),
-             now(), now()))
+             now(), now(), m.get("conv_id"), now()))
     return tid, None
 
 
 def _set_thread(tid, status, reason="", order_ids=None, customer_id=None):
-    x("UPDATE ai_threads SET status=?, reason=?, updated=?, order_ids=coalesce(?, order_ids), "
+    x("UPDATE ai_threads SET status=?, reason=?, updated=?, last_activity=?, order_ids=coalesce(?, order_ids), "
       "customer_id=coalesce(?, customer_id) WHERE id=?",
-      (status, reason, now(), ",".join(map(str, order_ids)) if order_ids else None, customer_id, tid))
+      (status, reason, now(), now(), ",".join(map(str, order_ids)) if order_ids else None, customer_id, tid))
+    if status == "waiting":          # a new question went out - the follow-up count starts over
+        x("UPDATE ai_threads SET nudges=0, nudged_at=NULL WHERE id=?", (tid,))
 
 
 # ------------------------------------------------------------------ handlers
@@ -788,6 +793,17 @@ def quote_group(o):
     return [o]
 
 
+def _thread_quotes(m):
+    """The quote request(s) whose email thread this reply is in - exact, no PO needed."""
+    from ..order_notices import is_reply, match_reply
+    if not is_reply(m.get("subject")):
+        return []
+    ids = [r["order_id"] for r in match_reply(m.get("subject"))]
+    rows = [q("SELECT * FROM orders WHERE id=?", (i,), one=True) for i in ids]
+    rows = [r for r in rows if r and (r["kind"] or "") == "quote" and r["status"] == "Sent"]
+    return rows
+
+
 def _returned_matches(c, cls, n_pdfs):
     """Which open quote request(s) (status Request sent) this returned quote is for."""
     po = (cls.get("po") or "").strip()
@@ -842,7 +858,7 @@ def combine_quotes(members, folder):
 
 def handle_quote_returned(m, email_id, cls, c, tid):
     pdfs = [(fn, raw) for fn, raw in m.get("attachments") or [] if fn.lower().endswith(".pdf")]
-    rows = _returned_matches(c, cls, len(pdfs))
+    rows = _thread_quotes(m) or _returned_matches(c, cls, len(pdfs))
     if not rows:
         log(m, email_id, tid, cls, "Quote came back - couldn't tell which quote request it's for", "held",
             ["Match it to the quote yourself (Quotes tab -> Quote received)."], customer_id=c["id"] if c else None)
@@ -975,13 +991,52 @@ def note(text, customer_id=None, contact_email="", email_customer=False):
     return q("SELECT * FROM ai_log WHERE msg_id=? ORDER BY id DESC LIMIT 1", (m["msg_id"],), one=True)
 
 
+def _order_desk_reply(m, email_id):
+    """A coworker's reply in one of your order / quote-request threads ("111111 - entered"): put the invoice # on the
+    order and move it along - no AI needed. Returns the ai_log id, or None if it isn't that kind of reply."""
+    from ..order_notices import is_reply, match_reply, record_reply
+    if not is_reply(m.get("subject")):
+        return None
+    hits = match_reply(m.get("subject"))
+    kinds = [(q("SELECT kind FROM orders WHERE id=?", (h["order_id"],), one=True) or {"kind": ""})["kind"] for h in hits]
+    if not hits or all((k or "") == "quote" for k in kinds):
+        return None                                  # returned quotes go through the quote steps instead
+    if m.get("msg_id") and q("SELECT 1 FROM delivery_checks WHERE msg_id=?", (m["msg_id"],), one=True):
+        return None                                  # the order-reply checker already handled this one
+    cid, res, applied = record_reply(m, m.get("msg_id"))
+    if not cid or not res:
+        return None
+    sure = [r for r in res if r.get("sure")]
+    who = m.get("sender_name") or m.get("sender")
+    if sure:
+        inv = next((r.get("invoice") for r in sure if r.get("invoice")), "")
+        what = ", ".join(f"#{r['order_id']} {r.get('cname') or ''}".strip() for r in sure)
+        action = f"{who} entered order {what}" + (f" - invoice {inv} saved on it" if inv else "")
+        status = "done"
+    else:
+        what = ", ".join(f"#{r['order_id']}" for r in res)
+        action = f"{who} replied about order {what} - it needs a look (not a clear 'entered')"
+        status = "held"
+    for r in res:
+        for t in q("SELECT id FROM ai_threads WHERE status='waiting' AND (',' || coalesce(order_ids,'') || ',') LIKE ?",
+                   (f"%,{r['order_id']},%",)):
+            _set_thread(t["id"], "done")
+    return log(m, email_id, None, {"category": "order_confirmation", "summary": (m.get("subject") or "")[:120]},
+               action, status, [] if status == "done" else ["Read the reply and update the order yourself."],
+               order_ids=[r["order_id"] for r in res])
+
+
 def process(m, email_id=None, customer=None):
     """Sort one fetched email and act on it. Returns the ai_log id."""
     sender = m.get("sender") or ""
     coworker = is_coworker(sender)
+    if coworker:
+        done = _order_desk_reply(m, email_id)        # Jimmy's "111111 - entered" in an order's thread
+        if done:
+            return done
     prior_key = conv_key(sender, m.get("subject"))
-    prior = q("SELECT * FROM ai_threads WHERE conv_key=? AND status='waiting' ORDER BY id DESC LIMIT 1",
-              (prior_key,), one=True)
+    prior = q("""SELECT * FROM ai_threads WHERE status='waiting' AND (conv_key=? OR (conv_id IS NOT NULL AND conv_id=?))
+                 ORDER BY id DESC LIMIT 1""", (prior_key, m.get("conv_id") or "-"), one=True)
     try:
         cls = classify(m)
     except AITransient:
@@ -1127,6 +1182,12 @@ def _run(prov, res, limit):
     except Exception as e:  # noqa: BLE001
         res["error"] = f"Couldn't read the inbox: {e}"
         return res
+    from . import followup
+    sent = followup.sync_sent(prov, back)           # what you already handled yourself in Outlook
+    res["sent_read"], res["closed_by_you"], res["crm_logged"] = sent["sent"], sent["closed"], sent["crm"]
+    res["tracked_from_outlook"] = sent["tracked"]
+    if sent.get("error"):
+        res["sent_error"] = sent["error"]
     seen = {r["msg_id"] for r in q("SELECT msg_id FROM ai_log WHERE msg_id IS NOT NULL")}
     started = (setting("ai_started") or "")[:16]
     todo, dup = [], set()
@@ -1169,6 +1230,12 @@ def _run(prov, res, limit):
         if res["new"] % 10 == 0:          # progress for the Assistant page while it works
             set_setting("ai_progress", f"{res['new']} of {len(batch)}")
     res["left"] = len(todo) - res["new"]
+    try:
+        nd = followup.run_nudges()
+        res["nudged"], res["handed_back"] = nd["nudged"] + nd["quote_followups"], nd["handed_back"]
+        followup.due_scheduled()
+    except AITransient:
+        pass
     res["items"] = _check_items(done_ids)
     set_setting("ai_progress", "")
     set_setting("ai_last_check", datetime.now().strftime("%Y-%m-%d %H:%M"))
@@ -1247,6 +1314,33 @@ def build_summary(period, day=None):
     today_stops = q("SELECT label, purpose FROM route_stops WHERE day=? ORDER BY position", (day,))
     if period == "morning" and today_stops:
         sect("Today's route", [f"{s['label'] or ''}{(' - ' + s['purpose']) if s['purpose'] else ''}" for s in today_stops])
+    from . import followup
+    reqs = followup.open_requests()
+    for key, title in (("you", "Open - waiting on you"), ("office", "Open - waiting on Jimmy / the office"),
+                       ("customer", "Open - waiting on customers")):
+        rows = [r for r in reqs if r["waiting_on"] == key]
+        sect(f"{title} ({len(rows)})", [f"{r['who'] or ''}: {_short(r['what'], 70)} -> {_short(r['detail'], 60)}"
+                                        f" [{r['days']} business day(s)]" for r in rows[:12]])
+    inv = q("""SELECT o.id, o.invoice_no, o.title, c.name cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
+               WHERE o.invoice_date=? ORDER BY o.id""", (day,))
+    sect("Invoices entered", [f"#{o['id']} {o['cname'] or ''}: invoice {o['invoice_no']} ({_short(o['title'], 50)})"
+                              for o in inv])
+    later = followup.scheduled_list()
+    sect("Scheduled", [f"{s_['due']}: " + (f"email to {s_['payload'].get('to')} - {s_['payload'].get('subject')}"
+                                           if s_["kind"] == "email" else f"reminder - {s_['payload'].get('text')}")
+                       for s_ in later[:10]])
+    try:
+        from .. import sales as S
+        if S.has_data():
+            y = date.fromisoformat(day).year
+            mon = S.monthly(y)
+            last = date.fromisoformat(day).month
+            L.append("[chart] " + json.dumps({"type": "bar", "title": f"Sales by month, {y}", "money": True,
+                                              "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
+                                                         "Sep", "Oct", "Nov", "Dec"][:last],
+                                              "series": [{"name": "", "values": mon[:last]}]}))
+    except Exception:  # noqa: BLE001 - the summary never fails over a chart
+        pass
     body = "\n\n".join(L) or "Nothing new."
     head = ("Good morning - here's what came in overnight, what your assistant did, and what's on today."
             if period == "morning" else "End of day - everyone who reached out, everything your assistant did, "

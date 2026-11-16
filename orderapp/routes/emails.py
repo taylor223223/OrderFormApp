@@ -38,11 +38,41 @@ def _store(msg, prov_name):
     else:
         rid = x("""INSERT INTO email_messages(provider, subject, sender, sender_name, received, body, parsed, msg_id)
                    VALUES (?,?,?,?,?,?,?,?)""", vals + (mid,))
+    x("UPDATE email_messages SET direction=?, to_addr=?, conv_id=coalesce(?, conv_id) WHERE id=?",
+      (msg.get("direction") or "in", msg.get("to_addr") or "", msg.get("conv_id"), rid))
     d = _att_dir(rid)
     for fn, data in msg["attachments"]:
         with open(os.path.join(d, os.path.basename(fn)), "wb") as fh:
             fh.write(data)
     return rid
+
+
+def thread_key(subject):
+    """Subject with every RE:/FW: taken off, lower-case - the same for every email in one conversation."""
+    s = re.sub(r"^\s*((re|fw|fwd|aw)\s*:\s*)+", "", subject or "", flags=re.I)
+    return " ".join(s.lower().split())
+
+
+def thread_messages(subject="", rid=None):
+    """Every email in a conversation (received, sent by you in Outlook, sent by the app), oldest first."""
+    base = q("SELECT * FROM email_messages WHERE id=?", (rid,), one=True) if rid else None
+    key = thread_key(subject or (base["subject"] if base else ""))
+    conv = base["conv_id"] if base and "conv_id" in base.keys() else None
+    if not key and not conv:
+        return key, []
+    out = []
+    for r in q("SELECT * FROM email_messages ORDER BY received, id"):
+        if (conv and r["conv_id"] == conv) or (key and thread_key(r["subject"]) == key):
+            out.append({"when": (r["received"] or "")[:16], "dir": r["direction"] or "in", "who": r["sender_name"] or
+                        r["sender"] or "", "addr": r["sender"] or "", "to": r["to_addr"] or "", "subject": r["subject"],
+                        "body": r["body"] or "", "rid": r["id"]})
+    for o in q("SELECT * FROM ai_outbox WHERE status='sent' ORDER BY id"):
+        if key and thread_key(o["subject"]) == key:
+            out.append({"when": (o["sent_at"] or o["ts"] or "")[:16], "dir": "app", "who": "Sent from the app",
+                        "addr": "", "to": o["to_addr"] or "", "subject": o["subject"], "body": o["body"] or "",
+                        "rid": None})
+    out.sort(key=lambda m: m["when"])
+    return key, out
 
 
 @bp.route("/email")
@@ -120,6 +150,17 @@ def paste():
     msg = {"msg_id": None, "subject": request.form.get("subject", "(pasted)"), "sender": sender,
            "sender_name": "", "received": now()[:16], "body": body, "attachments": []}
     return redirect(url_for("emails.message", rid=_store(msg, "paste")))
+
+
+@bp.route("/email/thread")
+@login_required
+def thread():
+    """The whole conversation on one page (linked from CRM 'Email' entries and orders)."""
+    from ..order_notices import reply_top
+    key, msgs = thread_messages(request.args.get("subject", ""), request.args.get("rid", type=int))
+    for m in msgs:
+        m["top"] = reply_top(m["body"]) or m["body"]
+    return render_template("email_thread.html", subject=key, msgs=msgs)
 
 
 @bp.route("/email/msg/<int:rid>")

@@ -44,7 +44,7 @@
 <td><input name="role" value="{{ r.role or '' }}" list="dl_positions" placeholder="Position" style="min-width:120px"></td>
 <td><select name="kind" style="width:auto">{% set opts = how if r.kind in how else [r.kind] + how %}{% for k in opts %}<option {{ 'selected' if k==r.kind }}>{{ k }}</option>{% endfor %}</select></td>
 <td><select name="temp" style="width:auto"><option value="">-</option>{% for t in temps %}<option {{ 'selected' if r.temp==t }}>{{ t }}</option>{% endfor %}</select></td>
-<td class="small">{% if r.order_id %}<a href="{{ url_for('orders.view', oid=r.order_id) }}">{{ r.subject or ('Order #%s' % r.order_id) }}</a>{% else %}<a href="{{ url_for('crm.activity', aid=r.id) }}">{{ r.subject or r.kind }}</a>{% endif %}{% if r.notes %}<div class="muted">{{ r.notes[:90] }}</div>{% endif %}<span class="saved small ok" hidden> ✓ saved</span></td>
+<td class="small">{% if r.email_id is defined and r.email_id %}<a href="{{ url_for('emails.thread', rid=r.email_id) }}">✉ {{ r.subject or 'Email' }}</a>{% elif r.order_id %}<a href="{{ url_for('orders.view', oid=r.order_id) }}">{{ r.subject or ('Order #%s' % r.order_id) }}</a>{% else %}<a href="{{ url_for('crm.activity', aid=r.id) }}">{{ r.subject or r.kind }}</a>{% endif %}{% if r.notes %}<div class="muted">{{ r.notes[:90] }}</div>{% endif %}<span class="saved small ok" hidden> ✓ saved</span></td>
 </tr>{% else %}<tr><td colspan="7" class="empty">Nothing in these dates. Orders you put in show up here automatically.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

@@ -135,6 +135,11 @@ DEFAULT_SETTINGS = {
     "ai_summary_morning": "07:00",
     "ai_summary_evening": "17:00",
     "ai_lookback_days": "7",
+    "ai_read_sent": "1",            # read Sent Items so things you already handled aren't flagged again
+    "ai_nudge_customer_days": "2",  # business days a customer can go quiet before a polite follow-up
+    "ai_nudge_office_days": "1",    # days the office/Jimmy can go quiet before it shows as overdue
+    "ai_nudge_max": "2",
+    "ai_nudge_quote_days": "5",     # business days after a quote goes to the customer before one follow-up            # follow-ups per request before it's handed to you
     "ai_month_limit": "50",
 }
 
@@ -230,6 +235,8 @@ CREATE TABLE IF NOT EXISTS ai_summaries (id INTEGER PRIMARY KEY, day TEXT, perio
 CREATE TABLE IF NOT EXISTS ai_usage (id INTEGER PRIMARY KEY, ts TEXT, model TEXT, purpose TEXT, in_tok INTEGER,
     out_tok INTEGER, cost REAL);
 CREATE TABLE IF NOT EXISTS ai_chat (id INTEGER PRIMARY KEY, ts TEXT, role TEXT, text TEXT, actions TEXT);
+CREATE TABLE IF NOT EXISTS ai_scheduled (id INTEGER PRIMARY KEY, kind TEXT, due TEXT, payload TEXT, status TEXT,
+    note TEXT, created TEXT, done_at TEXT);
 CREATE INDEX IF NOT EXISTS ix_ai_log_msg ON ai_log(msg_id);
 CREATE INDEX IF NOT EXISTS ix_ai_threads_key ON ai_threads(conv_key);
 """
@@ -240,12 +247,17 @@ MIGRATIONS = {
                   "owner": "TEXT", "acct_type": "TEXT", "services": "TEXT"},
     "route_stops": {"products": "TEXT", "done_at": "TEXT", "expected": "REAL", "pin": "TEXT"},
     "floorplans": {"plan": "TEXT"},
-    "email_messages": {"order_ids": "TEXT", "auto": "INTEGER"},
+    "email_messages": {"order_ids": "TEXT", "auto": "INTEGER", "direction": "TEXT", "to_addr": "TEXT",
+                       "conv_id": "TEXT"},
     "account_holds": {"days_late": "INTEGER", "aging": "TEXT", "last_payment": "TEXT"},
     "orders": {"est_value": "REAL", "est_complete": "INTEGER", "sent_subject": "TEXT", "sent_to": "TEXT", "kind": "TEXT",
-               "quote_approved_at": "TEXT", "quote_group": "TEXT", "quote_file": "TEXT"},
+               "quote_approved_at": "TEXT", "quote_group": "TEXT", "quote_file": "TEXT", "invoice_no": "TEXT",
+               "invoice_date": "TEXT"},
     "delivery_checks": {"kind": "TEXT"},
-    "activities": {"order_id": "INTEGER", "temp": "TEXT", "ordered": "TEXT", "order_what": "TEXT"},
+    "activities": {"order_id": "INTEGER", "temp": "TEXT", "ordered": "TEXT", "order_what": "TEXT",
+                   "email_id": "INTEGER"},
+    "ai_threads": {"waiting_on": "TEXT", "last_activity": "TEXT", "nudges": "INTEGER", "nudged_at": "TEXT",
+                   "conv_id": "TEXT", "contact_email": "TEXT"},
 }
 
 # quick picks for "what am I estimating" on a route stop

@@ -226,7 +226,7 @@
 {% set customers = [c] %}{% set pre_customer = c.id %}{% set next_url = url_for('customers.view', cid=c.id, tab='crm') %}{% include '_quick_log.html' %}
 <h2>Timeline</h2>
 <div class="tablewrap"><table>
-{% for a in acts %}<tr><td class="nowrap small">{{ a.occurred_at[:16] }}</td><td><span class="tag">{{ a.kind }}</span></td>
+{% for a in acts %}<tr><td class="nowrap small">{{ a.occurred_at[:16] }}</td><td>{% if a.email_id is defined and a.email_id %}<a class="tag" href="{{ url_for('emails.thread', rid=a.email_id) }}" title="Open the email thread">✉ Email</a>{% else %}<span class="tag">{{ a.kind }}</span>{% endif %}</td>
 <td><a href="{{ url_for('crm.activity', aid=a.id) }}">{{ a.subject or '(details)' }}</a>{% if a.contact_name %} · {{ a.contact_name }}{% endif %}{% if a.location %} <span class="small muted">@ {{ a.location }}</span>{% endif %}
 {% if a.notes %}<div class="small muted">{{ a.notes }}</div>{% endif %}{% if a.outcome %}<div class="small"><b>{{ a.outcome }}</b></div>{% endif %}</td></tr>
 {% else %}<tr><td class="empty">No calls, visits or emails logged yet.</td></tr>{% endfor %}

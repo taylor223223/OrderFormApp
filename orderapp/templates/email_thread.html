@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}Email thread{% endblock %}
+{% block body %}
+<div class="small"><a href="{{ url_for('emails.inbox') }}">← Email</a></div>
+<h1>✉ {{ msgs[0].subject if msgs else (subject or 'Email thread') }}</h1>
+<div class="muted small">{{ msgs|length }} email(s) in this conversation, oldest first.</div>
+{% for m in msgs %}
+<div class="card" style="margin-top:10px;border-left:4px solid {{ '#2563eb' if m.dir == 'in' else '#15803d' }}">
+  <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+    <div><b>{{ m.who }}</b>{% if m.addr %} <span class="muted small">&lt;{{ m.addr }}&gt;</span>{% endif %}
+    {% if m.to %}<span class="small muted"> → {{ m.to }}</span>{% endif %}</div>
+    <div class="small muted">{{ {'in': 'Received', 'out': 'You sent', 'app': 'Sent from the app'}[m.dir] if m.dir in ('in','out','app') else m.dir }} · {{ m.when }}</div></div>
+  <div style="white-space:pre-wrap;margin-top:6px">{{ m.top }}</div>
+  {% if m.top != m.body %}<details class="small" style="margin-top:4px"><summary style="cursor:pointer;color:#2563eb">Show the full email</summary><div style="white-space:pre-wrap">{{ m.body }}</div></details>{% endif %}
+  {% if m.rid %}<div class="small" style="margin-top:4px"><a href="{{ url_for('emails.message', rid=m.rid) }}">Open this email</a></div>{% endif %}
+</div>
+{% else %}<div class="card muted" style="margin-top:10px">No emails found for this conversation yet - they show up here after the assistant's next email check.</div>{% endfor %}
+{% endblock %}

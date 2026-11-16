@@ -220,6 +220,56 @@ class OutlookDesktop:
         out.sort(key=lambda m: m["received"], reverse=True)
         return out[:int(limit)]
 
+    @staticmethod
+    def _recipients(item):
+        out = []
+        try:
+            for i in range(1, item.Recipients.Count + 1):
+                r = item.Recipients.Item(i)
+                addr = ""
+                try:
+                    ex = r.AddressEntry.GetExchangeUser()
+                    addr = ex.PrimarySmtpAddress if ex is not None else ""
+                except Exception:  # noqa: BLE001
+                    addr = ""
+                out.append(addr or r.Address or "")
+        except Exception:  # noqa: BLE001
+            pass
+        return [a for a in out if a and "@" in a]
+
+    def list_sent(self, days=7, limit=300):
+        """What you sent (Sent Items of every account), newest first: [{msg_id, subject, to[], received, conv_id}]."""
+        _, ns = self._ns()
+        since = (datetime.now() - timedelta(days=int(days))).strftime("%Y-%m-%d %H:%M")
+        out = []
+        for inbox, store_id in self._inboxes(ns):
+            try:
+                folder = inbox.Parent.Folders.Item("Sent Items") if inbox.Parent is not None else None
+            except Exception:  # noqa: BLE001
+                folder = None
+            if folder is None:
+                try:
+                    folder = ns.GetDefaultFolder(5)
+                except Exception:  # noqa: BLE001
+                    continue
+            items = folder.Items
+            items.Sort("[SentOn]", True)
+            it = items.GetFirst()
+            while it is not None and len(out) < int(limit):
+                try:
+                    if it.Class == 43:
+                        when = str(it.SentOn)[:16]
+                        if when < since:
+                            break
+                        out.append({"msg_id": f"{it.EntryID}|{store_id}", "subject": it.Subject or "",
+                                    "to": self._recipients(it), "received": when,
+                                    "conv_id": getattr(it, "ConversationID", None)})
+                except Exception:  # noqa: BLE001
+                    pass
+                it = items.GetNext()
+        out.sort(key=lambda m: m["received"], reverse=True)
+        return out[:int(limit)]
+
     def _item(self, ns, msg_id):
         entry, _, store = (msg_id or "").partition("|")
         return ns.GetItemFromID(entry, store) if store else ns.GetItemFromID(entry)
@@ -389,7 +439,7 @@ class GraphMail:
         flt = f"receivedDateTime ge {since}"
         if unread_only:
             flt += " and isRead eq false"
-        sel = "id,subject,from,receivedDateTime,bodyPreview,hasAttachments,parentFolderId"
+        sel = "id,subject,from,receivedDateTime,bodyPreview,hasAttachments,parentFolderId,conversationId"
         params = {"$top": str(min(int(limit), 100)), "$orderby": "receivedDateTime desc", "$filter": flt,
                   "$select": sel}
         if search:
@@ -409,17 +459,39 @@ class GraphMail:
             fr = (m.get("from") or {}).get("emailAddress", {})
             out.append({"msg_id": m["id"], "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                         "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
-                        "preview": m.get("bodyPreview", "")[:180], "has_attachments": m.get("hasAttachments")})
+                        "preview": m.get("bodyPreview", "")[:180], "has_attachments": m.get("hasAttachments"),
+                        "conv_id": m.get("conversationId")})
         sw = (subject_word or "").strip().lower()
         if sw:
             out = [m for m in out if sw in (m["subject"] or "").lower()]
+        return out
+
+    def list_sent(self, days=7, limit=300):
+        """What you sent (Sent Items), newest first, every page: [{msg_id, subject, to[], received, conv_id}]."""
+        since = (datetime.utcnow() - timedelta(days=int(days))).strftime("%Y-%m-%dT%H:%M:%SZ")
+        params = {"$top": "100", "$orderby": "sentDateTime desc", "$filter": f"sentDateTime ge {since}",
+                  "$select": "id,subject,toRecipients,ccRecipients,sentDateTime,conversationId"}
+        data = self._req("GET", "/me/mailFolders/sentitems/messages", params=params)
+        raw = []
+        while True:
+            raw += data.get("value", [])
+            nxt = data.get("@odata.nextLink")
+            if not nxt or len(raw) >= int(limit):
+                break
+            data = self._req("GET", nxt)
+        out = []
+        for m in raw[:int(limit)]:
+            to = [(r.get("emailAddress") or {}).get("address", "") for r in
+                  (m.get("toRecipients") or []) + (m.get("ccRecipients") or [])]
+            out.append({"msg_id": m["id"], "subject": m.get("subject") or "", "to": [a for a in to if a],
+                        "received": _local(m.get("sentDateTime")), "conv_id": m.get("conversationId")})
         return out
 
     def get_message(self, msg_id):
         import html as _html
         import re
         m = self._req("GET", f"/me/messages/{msg_id}",
-                      params={"$select": "id,subject,from,receivedDateTime,body,hasAttachments"})
+                      params={"$select": "id,subject,from,receivedDateTime,body,hasAttachments,conversationId"})
         body = (m.get("body") or {}).get("content", "")
         if (m.get("body") or {}).get("contentType") == "html":
             body = re.sub(r"<(br|/p|/div|/tr)[^>]*>", "\n", body, flags=re.I)
@@ -435,7 +507,7 @@ class GraphMail:
         fr = (m.get("from") or {}).get("emailAddress", {})
         return {"msg_id": msg_id, "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                 "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
-                "body": body, "attachments": atts, "attachment_names": names}
+                "body": body, "attachments": atts, "attachment_names": names, "conv_id": m.get("conversationId")}
 
     def reply(self, msg_id, body):
         """Reply in the same thread through Microsoft 365 (shows up in Sent Items like any reply)."""

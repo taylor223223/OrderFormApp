@@ -24,6 +24,7 @@ HOLD_WORDS = ("?", "missing", "need ", "needs ", "wrong", "can't", "cannot", "ca
               "question", "issue", "problem", "backorder", "back order", "discontinued", "unable", "not ", "no longer",
               "clarify", "confirm the", "which ")
 _RE = re.compile(r"^\s*((re|aw|antw)\s*:\s*)+", re.I)
+_INV = re.compile(r"(?<![\d\-/.$])(\d{6})(?![\d\-/.])")   # Jimmy's "111111 - entered" (the invoice / order #)
 _QUOTE = re.compile(r"^\s*(-{2,}\s*original message|from:\s|sent:\s|on .{4,80} wrote:|_{5,}|>)", re.I)
 
 
@@ -118,9 +119,35 @@ def match_reply(subject):
     return res
 
 
+def invoice_from(body):
+    """The 6-digit invoice # Jimmy puts in his reply ("111111 - entered"), from the new part of the reply only."""
+    m = _INV.search(reply_top(body) or "")
+    return m.group(1) if m else ""
+
+
+def set_invoice(oid, number, day=None, note=""):
+    """Put the invoice # on an order (the day Jimmy entered it) and move it to entered/confirmed (never backwards)."""
+    number = (number or "").strip()
+    if not number:
+        return False
+    o = q("SELECT status, invoice_no FROM orders WHERE id=?", (oid,), one=True)
+    if not o:
+        return False
+    day = day or datetime.now().strftime("%Y-%m-%d")
+    x("UPDATE orders SET invoice_no=?, invoice_date=?, updated=? WHERE id=?", (number, day, now(), oid))
+    if o["status"] not in ("On Hold", "Cancelled") and RANK.get(o["status"], 99) < RANK[TARGET]:
+        x("UPDATE orders SET status=?, updated=? WHERE id=?", (TARGET, now(), oid))
+    if (o["invoice_no"] or "") != number:
+        add_status(oid, TARGET, f"Invoice {number} entered {day}{(' - ' + note) if note else ''}")
+    return True
+
+
 def record_reply(full, msg_id=None, auto_apply=True):
     """A reply to an order email. Returns (check_id or None, results, applied)."""
+    inv = invoice_from(full.get("body", ""))
     verdict, why = reply_verdict(full.get("body", ""))
+    if verdict == "no" and inv:      # just the number on its own is still "entered"
+        verdict, why = "yes", inv
     if verdict == "no":
         return None, [], 0
     res = match_reply(full.get("subject", ""))
@@ -132,6 +159,11 @@ def record_reply(full, msg_id=None, auto_apply=True):
             r["sure"] = False
             r["how"] += " - reply needs a look"
     applied = apply(res, "") if (auto_apply and verdict == "yes") else 0
+    if inv and auto_apply and verdict == "yes":
+        for r in res:
+            if r["sure"] and set_invoice(r["order_id"], inv, (full.get("received") or "")[:10] or None,
+                                         f"from {full.get('sender_name') or full.get('sender') or 'the reply'}"):
+                r["invoice"] = inv
     cid = x("""INSERT INTO delivery_checks(msg_id, source, subject, received, body, results, applied, created, kind)
                VALUES (?,?,?,?,?,?,?,?,'received')""",
             (msg_id, "reply" + (f" from {full.get('sender_name') or full.get('sender')}" if full.get("sender") or
