@@ -325,6 +325,13 @@ def t_open_requests(waiting_on=""):
             for r in rows[:60]]
 
 
+def t_close_requests(waiting_on="", ids=None):
+    from .followup import close_requests
+    if not waiting_on and not ids:
+        return {"error": "say which list (waiting_on) or which ids to clear"}
+    return {"cleared": close_requests(waiting_on, [int(i) for i in ids or []])}
+
+
 def t_mark_visit_done(stop_id, notes="", how="In person", who="", ordered="", order_what=""):
     from ..routes.routes_plan import mark_done
     s = q("SELECT * FROM route_stops WHERE id=?", (stop_id,), one=True)
@@ -526,6 +533,10 @@ TOOLS = [
           {"rule": S}, ["rule"]),
     _tool(t_open_requests, "Everything still open: waiting on him (you), on a customer, or on Jimmy/office (office). "
           "Filter with waiting_on = you | customer | office.", {"waiting_on": S}),
+    _tool(t_close_requests, "Clear items off the open-requests lists when he says to (\"clear those\", \"take them "
+          "off\", \"those are done\"): a whole list (waiting_on = you | office | customer) or just some ids. Nothing is "
+          "sent or changed - they just stop showing. Do it; never argue that they're still open.",
+          {"waiting_on": S, "ids": {"type": "array", "items": I}}),
     _tool(t_mark_visit_done, "Mark a route stop visited and log it in the CRM (how: In person / Call / Text / Email; "
           "ordered: Yes / No; order_what: what they ordered).",
           {"stop_id": I, "notes": S, "how": S, "who": S, "ordered": S, "order_what": S}, ["stop_id"]),

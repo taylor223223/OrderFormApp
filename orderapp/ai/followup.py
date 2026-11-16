@@ -184,10 +184,14 @@ def open_requests():
         items.append({"waiting_on": "customer", "what": t["subject"] or "", "who": t["sender"] or "", "since": since,
                       "kind": t["category"] or "", "id": t["id"], "ref": "thread", "nudges": t["nudges"] or 0,
                       "detail": t["reason"] or "Waiting for their answer", "subject": t["subject"] or ""})
+    # only orders sent in the last few weeks - older ones without a # were handled before the app tracked invoices
+    since = (datetime.now() - timedelta(days=_int("ai_invoice_days", 14))).strftime("%Y-%m-%d")
     for o in q("""SELECT o.*, c.name cname FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
-                  WHERE o.status='Sent' ORDER BY o.id"""):
+                  WHERE o.status='Sent' AND coalesce(o.waiting_closed,'')='' ORDER BY o.id"""):
         quote = (o["kind"] or "order") == "quote"
         if not quote and (o["invoice_no"] or "").strip():
+            continue
+        if (o["sent_at"] or o["updated"] or o["created"] or "")[:10] < since:
             continue
         items.append({"waiting_on": "office", "what": f"#{o['id']} {o['cname'] or ''} {o['title'] or ''}".strip(),
                       "who": "Jimmy / office", "since": o["sent_at"] or o["updated"] or "", "kind": o["kind"] or "order",
@@ -195,7 +199,8 @@ def open_requests():
                       "detail": "Quote not back yet" if quote else "No invoice # yet"})
     for o in q("""SELECT o.*, c.name cname, (SELECT MAX(ts) FROM order_status_history h WHERE h.order_id=o.id AND
                   h.status='Quoted') quoted_at FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
-                  WHERE o.status='Quoted' AND coalesce(o.kind,'order')='quote' ORDER BY o.id"""):
+                  WHERE o.status='Quoted' AND coalesce(o.kind,'order')='quote' AND coalesce(o.waiting_closed,'')=''
+                  ORDER BY o.id"""):
         items.append({"waiting_on": "customer", "what": f"Quote #{o['id']} {o['cname'] or ''} {o['title'] or ''}".strip(),
                       "who": o["cname"] or "", "since": o["quoted_at"] or o["updated"] or "", "kind": "quote",
                       "id": o["id"], "ref": "order", "subject": "", "detail": "Waiting for their approval"})
@@ -213,6 +218,21 @@ def close_request(ref, rid):
         x("UPDATE ai_threads SET status='done', reason='Closed by you', updated=? WHERE id=?", (now(), rid))
     elif ref == "log":
         x("UPDATE ai_log SET reviewed=1 WHERE id=?", (rid,))
+    elif ref == "order":                                   # stop waiting on it - the order itself isn't changed
+        x("UPDATE orders SET waiting_closed=? WHERE id=?", (now(), rid))
+
+
+def close_requests(waiting_on="", ids=None):
+    """Clear several at once: everything waiting on you / office / customer, or just the listed ids. Returns how many."""
+    n = 0
+    for it in open_requests():
+        if waiting_on and it["waiting_on"] != waiting_on:
+            continue
+        if ids and it["id"] not in ids:
+            continue
+        close_request(it["ref"], it["id"])
+        n += 1
+    return n
 
 
 # ------------------------------------------------------------------ follow-ups

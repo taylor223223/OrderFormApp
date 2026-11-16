@@ -23,7 +23,7 @@ EDITABLE = ["sales_rep", "order_to", "order_cc", "email_provider", "send_mode", 
             "reply_confirm_words", "net_proxy",
             "ai_model_fast", "ai_model_smart", "ai_coworker_domain", "ai_coworkers", "ai_my_email", "ai_test_senders",
             "ai_practice_to", "ai_catalog_path", "ai_signature", "ai_summary_morning", "ai_summary_evening",
-            "ai_month_limit", "ai_nudge_customer_days", "ai_nudge_office_days", "ai_nudge_max", "ai_nudge_quote_days"]
+            "ai_month_limit", "ai_nudge_customer_days", "ai_nudge_office_days", "ai_nudge_max", "ai_nudge_quote_days", "ai_invoice_days"]
 AI_FLAGS = ["ai_auto_orders", "ai_auto_customer", "ai_auto_coworker", "ai_read_sent", "ai_chat_cheap"]
 
 
@@ -35,7 +35,7 @@ def index():
             if k in request.form:
                 v = request.form.get(k, "").strip() if k != "body_template" else request.form.get(k, "")
                 if k in ("session_minutes", "route_visit_minutes", "email_auto_minutes", "email_lookback_days",
-                         "ai_nudge_customer_days", "ai_nudge_office_days", "ai_nudge_max", "ai_nudge_quote_days") \
+                         "ai_nudge_customer_days", "ai_nudge_office_days", "ai_nudge_max", "ai_nudge_quote_days", "ai_invoice_days") \
                         and not v.isdigit():
                     v = DEFAULT_SETTINGS[k]
                 set_setting(k, v)

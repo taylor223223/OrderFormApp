@@ -42,7 +42,7 @@ def home():
                            last_note=request.args.get("note", type=int),
                            last_result=json.loads(setting("ai_last_result") or "{}"),
                            progress=setting("ai_progress") or "", summary_parts=summary_parts,
-                           reqs=reqs, later=later, md=md, chart_svg=chart_svg,
+                           reqs=reqs, later=later, invoice_days=setting("ai_invoice_days") or "14", md=md, chart_svg=chart_svg,
                            chat=[dict(r, actions=json.loads(r["actions"] or "[]")) for r in
                                  reversed(q("SELECT * FROM ai_chat ORDER BY id DESC LIMIT 12"))])
 
@@ -297,6 +297,16 @@ def summary_parts(body):
 def request_close():
     from ..ai.followup import close_request
     close_request(request.form.get("ref"), request.form.get("rid", type=int))
+    return redirect(url_for("assistant.home", tab="requests"))
+
+
+@bp.route("/assistant/request/close_all", methods=["POST"])
+@login_required
+def request_close_all():
+    from ..ai.followup import close_requests
+    who = request.form.get("waiting_on") or ""
+    n = close_requests(who) if who in ("you", "office", "customer") else 0
+    flash(f"Cleared {n} item{'' if n == 1 else 's'}.", "ok")
     return redirect(url_for("assistant.home", tab="requests"))
 
 

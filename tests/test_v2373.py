@@ -68,3 +68,26 @@ def test_quick_asks_use_the_fast_model(app):
         assert "sonnet" in pick_model("log a visit at Sample Palms")
         set_setting("ai_chat_cheap", "1")
     assert len(_brief({"rows": ["x" * 100] * 200})) < 5100 and _brief({"a": 1}) == '{"a":1}'
+
+
+def test_waiting_on_jimmy_can_be_cleared(app):
+    """Old sent orders without an invoice # don't pile up; Done / Clear all / the chat take them off the list."""
+    from datetime import datetime, timedelta
+    from orderapp.ai.commands import t_close_requests
+    from orderapp.ai.followup import close_request, open_requests
+    old = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d %H:%M")
+    new = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with app.app_context():
+        from orderapp.db import x
+        ids = {}
+        for k, when in (("old", old), ("a", new), ("b", new), ("c", new)):
+            ids[k] = x("INSERT INTO orders(form_key, title, status, kind, sent_at, created, updated) VALUES "
+                       "('door', ?, 'Sent', 'order', ?, ?, ?)", (f"Sample {k}", when, when, when))
+        office = lambda: [r["id"] for r in open_requests() if r["waiting_on"] == "office"]  # noqa: E731
+        assert ids["old"] not in office() and {ids["a"], ids["b"], ids["c"]} <= set(office())
+        close_request("order", ids["a"])
+        assert ids["a"] not in office()
+        assert t_close_requests(ids=[ids["b"]]) == {"cleared": 1} and ids["b"] not in office()
+        assert t_close_requests(waiting_on="office")["cleared"] >= 1 and office() == []
+        from orderapp.db import q
+        assert q("SELECT status FROM orders WHERE id=?", (ids["c"],), one=True)["status"] == "Sent"   # order untouched
