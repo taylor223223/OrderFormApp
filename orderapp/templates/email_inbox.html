@@ -31,6 +31,7 @@ Connected via: <b>{{ {'outlook_desktop':'Outlook on this PC','graph':'Microsoft 
 </form>
 {% endif %}
 {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+{% if sent_res %}<div class="small {{ 'muted' if not sent_res.error }}" style="margin:4px 0 8px">{% if sent_res.error %}<span style="color:var(--err)">{{ sent_res.error }}</span>{% else %}📤 Read your Sent Items: <b>{{ sent_res.sent }}</b> new email{{ '' if sent_res.sent == 1 else 's' }} you sent from Outlook{% if sent_res.closed %} · <b>{{ sent_res.closed }}</b> item{{ '' if sent_res.closed == 1 else 's' }} you'd already handled taken off "Waiting on you"{% endif %}{% if sent_res.crm %} · {{ sent_res.crm }} logged in the CRM{% endif %}. They're under "Sent by you" below.{% endif %}</div>{% endif %}
 {% if checked and not error %}
 <div class="tablewrap"><table>
 <tr><th>Received</th><th>From</th><th>Subject</th><th></th></tr>
@@ -55,5 +56,10 @@ Connected via: <b>{{ {'outlook_desktop':'Outlook on this PC','graph':'Microsoft 
 <div class="tablewrap"><table>
 {% for r in recent %}<tr><td class="small nowrap">{{ r.received }}</td><td><a href="{{ url_for('emails.message', rid=r.id) }}">{{ r.subject or '(no subject)' }}</a><div class="small muted">{{ r.sender }}</div></td><td>{% if r.order_id %}<a class="tag ok" href="{{ url_for('orders.view', oid=r.order_id) }}">Order #{{ r.order_id }}</a>{% else %}<span class="tag">{{ r.status }}</span>{% endif %}</td></tr>
 {% else %}<tr><td class="empty">Nothing yet.</td></tr>{% endfor %}
+</table></div>
+<h2>Sent by you <span class="small muted">(from Outlook - read on every email check)</span></h2>
+<div class="tablewrap"><table>
+{% for r in sent_rows %}<tr><td class="small nowrap">{{ r.received }}</td><td><a href="{{ url_for('emails.thread', rid=r.id) }}">{{ r.subject or '(no subject)' }}</a><div class="small muted">to {{ r.to_addr or '-' }}</div></td></tr>
+{% else %}<tr><td class="empty">Nothing yet - hit Check email and your sent emails show up here.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

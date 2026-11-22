@@ -104,6 +104,93 @@ def sync_sent(prov, days=7):
     return res
 
 
+def _md(ts):
+    return f"{(ts or '')[5:7]}/{(ts or '')[8:10]}" if ts and len(ts) >= 10 else (ts or "")
+
+
+def _close_log(lid, why):
+    x("UPDATE ai_log SET reviewed=1, auto_closed=? WHERE id=?", (why, lid))
+
+
+def _sent_after(conv, sender, subject, since):
+    """Something you sent in that conversation (any recipient - reply, reply-all or forward) at or after `since`."""
+    if conv:
+        r = q("""SELECT received, to_addr FROM email_messages WHERE direction='out' AND conv_id=? AND received>=?
+                 ORDER BY received LIMIT 1""", (conv, since), one=True)
+        if r:
+            return r
+    key = _key(subject)
+    if key and sender:
+        for r in q("""SELECT received, to_addr, subject FROM email_messages WHERE direction='out' AND received>=?
+                      AND lower(coalesce(to_addr,'')) LIKE ? ORDER BY received""", (since, f"%{sender.lower()}%")):
+            if _key(r["subject"]) == key:
+                return r
+    return None
+
+
+def recheck_open(prov=None, max_lookups=40):
+    """Every check: take things you already handled off 'Waiting on you' (v2.37.7).
+    - you sent anything in that email's conversation after it came in (reply, reply-all, forward - to anyone)
+    - Outlook says it's done: flagged Complete, deleted, or archived (Settings: ai_outlook_done)
+    - optional: you've read it and it's older than N days (Settings: ai_clear_read_days, 0 = off)
+    Returns {"closed": n, "reasons": [...]}."""
+    out = {"closed": 0, "reasons": []}
+    rows = q("""SELECT l.*, e.conv_id AS conv FROM ai_log l LEFT JOIN email_messages e ON e.id=l.email_id
+                WHERE l.reviewed=0 AND l.status IN ('held', 'error')
+                AND coalesce(l.category,'') NOT IN ('reminder', 'command', 'scheduled', 'note')
+                AND l.msg_id NOT LIKE 'note-%' AND l.msg_id NOT LIKE 'chat-%'""")
+    later = []
+    for g in rows:
+        since = (g["received"] or g["ts"] or "")[:16]
+        r = _sent_after(g["conv"], g["sender"], g["subject"], since)
+        if r:
+            to = (r["to_addr"] or "").split(",")[0].strip()
+            why = f"You replied {_md(r['received'])}" + (f" (to {to})" if to else "")
+            _close_log(g["id"], why)
+            out["closed"] += 1
+            out["reasons"].append(why)
+        else:
+            later.append(g)
+    # held conversations (ai_threads) you answered in Outlook
+    for t in q("SELECT * FROM ai_threads WHERE status IN ('held', 'open') AND conv_id IS NOT NULL"):
+        r = _sent_after(t["conv_id"], "", "", (t["updated"] or t["created"] or "")[:16])
+        if r:
+            x("UPDATE ai_threads SET status='done', reason=?, updated=? WHERE id=?",
+              (f"You replied {_md(r['received'])}", now(), t["id"]))
+    use_state = prov is not None and hasattr(prov, "message_state") and setting("ai_outlook_done") != "0"
+    read_days = _int("ai_clear_read_days", 0)
+    if not use_state:
+        return out
+    states = []
+    for g in later[:int(max_lookups)]:
+        if not g["msg_id"]:
+            continue
+        try:
+            states.append((g, prov.message_state(g["msg_id"]) or {}))
+        except Exception:  # noqa: BLE001 - mailbox not reachable right now: leave everything as it is
+            return out
+    gone = sum(1 for _, st in states if st.get("gone"))
+    if states and gone > max(2, len(states) // 2):
+        return out          # safety: if most come back "missing", Outlook is having a moment - don't clear anything
+    for g, st in states:
+        if st.get("read") and not g["mail_read"]:
+            x("UPDATE ai_log SET mail_read=1 WHERE id=?", (g["id"],))
+        why = ""
+        if st.get("done"):
+            why = "Flagged Complete in Outlook"
+        elif st.get("deleted") or st.get("gone"):
+            why = "Deleted or moved in Outlook"
+        elif st.get("archived"):
+            why = "Archived in Outlook"
+        elif read_days and st.get("read") and bdays_since(g["received"] or g["ts"]) >= read_days:
+            why = f"Read in Outlook, {read_days}+ days old"
+        if why:
+            _close_log(g["id"], why)
+            out["closed"] += 1
+            out["reasons"].append(why)
+    return out
+
+
 def apply_sent(m, email_id, to_list):
     """One email you sent: close what it handled, log it, and track it if it went to the order desk."""
     from .assistant import is_coworker, is_me
@@ -129,7 +216,7 @@ def apply_sent(m, email_id, to_list):
         for g in q("SELECT id, subject FROM ai_log WHERE reviewed=0 AND status IN ('held', 'error') AND lower(sender)=?",
                    (a,)):
             if _key(g["subject"]) == key:
-                x("UPDATE ai_log SET reviewed=1 WHERE id=?", (g["id"],))
+                _close_log(g["id"], f"You replied {_md(when)}")
                 out["closed"] += 1
         for o in q("SELECT id, subject FROM ai_outbox WHERE status IN ('held', 'practice') AND lower(to_addr)=?", (a,)):
             if _key(o["subject"]) == key:
@@ -141,6 +228,13 @@ def apply_sent(m, email_id, to_list):
                 if log_email_activity(c["id"], when, k["name"] if k else "", subj, email_id):
                     out["crm"] += 1
                 logged.add(c["id"])
+    if conv:                                   # same conversation, any recipient (reply-all, forward to Jimmy...)
+        for g in q("""SELECT l.id FROM ai_log l JOIN email_messages e ON e.id=l.email_id WHERE l.reviewed=0
+                      AND l.status IN ('held', 'error') AND e.conv_id=? AND coalesce(l.received, l.ts, '')<=?""",
+                   (conv, when)):
+            to = (to_list[0] if to_list else "")
+            _close_log(g["id"], f"You replied {_md(when)}" + (f" (to {to})" if to else ""))
+            out["closed"] += 1
     if desk and desk in [(t or "").lower() for t in to_list]:
         out["tracked"] += track_desk_email(m, key)
     return out
@@ -178,7 +272,8 @@ def open_requests():
     for g in q("""SELECT * FROM ai_log WHERE status IN ('held', 'error') AND reviewed=0 ORDER BY id"""):
         items.append({"waiting_on": "you", "what": g["summary"] or g["subject"] or "", "who": g["sender_name"] or
                       g["sender"] or "", "since": (g["received"] or g["ts"] or "")[:16], "kind": g["category"] or "",
-                      "id": g["id"], "ref": "log", "detail": g["action"] or "", "subject": g["subject"] or ""})
+                      "id": g["id"], "ref": "log", "detail": g["action"] or "", "subject": g["subject"] or "",
+                      "read": bool(g["mail_read"]) if "mail_read" in g.keys() else False, "email_id": g["email_id"]})
     for t in q("SELECT * FROM ai_threads WHERE status='waiting' ORDER BY id"):
         since = t["last_activity"] or t["updated"] or t["created"]
         items.append({"waiting_on": "customer", "what": t["subject"] or "", "who": t["sender"] or "", "since": since,

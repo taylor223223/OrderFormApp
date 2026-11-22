@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Email thread{% endblock %}
 {% block body %}
-<div class="small"><a href="{{ url_for('emails.inbox') }}">← Email</a></div>
+<div class="small"><a href="{{ back }}" onclick="if (document.referrer && history.length > 1) { history.back(); return false; }">← Back</a></div>
 <h1>✉ {{ msgs[0].subject if msgs else (subject or 'Email thread') }}</h1>
 <div class="muted small">{{ msgs|length }} email(s) in this conversation, oldest first.</div>
 {% for m in msgs %}

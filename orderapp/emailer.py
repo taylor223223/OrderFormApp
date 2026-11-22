@@ -293,7 +293,24 @@ class OutlookDesktop:
                 os.remove(p)
         return {"msg_id": msg_id, "subject": it.Subject or "", "sender": self._sender(it),
                 "sender_name": it.SenderName or "", "received": str(it.ReceivedTime)[:16],
-                "body": it.Body or "", "attachments": atts, "attachment_names": names}
+                "body": it.Body or "", "attachments": atts, "attachment_names": names,
+                "conv_id": getattr(it, "ConversationID", None)}
+
+    def message_state(self, msg_id):
+        """Where an email stands in Outlook now: {gone, deleted, archived, done (flag complete), read}."""
+        _, ns = self._ns()
+        try:
+            it = self._item(ns, msg_id)
+        except Exception:  # noqa: BLE001 - deleted for good (or moved in a way that changed its id)
+            return {"gone": True}
+        st = {"read": not bool(getattr(it, "UnRead", True)), "done": getattr(it, "FlagStatus", 0) == 1}
+        try:
+            folder = it.Parent
+            st["deleted"] = folder.EntryID == ns.GetDefaultFolder(3).EntryID       # Deleted Items
+            st["archived"] = (folder.Name or "").strip().lower() == "archive"
+        except Exception:  # noqa: BLE001
+            pass
+        return st
 
     def reply(self, msg_id, body):
         """Reply in the same thread (keeps the conversation together in Outlook)."""
@@ -508,6 +525,31 @@ class GraphMail:
         return {"msg_id": msg_id, "subject": m.get("subject") or "", "sender": fr.get("address", ""),
                 "sender_name": fr.get("name", ""), "received": _local(m.get("receivedDateTime")),
                 "body": body, "attachments": atts, "attachment_names": names, "conv_id": m.get("conversationId")}
+
+    def message_state(self, msg_id):
+        """Where an email stands now: {gone, deleted, archived, done (flag complete), read}."""
+        try:
+            m = self._req("GET", f"/me/messages/{msg_id}", params={"$select": "isRead,flag,parentFolderId"})
+        except MailError as e:
+            if " 404" in str(e) or "ErrorItemNotFound" in str(e):
+                return {"gone": True}                     # deleted for good, or moved (Microsoft gives it a new id)
+            raise
+        st = {"read": bool(m.get("isRead")), "done": (m.get("flag") or {}).get("flagStatus") == "complete"}
+        fid = m.get("parentFolderId")
+        for name, key in (("deleteditems", "deleted"), ("archive", "archived")):
+            try:
+                st[key] = fid == self._folder_id(name)
+            except Exception:  # noqa: BLE001
+                st[key] = False
+        return st
+
+    def _folder_id(self, name):
+        cache = getattr(self, "_fids", None)
+        if cache is None:
+            cache = self._fids = {}
+        if name not in cache:
+            cache[name] = self._req("GET", f"/me/mailFolders/{name}", params={"$select": "id"})["id"]
+        return cache[name]
 
     def reply(self, msg_id, body):
         """Reply in the same thread through Microsoft 365 (shows up in Sent Items like any reply)."""

@@ -80,7 +80,7 @@ def thread_messages(subject="", rid=None):
 def inbox():
     prov = provider(setting)
     ok, why = prov.available()
-    messages, error = [], None
+    messages, error, sent_res = [], None, None
     days = request.args.get("days", "14")
     search = request.args.get("q", "")
     unread = bool(request.args.get("unread"))
@@ -88,6 +88,12 @@ def inbox():
         if not ok:
             error = why
         else:
+            try:      # your Outlook replies come into the app too, and close what they handled (v2.37.7)
+                from ..ai.followup import recheck_open, sync_sent
+                sent_res = sync_sent(prov, max(int(days) if str(days).isdigit() else 14, 7))
+                sent_res["closed"] += recheck_open(prov)["closed"]
+            except Exception as e:  # noqa: BLE001
+                sent_res = {"error": f"Couldn't read Sent Items: {e}"}
             try:
                 messages = prov.list_messages(days=days, unread_only=unread, search=search,
                                               subject_word=(setting("email_order_word") or "Order")
@@ -101,12 +107,15 @@ def inbox():
         r = seen.get(m["msg_id"])
         m["row"] = dict(r) if r else None
     recent = q("""SELECT e.*, c.name AS cname FROM email_messages e LEFT JOIN orders o ON o.id=e.order_id
-                  LEFT JOIN customers c ON c.id=o.customer_id ORDER BY e.id DESC LIMIT 25""")
+                  LEFT JOIN customers c ON c.id=o.customer_id WHERE coalesce(e.direction,'in')<>'out'
+                  ORDER BY e.id DESC LIMIT 25""")
     auto_rows = q("""SELECT e.*, c.name AS cname FROM email_messages e LEFT JOIN orders o ON o.id=e.order_id
                      LEFT JOIN customers c ON c.id=o.customer_id WHERE e.auto=1 ORDER BY e.id DESC LIMIT 30""")
     auto = {"word": setting("email_order_word") or "Order", "minutes": setting("email_auto_minutes") or "0",
             "last": setting("email_last_check") or "never", "rows": auto_rows}
-    return render_template("email_inbox.html", provider=prov.name, ok=ok, why=why, messages=messages, error=error,
+    sent_rows = q("""SELECT * FROM email_messages WHERE direction='out' ORDER BY received DESC, id DESC LIMIT 20""")
+    return render_template("email_inbox.html", sent_rows=sent_rows, sent_res=sent_res,
+                           provider=prov.name, ok=ok, why=why, messages=messages, error=error,
                            days=days, search=search, unread=unread, recent=recent, auto=auto,
                            checked=bool(request.args.get("check")))
 
@@ -160,7 +169,15 @@ def thread():
     key, msgs = thread_messages(request.args.get("subject", ""), request.args.get("rid", type=int))
     for m in msgs:
         m["top"] = reply_top(m["body"]) or m["body"]
-    return render_template("email_thread.html", subject=key, msgs=msgs)
+    back = request.args.get("next") or ""
+    if not back.startswith("/") or back.startswith("//"):
+        ref = request.referrer or ""
+        from urllib.parse import urlparse
+        u = urlparse(ref)
+        back = (u.path + (("?" + u.query) if u.query else "")) if ref and u.netloc == request.host else ""
+    if back.startswith("/email/thread"):
+        back = ""
+    return render_template("email_thread.html", subject=key, msgs=msgs, back=back or url_for("emails.inbox"))
 
 
 @bp.route("/email/msg/<int:rid>")

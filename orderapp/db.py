@@ -124,6 +124,8 @@ DEFAULT_SETTINGS = {
     "ai_model_smart": "claude-sonnet-5-5",
     "ai_chat_cheap": "1",
     "ai_invoice_days": "3",
+    "ai_outlook_done": "1",
+    "ai_clear_read_days": "0",
     "ai_api_version": "2026-10-21",
     "ai_auto_orders": "1",
     "ai_auto_customer": "1",
@@ -258,6 +260,7 @@ MIGRATIONS = {
     "delivery_checks": {"kind": "TEXT"},
     "activities": {"order_id": "INTEGER", "temp": "TEXT", "ordered": "TEXT", "order_what": "TEXT",
                    "email_id": "INTEGER"},
+    "ai_log": {"auto_closed": "TEXT", "mail_read": "INTEGER"},
     "ai_threads": {"waiting_on": "TEXT", "last_activity": "TEXT", "nudges": "INTEGER", "nudged_at": "TEXT",
                    "conv_id": "TEXT", "contact_email": "TEXT"},
 }

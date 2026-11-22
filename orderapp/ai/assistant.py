@@ -1230,6 +1230,11 @@ def _run(prov, res, limit):
         if res["new"] % 10 == 0:          # progress for the Assistant page while it works
             set_setting("ai_progress", f"{res['new']} of {len(batch)}")
     res["left"] = len(todo) - res["new"]
+    try:                                            # anything you already handled in Outlook comes off your list
+        rc = followup.recheck_open(prov)
+        res["closed_by_you"] = res.get("closed_by_you", 0) + rc["closed"]
+    except Exception:  # noqa: BLE001 - never stop the check over this
+        pass
     try:
         nd = followup.run_nudges()
         res["nudged"], res["handed_back"] = nd["nudged"] + nd["quote_followups"], nd["handed_back"]

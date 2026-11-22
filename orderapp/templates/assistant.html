@@ -108,16 +108,16 @@ tasks, and holds anything it isn't sure about for you.
   {% if rows|length > 1 %}<form method="post" action="{{ url_for('assistant.request_close_all') }}" onsubmit="return confirm('Clear all {{ rows|length }} from this list? (Nothing is sent or changed - they just stop showing here.)')"><input type="hidden" name="waiting_on" value="{{ key }}"><button class="btn sm">Clear all {{ rows|length }}</button></form>{% endif %}</div>
   {% if rows %}<div class="tablewrap"><table class="small" style="margin-top:4px"><tr><th>What</th><th>Who</th><th>Waiting</th><th></th></tr>
   {% for it in rows %}<tr>
-    <td><b>{{ it.what }}</b><div class="muted">{{ it.detail }}</div>
+    <td><b>{{ it.what }}</b>{% if it.read %} <span class="tag" title="You've opened this one in Outlook">read</span>{% endif %}<div class="muted">{{ it.detail }}</div>
       {% if it.ref == 'log' and it.kind != 'reminder' %}{{ reply_box(it.id, it.who, 'requests') }}{% endif %}</td>
     <td>{{ it.who }}</td>
     <td class="nowrap">{% if it.days %}<span class="tag {{ 'warn' if it.overdue }}">{{ it.days }} business day{{ 's' if it.days != 1 }}</span>{% else %}today{% endif %}{% if it.nudges %}<div class="muted">{{ it.nudges }} follow-up(s) sent</div>{% endif %}</td>
-    <td class="nowrap">{% if it.subject and it.kind not in ('reminder', 'scheduled', 'command') %}<a class="btn sm" href="{{ url_for('emails.thread', subject=it.subject) }}">✉ Thread</a>{% endif %}
+    <td class="nowrap">{% if it.subject and it.kind not in ('reminder', 'scheduled', 'command') %}<a class="btn sm" href="{{ url_for('emails.thread', rid=it.email_id) if it.email_id else url_for('emails.thread', subject=it.subject) }}">✉ Thread</a>{% endif %}
       {% if it.ref == 'order' %}<a class="btn sm" href="{{ url_for('orders.view', oid=it.id) }}">Order #{{ it.id }}</a>{% endif %}
       <form method="post" action="{{ url_for('assistant.request_close') }}" style="display:inline"><input type="hidden" name="ref" value="{{ it.ref }}"><input type="hidden" name="rid" value="{{ it.id }}"><button class="btn sm" title="Stop showing this here">✓ Done</button></form></td></tr>{% endfor %}
   </table></div>{% else %}<div class="small muted">Nothing.</div>{% endif %}
 </div>{% endfor %}
-<div class="small muted">Closes on its own when you reply (even from Outlook), Jimmy sends the invoice #, a quote comes back, or a customer answers. Orders only show here for {{ invoice_days }} days after they're sent (Settings → AI Assistant). Customers who go quiet get a short follow-up after the days in Settings → AI Assistant.</div>
+<div class="small muted">Closes on its own when you send anything in that email's conversation from Outlook (reply, reply-all or forward - to anyone), flag it Complete, delete it or archive it, Jimmy sends the invoice #, a quote comes back, or a customer answers. Orders only show here for {{ invoice_days }} days after they're sent (Settings → AI Assistant). Customers who go quiet get a short follow-up after the days in Settings → AI Assistant.</div>
 
 {% elif tab == 'later' %}
 <div class="card"><b>Scheduled emails and reminders</b> <span class="small muted">- tell the assistant "email Crystal Tuesday at 8..." or "remind me Friday to call Curtis".</span>
@@ -156,7 +156,7 @@ tasks, and holds anything it isn't sure about for you.
 <td><span class="tag">{{ l.category }}</span> {{ l.summary or l.subject }}
   {% if l.category != 'junk' and l.sender %}{{ reply_box(l.id, '', 'activity') }}{% endif %}</td>
 <td class="small">{{ l.action }}{% if l.order_ids %} · {% for o in l.order_ids.split(',') if o %}<a href="{{ url_for('orders.view', oid=o) }}">#{{ o }}</a> {% endfor %}{% endif %}</td>
-<td><span class="tag {{ 'ok' if l.status == 'done' else ('warn' if l.status in ('held','waiting') else '') }}">{{ l.status }}</span></td></tr>
+<td><span class="tag {{ 'ok' if l.status == 'done' else ('warn' if l.status in ('held','waiting') else '') }}">{{ l.status }}</span>{% if l.auto_closed is defined and l.auto_closed %}<div class="small" style="color:#15803d" title="Taken off your list automatically">✓ {{ l.auto_closed }}</div>{% endif %}</td></tr>
 {% else %}<tr><td class="empty" colspan="5">Nothing yet.</td></tr>{% endfor %}</table></div>
 
 {% elif tab == 'outbox' %}
